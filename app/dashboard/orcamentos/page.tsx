@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-browser";
 
 interface Orcamento {
   id: string
@@ -12,6 +12,7 @@ interface Orcamento {
 }
 
 export default function OrcamentosPage() {
+  const supabase = createClient();
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([])
   const [busca, setBusca] = useState("")
   const [loading, setLoading] = useState(true)

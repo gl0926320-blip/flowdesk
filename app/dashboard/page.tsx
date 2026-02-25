@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
 import {
   LineChart,
@@ -16,6 +16,7 @@ import {
 } from "recharts";
 
 export default function Dashboard() {
+  const supabase = createClient();
   const router = useRouter();
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -141,35 +142,41 @@ export default function Dashboard() {
     checkUser();
   }, [router]);
 
-  async function handleUpgrade() {
-    if (!user) return;
+async function handleUpgrade() {
+  if (!user) return;
 
-    try {
-      setLoadingCheckout(true);
+  try {
+    setLoadingCheckout(true);
 
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.id,
-          email: user.email,
-        }),
-      });
+    const res = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.id,
+        email: user.email,
+      }),
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert("Erro ao criar sessão Stripe");
-        setLoadingCheckout(false);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Erro inesperado");
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Erro ao criar sessão Stripe");
       setLoadingCheckout(false);
     }
+  } catch (err) {
+    console.error(err);
+    alert("Erro inesperado");
+    setLoadingCheckout(false);
   }
+}
+
+async function handleLogout() {
+  await supabase.auth.signOut();
+  router.push("/login");
+  router.refresh();
+}
 
   if (loadingUser) {
     return (
@@ -204,7 +211,7 @@ export default function Dashboard() {
           <span>
             Logado como: <strong>{user.email}</strong>
           </span>
-
+        
           <button
             onClick={handleUpgrade}
             disabled={loadingCheckout}
@@ -220,6 +227,20 @@ export default function Dashboard() {
           >
             {loadingCheckout ? "Redirecionando..." : "🚀 Assinar Plano Pro"}
           </button>
+          <button
+  onClick={handleLogout}
+  style={{
+    padding: "10px 18px",
+    background: "#dc2626",
+    color: "white",
+    borderRadius: 8,
+    cursor: "pointer",
+    border: "none",
+    fontWeight: "bold",
+  }}
+>
+  Sair
+</button>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 "use client"
 export const dynamic = 'force-dynamic'
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-browser";
 
 interface Cliente {
   nome: string
@@ -12,6 +12,7 @@ interface Cliente {
 }
 
 export default function ClientesPage() {
+  const supabase = createClient();
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [busca, setBusca] = useState("")
   const [loading, setLoading] = useState(true)

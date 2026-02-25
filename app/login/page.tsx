@@ -1,21 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
 export default function Login() {
   const router = useRouter();
+  const supabase = createClient();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   async function handleLogin(e: any) {
     e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
 
     if (!email || !password) {
-      alert("Preencha email e senha.");
+      setErrorMsg("Preencha email e senha.");
       return;
     }
 
@@ -26,46 +32,65 @@ export default function Login() {
       password,
     });
 
-    console.log("LOGIN ERROR:", error);
-
     setLoading(false);
 
     if (error) {
-      alert(error.message);
+      setErrorMsg("Email ou senha incorretos.");
     } else {
       router.push("/dashboard");
+      router.refresh();
     }
   }
 
   async function handleRegister() {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
     if (!email || !password) {
-      alert("Preencha email e senha.");
+      setErrorMsg("Preencha email e senha.");
       return;
     }
 
     if (password.length < 6) {
-      alert("A senha precisa ter no mínimo 6 caracteres.");
+      setErrorMsg("A senha precisa ter no mínimo 6 caracteres.");
       return;
     }
 
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
     });
 
-    console.log("SIGNUP DATA:", data);
-    console.log("SIGNUP ERROR:", error);
-
     setLoading(false);
 
     if (error) {
-      alert(error.message);
+      setErrorMsg(error.message);
     } else {
-      alert("Conta criada com sucesso! Agora faça login.");
+      setSuccessMsg("Conta criada com sucesso! Agora faça login.");
       setEmail("");
       setPassword("");
+    }
+  }
+
+  async function handleResetPassword() {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!email) {
+      setErrorMsg("Digite seu email para redefinir a senha.");
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/update-password`,
+    });
+
+    if (error) {
+      setErrorMsg("Erro ao enviar email de recuperação.");
+    } else {
+      setSuccessMsg("Email de recuperação enviado! Verifique sua caixa de entrada.");
     }
   }
 
@@ -130,15 +155,27 @@ export default function Login() {
           className="backdrop-blur-xl bg-white/5 border border-white/10 shadow-2xl rounded-2xl p-10 w-full max-w-md"
         >
           <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold">
-              Acesse sua conta
+            <h2 className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Bem-vindo de volta 👋
             </h2>
-            <p className="text-zinc-400 text-sm mt-2">
-              Gerencie seus serviços com inteligência
+            <p className="text-zinc-400 text-sm mt-3">
+              Acesse sua conta e continue fechando mais orçamentos.
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <div className="space-y-4">
+
+            {errorMsg && (
+              <div className="bg-red-500/10 border border-red-500/40 text-red-400 text-sm p-3 rounded-lg">
+                {errorMsg}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="bg-green-500/10 border border-green-500/40 text-green-400 text-sm p-3 rounded-lg">
+                {successMsg}
+              </div>
+            )}
 
             <input
               type="email"
@@ -156,7 +193,19 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
             />
 
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                className="text-xs text-zinc-400 hover:text-white transition"
+              >
+                Esqueceu a senha?
+              </button>
+            </div>
+
             <button
+              type="button"
+              onClick={handleLogin}
               disabled={loading}
               className="relative w-full overflow-hidden bg-blue-600 hover:bg-blue-700 transition p-3 rounded-lg font-semibold"
             >
@@ -166,7 +215,7 @@ export default function Login() {
 
               <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent translate-x-[-100%] animate-[shine_2s_infinite]" />
             </button>
-          </form>
+          </div>
 
           <div className="mt-6 text-center">
             <button

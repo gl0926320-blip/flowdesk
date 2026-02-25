@@ -5,7 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
   try {
-    // 🔥 Instancia tudo DENTRO da função
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
     const supabase = createClient(
@@ -15,7 +14,7 @@ export async function POST(req: Request) {
 
     const body = await req.text();
 
-    const headersList = await headers();
+    const headersList = headers();
     const sig = headersList.get("stripe-signature");
 
     if (!sig) {
@@ -28,8 +27,11 @@ export async function POST(req: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
 
-    // ✅ PAGAMENTO INICIAL
-    if (event.type === "checkout.session.completed") {
+    // 🔥 PAGAMENTO INICIAL
+    if (
+      event.type === "checkout.session.completed" &&
+      (event.data.object as Stripe.Checkout.Session).mode === "subscription"
+    ) {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.metadata?.userId;
 
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
             plan: "pro",
             subscription_status: "active",
             stripe_customer_id: session.customer,
+            stripe_subscription_id: session.subscription,
           })
           .eq("id", userId);
 
@@ -53,7 +56,9 @@ export async function POST(req: Request) {
 
       await supabase
         .from("profiles")
-        .update({ subscription_status: "active" })
+        .update({
+          subscription_status: "active",
+        })
         .eq("stripe_customer_id", invoice.customer);
     }
 
