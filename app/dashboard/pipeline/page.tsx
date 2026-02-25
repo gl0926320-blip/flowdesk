@@ -168,10 +168,10 @@
         {/* Glow Background */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_60%)]" />
 
-        <div className="relative z-10 p-14 space-y-14 text-white">
+        <div className="relative z-10 p-6 md:p-14 space-y-10 md:space-y-14 text-white">
 
           {/* MÉTRICAS */}
-          <div className="grid grid-cols-4 gap-10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-10">
             <Metric title="Total" value={metrics.total} />
             <Metric title="Receita" value={`R$ ${metrics.receita}`} />
             <Metric title="Custos" value={`R$ ${metrics.custo}`} />
@@ -179,7 +179,7 @@
           </div>
 
           {/* HEADER */}
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
             <h2 className="text-3xl font-semibold tracking-[0.2em] uppercase text-blue-200">
               Pipeline
             </h2>
@@ -194,7 +194,7 @@
 
           {/* PIPELINE */}
           <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-            <div className="flex gap-10 overflow-x-auto pb-10 scroll-smooth">
+            <div className="flex flex-col md:flex-row gap-6 md:gap-10 pb-6 md:pb-10">
               {columns.map((col) => (
                 <Column key={col} id={col} title={col}>
                   {items
@@ -221,7 +221,7 @@
           {/* MODAL */}
           {openModal && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50">
-              <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-10 rounded-3xl w-[460px] space-y-6 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white">
+              <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-10 rounded-3xl w-[90%] max-w-[460px] space-y-6 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white">
                 <h3 className="text-xl font-semibold text-blue-200">
                   Novo Serviço
                 </h3>
@@ -315,8 +315,8 @@
         ref={setNodeRef}
         className={`
   relative overflow-hidden
-  min-w-[360px]
-  p-6
+  w-full md:min-w-[360px]
+  p-4 md:p-6
   relative
 rounded-3xl
 bg-[#0f172a]
@@ -390,7 +390,7 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
         ref={setNodeRef}
         style={style}
         className={`
-          p-5 rounded-2xl
+          p-4 md:p-5 rounded-2xl
           bg-gradient-to-br from-white/20 to-white/5
           backdrop-blur-xl
           border border-white/10
@@ -420,9 +420,25 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
                 <Input value={local.descricao} onChange={(v)=>setLocal({...local,descricao:v})}/>
                 <Input type="number" value={local.valor_orcamento} onChange={(v)=>setLocal({...local,valor_orcamento:v})}/>
                 <Input type="number" value={local.custo} onChange={(v)=>setLocal({...local,custo:v})}/>
-                <button onClick={salvarEdicao} className="w-full bg-blue-600 py-2 rounded-xl">
-                  Salvar Alterações
-                </button>
+
+{/* 🔥 NOVO CAMPO DE STATUS */}
+<select
+  value={local.status}
+  onChange={(e) =>
+    setLocal({ ...local, status: e.target.value })
+  }
+  className="w-full p-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+>
+  {columns.map((col) => (
+    <option key={col} value={col} className="bg-[#0f172a]">
+      {col.replaceAll("_", " ").toUpperCase()}
+    </option>
+  ))}
+</select>
+
+<button onClick={salvarEdicao} className="w-full bg-blue-600 py-2 rounded-xl">
+  Salvar Alterações
+</button>
               </>
             ) : (
               <>

@@ -13,15 +13,13 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   async function handleLogin(e: any) {
     e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
 
     if (!email || !password) {
-      setErrorMsg("Preencha email e senha.");
+      alert("Preencha email e senha.");
       return;
     }
 
@@ -32,10 +30,12 @@ export default function Login() {
       password,
     });
 
+    console.log("LOGIN ERROR:", error);
+
     setLoading(false);
 
     if (error) {
-      setErrorMsg("Email ou senha incorretos.");
+      alert("Email ou senha incorretos.");
     } else {
       router.push("/dashboard");
       router.refresh();
@@ -43,43 +43,40 @@ export default function Login() {
   }
 
   async function handleRegister() {
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
     if (!email || !password) {
-      setErrorMsg("Preencha email e senha.");
+      alert("Preencha email e senha.");
       return;
     }
 
     if (password.length < 6) {
-      setErrorMsg("A senha precisa ter no mínimo 6 caracteres.");
+      alert("A senha precisa ter no mínimo 6 caracteres.");
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
     });
 
+    console.log("SIGNUP DATA:", data);
+    console.log("SIGNUP ERROR:", error);
+
     setLoading(false);
 
     if (error) {
-      setErrorMsg(error.message);
+      alert(error.message);
     } else {
-      setSuccessMsg("Conta criada com sucesso! Agora faça login.");
+      alert("Conta criada com sucesso! Agora faça login.");
       setEmail("");
       setPassword("");
     }
   }
 
   async function handleResetPassword() {
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
     if (!email) {
-      setErrorMsg("Digite seu email para redefinir a senha.");
+      alert("Digite seu email para redefinir a senha.");
       return;
     }
 
@@ -88,9 +85,9 @@ export default function Login() {
     });
 
     if (error) {
-      setErrorMsg("Erro ao enviar email de recuperação.");
+      alert("Erro ao enviar email de recuperação.");
     } else {
-      setSuccessMsg("Email de recuperação enviado! Verifique sua caixa de entrada.");
+      alert("Email de recuperação enviado! Verifique sua caixa de entrada.");
     }
   }
 
@@ -155,27 +152,15 @@ export default function Login() {
           className="backdrop-blur-xl bg-white/5 border border-white/10 shadow-2xl rounded-2xl p-10 w-full max-w-md"
         >
           <div className="mb-8 text-center">
-            <h2 className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Bem-vindo de volta 👋
+            <h2 className="text-2xl font-bold">
+              Acesse sua conta
             </h2>
-            <p className="text-zinc-400 text-sm mt-3">
-              Acesse sua conta e continue fechando mais orçamentos.
+            <p className="text-zinc-400 text-sm mt-2">
+              Gerencie seus serviços com inteligência
             </p>
           </div>
 
           <div className="space-y-4">
-
-            {errorMsg && (
-              <div className="bg-red-500/10 border border-red-500/40 text-red-400 text-sm p-3 rounded-lg">
-                {errorMsg}
-              </div>
-            )}
-
-            {successMsg && (
-              <div className="bg-green-500/10 border border-green-500/40 text-green-400 text-sm p-3 rounded-lg">
-                {successMsg}
-              </div>
-            )}
 
             <input
               type="email"

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { LayoutDashboard, Users, FileText, Kanban, Settings, CreditCard } from "lucide-react";
+import { LayoutDashboard, Users, FileText, Kanban, Settings, CreditCard, Menu } from "lucide-react"; // Menu importado
 import { createClient } from "@/lib/supabase-browser";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -11,6 +11,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const supabase = createClient();
 
   const [plan, setPlan] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Estado para controlar a abertura da sidebar
 
   useEffect(() => {
     async function carregarPlano() {
@@ -44,7 +45,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">
       {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0B1120] border-r border-white/10 flex flex-col">
+      <aside
+        className={`w-64 bg-[#0B1120] border-r border-white/10 flex flex-col fixed top-0 left-0 h-full z-40 transition-all duration-300 transform ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } md:translate-x-0`} // Sidebar será escondida por padrão no mobile
+      >
         <div className="p-6 text-xl font-bold border-b border-white/10">
           FlowDesk
         </div>
@@ -95,10 +100,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      {/* Overlay para mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* CONTEÚDO */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col ml-0 md:ml-64">
         {/* HEADER */}
         <header className="h-16 bg-[#0B1120] border-b border-white/10 flex items-center justify-between px-6">
+          {/* Botão hambúrguer para abrir a sidebar no mobile */}
+          <button
+            className="md:hidden p-3"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
+            <Menu size={24} color="white" />
+          </button>
+
           <h1 className="text-lg font-semibold">Área Restrita</h1>
 
           <div className="flex items-center gap-4">
@@ -119,7 +140,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* MAIN */}
-        <main className="flex-1 p-8 bg-[#0F172A]">
+        <main className="flex-1 p-4 md:p-8 bg-[#0F172A]">
           {children}
         </main>
       </div>
