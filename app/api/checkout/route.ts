@@ -1,10 +1,10 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
 export async function POST(req: Request) {
   try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
     const { userId, email } = await req.json();
 
     const session = await stripe.checkout.sessions.create({
@@ -26,7 +26,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Erro Stripe" }, { status: 500 });
+    console.error("Erro Stripe:", err);
+    return NextResponse.json(
+      { error: "Erro ao criar sessão Stripe" },
+      { status: 500 }
+    );
   }
 }
