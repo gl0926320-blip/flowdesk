@@ -12,7 +12,10 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   const body = await req.text();
-  const sig = headers().get("stripe-signature")!;
+
+  // ✅ CORREÇÃO NEXT 16 (headers agora é async)
+  const headersList = await headers();
+  const sig = headersList.get("stripe-signature")!;
 
   let event: Stripe.Event;
 
