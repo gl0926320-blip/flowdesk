@@ -14,7 +14,8 @@ export async function POST(req: Request) {
 
     const body = await req.text();
 
-    const headersList = headers();
+    // 🔥 CORRIGIDO: Agora headers é async
+    const headersList = await headers();  // Agora com await
     const sig = headersList.get("stripe-signature");
 
     if (!sig) {
