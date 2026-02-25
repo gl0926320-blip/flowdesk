@@ -337,13 +337,27 @@ function Metric({ title, value }: any) {
 }
 
 /* INPUT */
-function Input({ value, onChange, type="text", placeholder="" }: any) {
+type InputProps = {
+  value: string | number;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+};
+
+function Input({
+  value,
+  onChange,
+  type = "text",
+  placeholder = "",
+}: InputProps) {
   return (
     <input
       type={type}
       placeholder={placeholder}
       value={value}
-      onChange={(e)=>onChange(e.target.value)}
+      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+        onChange(e.target.value)
+      }
       className="w-full p-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
     />
   );
