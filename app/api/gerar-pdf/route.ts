@@ -22,9 +22,9 @@ export async function POST(req: Request) {
 
   const pdfBytes = await pdfDoc.save();
 
-  return new Response(pdfBytes, {
-    headers: {
-      "Content-Type": "application/pdf",
-    },
-  });
+return new Response(Buffer.from(pdfBytes), {
+  headers: {
+    "Content-Type": "application/pdf",
+  },
+});
 }
