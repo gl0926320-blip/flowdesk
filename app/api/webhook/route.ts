@@ -13,8 +13,7 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
-  const body = await req.text(); // 🔥 OBRIGATÓRIO ser text()
-
+  const body = await req.text();
   const signature = req.headers.get("stripe-signature");
 
   if (!signature) {
@@ -36,72 +35,68 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
-      // ✅ ASSINATURA CRIADA
+
+      // ✅ CHECKOUT COMPLETO → apenas salvar IDs
       case "checkout.session.completed": {
-  const session = event.data.object as Stripe.Checkout.Session;
+        const session = event.data.object as Stripe.Checkout.Session;
 
-  if (session.mode === "subscription") {
-    const userId = session.metadata?.userId;
+        if (session.mode === "subscription") {
+          const userId = session.metadata?.userId;
 
-    console.log("USER ID DO WEBHOOK:", userId);
+          if (!userId) {
+            console.error("❌ userId não encontrado no metadata");
+            break;
+          }
 
-    if (!userId) {
-      console.error("❌ userId não encontrado no metadata");
-      break;
-    }
+          await supabase
+            .from("profiles")
+            .update({
+              stripe_customer_id: session.customer,
+              stripe_subscription_id: session.subscription,
+            })
+            .eq("id", userId);
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({
-        plan: "pro",
-        subscription_status: "active",
-        stripe_customer_id: session.customer,
-        stripe_subscription_id: session.subscription,
-      })
-      .eq("id", userId)
-      .select();
+          console.log("✅ IDs salvos no profile");
+        }
+        break;
+      }
 
-    if (error) {
-      console.error("❌ ERRO AO ATUALIZAR:", error);
-    } else {
-      console.log("✅ RESULTADO UPDATE:", data);
-    }
-  }
-  break;
-}
+      // 🔥 FONTE OFICIAL DA ASSINATURA
+      case "customer.subscription.created":
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as Stripe.Subscription;
 
-      // 🔁 RENOVAÇÃO
-      case "invoice.paid": {
-        const invoice = event.data.object as Stripe.Invoice;
+        const status = subscription.status;
+        const customerId = subscription.customer as string;
+
+        let plan = "free";
+
+        if (
+          status === "active" ||
+          status === "trialing" ||
+          status === "past_due"
+        ) {
+          plan = "pro";
+        }
+
+        if (status === "canceled" || status === "unpaid") {
+          plan = "free";
+        }
 
         await supabase
           .from("profiles")
           .update({
-            subscription_status: "active",
+            plan,
+            subscription_status: status,
+            stripe_subscription_id: subscription.id,
           })
-          .eq("stripe_customer_id", invoice.customer);
+          .eq("stripe_customer_id", customerId);
 
-        console.log("🔁 Renovação confirmada");
+        console.log("🔄 Assinatura atualizada:", status);
         break;
       }
 
-      // ❌ FALHA NO PAGAMENTO
-      case "invoice.payment_failed": {
-        const invoice = event.data.object as Stripe.Invoice;
-
-        await supabase
-          .from("profiles")
-          .update({
-            plan: "free",
-            subscription_status: "past_due",
-          })
-          .eq("stripe_customer_id", invoice.customer);
-
-        console.log("⚠️ Pagamento falhou");
-        break;
-      }
-
-      // ❌ CANCELAMENTO
+      // ❌ CANCELAMENTO DEFINITIVO
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
 
@@ -111,9 +106,24 @@ export async function POST(req: Request) {
             plan: "free",
             subscription_status: "canceled",
           })
-          .eq("stripe_customer_id", subscription.customer);
+          .eq("stripe_customer_id", subscription.customer as string);
 
         console.log("❌ Assinatura cancelada");
+        break;
+      }
+
+      // ⚠️ FALHA DE PAGAMENTO → não rebaixar plano
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+
+        await supabase
+          .from("profiles")
+          .update({
+            subscription_status: "past_due",
+          })
+          .eq("stripe_customer_id", invoice.customer as string);
+
+        console.log("⚠️ Pagamento falhou (past_due)");
         break;
       }
 
