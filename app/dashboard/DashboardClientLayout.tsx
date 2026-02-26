@@ -3,34 +3,54 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { LayoutDashboard, Users, FileText, Kanban, Settings, CreditCard, Menu } from "lucide-react"; // Menu importado
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Kanban,
+  Settings,
+  CreditCard,
+  Menu,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const supabase = createClient();
 
-  const [plan, setPlan] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Estado para controlar a abertura da sidebar
+  const [plan, setPlan] = useState<string>("free");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  async function carregarPlano() {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+    if (!user) return;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("plan")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.plan) {
+      setPlan(profile.plan);
+    }
+  }
 
   useEffect(() => {
-    async function carregarPlano() {
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
-      if (!user) return;
+    carregarPlano();
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("plan")
-        .eq("id", user.id)
-        .single();
+    // 🔁 Atualiza quando volta para aba
+    const onFocus = () => carregarPlano();
+    window.addEventListener("focus", onFocus);
 
-      if (profile?.plan) {
-        setPlan(profile.plan);
-      }
+    // 🔥 Se voltou do Stripe com success=true
+    if (window.location.search.includes("success=true")) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      carregarPlano();
     }
 
-    carregarPlano();
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   const menu = [
@@ -48,7 +68,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <aside
         className={`w-64 bg-[#0B1120] border-r border-white/10 flex flex-col fixed top-0 left-0 h-full z-40 transition-all duration-300 transform ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0`} // Sidebar será escondida por padrão no mobile
+        } md:translate-x-0`}
       >
         <div className="p-6 text-xl font-bold border-b border-white/10">
           FlowDesk
@@ -100,7 +120,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Overlay para mobile */}
+      {/* Overlay mobile */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 md:hidden"
@@ -112,7 +132,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col ml-0 md:ml-64">
         {/* HEADER */}
         <header className="h-16 bg-[#0B1120] border-b border-white/10 flex items-center justify-between px-6">
-          {/* Botão hambúrguer para abrir a sidebar no mobile */}
           <button
             className="md:hidden p-3"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -139,7 +158,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {/* MAIN */}
         <main className="flex-1 p-4 md:p-8 bg-[#0F172A]">
           {children}
         </main>
