@@ -12,25 +12,35 @@ export default function BillingPage() {
 
   useEffect(() => {
     async function carregarPlano() {
-      const { data: userData } = await supabase.auth.getUser()
-      const user = userData.user
-      if (!user) {
-        setLoadingPlan(false)
-        return
-      }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("plan")
-        .eq("id", user.id)
-        .single()
+  const user = session?.user
 
-      if (profile?.plan) {
-        setPlan(profile.plan)
-      }
+  if (!user) {
+    setLoadingPlan(false)
+    return
+  }
 
-      setLoadingPlan(false)
-    }
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", user.id)
+    .single()
+
+  if (error) {
+    console.error("Erro ao buscar plano:", error)
+    setLoadingPlan(false)
+    return
+  }
+
+  if (profile?.plan) {
+    setPlan(profile.plan)
+  }
+
+  setLoadingPlan(false)
+}
 
     carregarPlano()
 

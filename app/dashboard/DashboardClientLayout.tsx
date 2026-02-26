@@ -22,20 +22,28 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   async function carregarPlano() {
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData.user;
-    if (!user) return;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .single();
+  const user = session?.user;
+  if (!user) return;
 
-    if (profile?.plan) {
-      setPlan(profile.plan);
-    }
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", user.id)
+    .single();
+
+  if (error) {
+    console.error("Erro ao buscar plano:", error);
+    return;
   }
+
+  if (profile?.plan) {
+    setPlan(profile.plan);
+  }
+}
 
   useEffect(() => {
     carregarPlano();
