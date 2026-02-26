@@ -171,7 +171,7 @@ lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: 
         <div className="relative z-10 p-6 md:p-14 space-y-10 md:space-y-14 text-white">
 
           {/* MÉTRICAS */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <Metric title="Total" value={metrics.total} />
             <Metric title="Receita" value={` ${metrics.receita}`} />
             <Metric title="Custos" value={` ${metrics.custo}`} />
@@ -463,13 +463,36 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
   /* METRIC */
   function Metric({ title, value }: any) {
   return (
-    <div className="p-8 rounded-2xl bg-gradient-to-br from-[#111827] to-[#0f172a] border border-[#1f2937] shadow-[0_10px_40px_rgba(0,0,0,0.6)] hover:border-blue-500/40 transition-all duration-300">
+    <div className="
+      p-6 sm:p-8
+      rounded-2xl
+      bg-gradient-to-br from-[#111827] to-[#0f172a]
+      border border-[#1f2937]
+      shadow-[0_10px_40px_rgba(0,0,0,0.6)]
+      hover:border-blue-500/40
+      transition-all duration-300
+      min-h-[120px]
+      flex flex-col justify-center
+    ">
       
       <div className="text-xs uppercase tracking-widest text-gray-500">
         {title}
       </div>
 
-      <div className="text-5xl font-extrabold tracking-tight mt-3 bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
+      <div className="
+        mt-3
+        font-extrabold
+        leading-none
+        tracking-tight
+        text-2xl
+        sm:text-3xl
+        md:text-4xl
+        lg:text-5xl
+        break-words
+        bg-gradient-to-r from-blue-400 to-cyan-300
+        bg-clip-text
+        text-transparent
+      ">
         {value}
       </div>
 
