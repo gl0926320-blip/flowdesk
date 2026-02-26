@@ -1,98 +1,119 @@
 import Stripe from "stripe";
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2026-01-28.clover",
+});
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
 export async function POST(req: Request) {
+  const body = await req.text(); // 🔥 OBRIGATÓRIO ser text()
+
+  const signature = req.headers.get("stripe-signature");
+
+  if (!signature) {
+    return new NextResponse("Missing signature", { status: 400 });
+  }
+
+  let event: Stripe.Event;
+
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
-    const supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const body = await req.text();
-
-    // 🔥 CORRIGIDO: Agora headers é async
-    const headersList = await headers();  // Agora com await
-    const sig = headersList.get("stripe-signature");
-
-    if (!sig) {
-      return new NextResponse("Missing signature", { status: 400 });
-    }
-
-    const event = stripe.webhooks.constructEvent(
+    event = stripe.webhooks.constructEvent(
       body,
-      sig,
+      signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
+  } catch (err) {
+    console.error("❌ Erro de assinatura:", err);
+    return new NextResponse("Webhook error", { status: 400 });
+  }
 
-    // 🔥 PAGAMENTO INICIAL
-    if (
-      event.type === "checkout.session.completed" &&
-      (event.data.object as Stripe.Checkout.Session).mode === "subscription"
-    ) {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const userId = session.metadata?.userId;
+  try {
+    switch (event.type) {
+      // ✅ ASSINATURA CRIADA
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
 
-      if (userId) {
+        if (session.mode === "subscription") {
+          const userId = session.metadata?.userId;
+
+          if (userId) {
+            await supabase
+              .from("profiles")
+              .update({
+                plan: "pro",
+                subscription_status: "active",
+                stripe_customer_id: session.customer,
+                stripe_subscription_id: session.subscription,
+              })
+              .eq("id", userId);
+
+            console.log("✅ Plano ativado:", userId);
+          }
+        }
+        break;
+      }
+
+      // 🔁 RENOVAÇÃO
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+
         await supabase
           .from("profiles")
           .update({
-            plan: "pro",
             subscription_status: "active",
-            stripe_customer_id: session.customer,
-            stripe_subscription_id: session.subscription,
           })
-          .eq("id", userId);
+          .eq("stripe_customer_id", invoice.customer);
 
-        console.log("Plano ativado:", userId);
+        console.log("🔁 Renovação confirmada");
+        break;
       }
+
+      // ❌ FALHA NO PAGAMENTO
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+
+        await supabase
+          .from("profiles")
+          .update({
+            plan: "free",
+            subscription_status: "past_due",
+          })
+          .eq("stripe_customer_id", invoice.customer);
+
+        console.log("⚠️ Pagamento falhou");
+        break;
+      }
+
+      // ❌ CANCELAMENTO
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+
+        await supabase
+          .from("profiles")
+          .update({
+            plan: "free",
+            subscription_status: "canceled",
+          })
+          .eq("stripe_customer_id", subscription.customer);
+
+        console.log("❌ Assinatura cancelada");
+        break;
+      }
+
+      default:
+        console.log("Evento ignorado:", event.type);
     }
 
-    // 🔁 RENOVAÇÃO
-    if (event.type === "invoice.paid") {
-      const invoice = event.data.object as Stripe.Invoice;
+    return new NextResponse("OK", { status: 200 });
 
-      await supabase
-        .from("profiles")
-        .update({
-          subscription_status: "active",
-        })
-        .eq("stripe_customer_id", invoice.customer);
-    }
-
-    // ❌ FALHA
-    if (event.type === "invoice.payment_failed") {
-      const invoice = event.data.object as Stripe.Invoice;
-
-      await supabase
-        .from("profiles")
-        .update({
-          plan: "free",
-          subscription_status: "past_due",
-        })
-        .eq("stripe_customer_id", invoice.customer);
-    }
-
-    // ❌ CANCELAMENTO
-    if (event.type === "customer.subscription.deleted") {
-      const subscription = event.data.object as Stripe.Subscription;
-
-      await supabase
-        .from("profiles")
-        .update({
-          plan: "free",
-          subscription_status: "canceled",
-        })
-        .eq("stripe_customer_id", subscription.customer);
-    }
-
-    return NextResponse.json({ received: true });
-
-  } catch (err) {
-    console.error("Erro webhook:", err);
+  } catch (error) {
+    console.error("❌ Erro interno webhook:", error);
     return new NextResponse("Webhook error", { status: 400 });
   }
 }
