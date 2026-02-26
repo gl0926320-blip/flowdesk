@@ -218,6 +218,12 @@ async function handleLogout() {
   router.refresh();
 }
 
+    function formatCurrency(value: number) {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
   if (loadingUser) {
     return (
     
@@ -317,13 +323,15 @@ const receitaMesFiltrada = aprovadosList
     <div style={{ padding: 40 }}>
 
       <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 40,
-        }}
-      >
+  style={{
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 20,
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 40,
+  }}
+>
         <h1 style={{ fontSize: 28 }}>Dashboard</h1>
         <select
   value={filtroPeriodo}
@@ -389,8 +397,8 @@ const receitaMesFiltrada = aprovadosList
         }}
       >
         <DashboardCard title="Total de Serviços" value={totalOrcamentosFiltrados} />
-        <DashboardCard title="Receita Total" value={`R$ ${receitaTotalFiltrada.toFixed(2)}`} />
-        <DashboardCard title="Receita no Mês" value={`R$ ${receitaMesFiltrada.toFixed(2)}`} />
+        <DashboardCard title="Receita Total" value={formatCurrency(receitaTotalFiltrada)} />
+        <DashboardCard title="Receita no Mês" value={formatCurrency(receitaMesFiltrada)} />
         <DashboardCard title="Ticket Médio" value={`R$ ${ticketMedio}`} />
         <DashboardCard title="Aprovados" value={aprovadosList.length} />
         <DashboardCard title="Pendentes" value={pendentesList.length} />
@@ -483,7 +491,7 @@ const receitaMesFiltrada = aprovadosList
             fontWeight: "bold",
           }}
         >
-          R$ {Number(orc.valor_orcamento || 0).toFixed(2)}
+          R$ {formatCurrency(Number(orc.valor_orcamento || 0))}
         </div>
 
         <div
@@ -505,7 +513,7 @@ const receitaMesFiltrada = aprovadosList
         style={{
           marginTop: 40,
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
           gap: 30,
         }}
       >
@@ -558,17 +566,28 @@ const receitaMesFiltrada = aprovadosList
 
 function DashboardCard({ title, value }: any) {
   return (
-    
     <div
       style={{
         background: "#0B1120",
         padding: 20,
         borderRadius: 12,
         border: "1px solid rgba(255,255,255,0.1)",
+        minHeight: 100,
+        flexWrap: "wrap",
+        flexDirection: "column",
+        justifyContent: "center",
       }}
     >
-      <p style={{ fontSize: 14, color: "#9ca3af" }}>{title}</p>
-      <h2 style={{ fontSize: 22, fontWeight: "bold", marginTop: 8 }}>
+      <p style={{ fontSize: 13, color: "#9ca3af" }}>{title}</p>
+
+      <h2
+        style={{
+          fontSize: "clamp(18px, 2.5vw, 24px)",
+          fontWeight: "bold",
+          marginTop: 8,
+          wordBreak: "break-word",
+        }}
+      >
         {value}
       </h2>
     </div>
