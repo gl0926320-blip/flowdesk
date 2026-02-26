@@ -38,27 +38,37 @@ export async function POST(req: Request) {
     switch (event.type) {
       // ✅ ASSINATURA CRIADA
       case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
+  const session = event.data.object as Stripe.Checkout.Session;
 
-        if (session.mode === "subscription") {
-          const userId = session.metadata?.userId;
+  if (session.mode === "subscription") {
+    const userId = session.metadata?.userId;
 
-          if (userId) {
-            await supabase
-              .from("profiles")
-              .update({
-                plan: "pro",
-                subscription_status: "active",
-                stripe_customer_id: session.customer,
-                stripe_subscription_id: session.subscription,
-              })
-              .eq("id", userId);
+    console.log("USER ID DO WEBHOOK:", userId);
 
-            console.log("✅ Plano ativado:", userId);
-          }
-        }
-        break;
-      }
+    if (!userId) {
+      console.error("❌ userId não encontrado no metadata");
+      break;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        plan: "pro",
+        subscription_status: "active",
+        stripe_customer_id: session.customer,
+        stripe_subscription_id: session.subscription,
+      })
+      .eq("id", userId)
+      .select();
+
+    if (error) {
+      console.error("❌ ERRO AO ATUALIZAR:", error);
+    } else {
+      console.log("✅ RESULTADO UPDATE:", data);
+    }
+  }
+  break;
+}
 
       // 🔁 RENOVAÇÃO
       case "invoice.paid": {
