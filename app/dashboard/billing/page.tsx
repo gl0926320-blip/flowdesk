@@ -14,7 +14,10 @@ export default function BillingPage() {
     async function carregarPlano() {
       const { data: userData } = await supabase.auth.getUser()
       const user = userData.user
-      if (!user) return
+      if (!user) {
+        setLoadingPlan(false)
+        return
+      }
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -30,9 +33,20 @@ export default function BillingPage() {
     }
 
     carregarPlano()
+
+    // 🔁 Atualiza quando volta do Stripe
+    const onFocus = () => carregarPlano()
+    window.addEventListener("focus", onFocus)
+
+    // 🔥 Se voltou com success=true força reload uma vez
+    if (window.location.search.includes("success=true")) {
+      window.history.replaceState({}, document.title, window.location.pathname)
+      carregarPlano()
+    }
+
+    return () => window.removeEventListener("focus", onFocus)
   }, [])
 
-  // ✅ AGORA USANDO SUA API /api/checkout
   async function handleUpgrade() {
     try {
       setLoadingCheckout(true)
@@ -69,19 +83,6 @@ export default function BillingPage() {
       console.error("Erro upgrade:", error)
       setLoadingCheckout(false)
     }
-  }
-
-  async function handleDowngrade() {
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
-    if (!user) return
-
-    await supabase
-      .from("profiles")
-      .update({ plan: "free" })
-      .eq("id", user.id)
-
-    setPlan("free")
   }
 
   if (loadingPlan) {
@@ -128,11 +129,10 @@ export default function BillingPage() {
           </ul>
 
           <button
-            onClick={handleDowngrade}
-            disabled={plan === "free"}
-            className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-xl transition disabled:opacity-40"
+            disabled
+            className="w-full bg-gray-700 py-3 rounded-xl opacity-40 cursor-not-allowed"
           >
-            {plan === "free" ? "Plano Atual" : "Mudar para Free"}
+            {plan === "free" ? "Plano Atual" : "Downgrade via suporte"}
           </button>
         </div>
 
