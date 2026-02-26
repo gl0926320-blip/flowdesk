@@ -75,21 +75,24 @@ const [successMsg, setSuccessMsg] = useState<string | null>(null);
   }
 
   async function handleResetPassword() {
-    if (!email) {
-      alert("Digite seu email para redefinir a senha.");
-      return;
-    }
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
-    });
-
-    if (error) {
-      alert("Erro ao enviar email de recuperação.");
-    } else {
-      alert("Email de recuperação enviado! Verifique sua caixa de entrada.");
-    }
+  if (!email) {
+    setErrorMsg("Digite seu email para redefinir a senha.");
+    return;
   }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/update-password`,
+  });
+
+  if (error) {
+    setErrorMsg("Erro ao enviar email de recuperação.");
+  } else {
+    setSuccessMsg("Email de recuperação enviado! Verifique sua caixa de entrada.");
+  }
+}
 
   return (
     <div className="min-h-screen flex bg-black text-white overflow-hidden">
@@ -161,7 +164,17 @@ const [successMsg, setSuccessMsg] = useState<string | null>(null);
           </div>
 
           <div className="space-y-4">
+            {errorMsg && (
+  <div className="bg-red-500/10 border border-red-500 text-red-400 text-sm p-3 rounded-lg">
+    {errorMsg}
+  </div>
+)}
 
+{successMsg && (
+  <div className="bg-green-500/10 border border-green-500 text-green-400 text-sm p-3 rounded-lg">
+    {successMsg}
+  </div>
+)}
             <input
               type="email"
               placeholder="Seu email"
