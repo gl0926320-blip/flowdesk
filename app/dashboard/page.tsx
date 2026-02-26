@@ -227,7 +227,13 @@ async function handleLogout() {
   if (loadingUser) {
     return (
     
-      <div style={{ padding: 40 }}>
+      <div
+  style={{
+    padding: "20px 16px",
+    maxWidth: 1400,
+    margin: "0 auto",
+  }}
+>
         <h2>Carregando...</h2>
       </div>
     );
@@ -325,73 +331,50 @@ const receitaMesFiltrada = aprovadosList
       <div
   style={{
     display: "flex",
-    flexWrap: "wrap",
+    flexDirection: "column",
     gap: 20,
-    justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 40,
   }}
 >
-        <h1 style={{ fontSize: 28 }}>Dashboard</h1>
-        <select
-  value={filtroPeriodo}
-  onChange={(e) => setFiltroPeriodo(e.target.value)}
-  style={{
-    padding: "8px 12px",
-    borderRadius: 8,
-    background: "#111827",
-    color: "white",
-    border: "1px solid rgba(255,255,255,0.1)",
-    marginLeft: 20,
-  }}
->
-  <option value="hoje">Hoje</option>
-  <option value="semana">Últimos 7 dias</option>
-  <option value="mes">Este mês</option>
-  <option value="ano">Este ano</option>
-  <option value="todos">Todos</option>
-</select>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <span>
-            Logado como: <strong>{user.email}</strong>
-          </span>
-        
-          <button
-            onClick={handleUpgrade}
-            disabled={loadingCheckout}
-            style={{
-              padding: "10px 18px",
-              background: "#6b21a8",
-              color: "white",
-              borderRadius: 8,
-              cursor: "pointer",
-              border: "none",
-              fontWeight: "bold",
-            }}
-          >
-            {loadingCheckout ? "Redirecionando..." : "🚀 Assinar Plano Pro"}
-          </button>
-          <button
-  onClick={handleLogout}
-  style={{
-    padding: "10px 18px",
-    background: "#dc2626",
-    color: "white",
-    borderRadius: 8,
-    cursor: "pointer",
-    border: "none",
-    fontWeight: "bold",
-  }}
->
-  Sair
-</button>
-        </div>
-      </div>
+  <div
+    style={{
+      display: "flex",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+    }}
+  >
+    <h1 style={{ fontSize: 26, margin: 0 }}>Dashboard</h1>
+
+    <select
+      value={filtroPeriodo}
+      onChange={(e) => setFiltroPeriodo(e.target.value)}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        background: "#111827",
+        color: "white",
+        border: "1px solid rgba(255,255,255,0.1)",
+      }}
+    >
+      <option value="hoje">Hoje</option>
+      <option value="semana">Últimos 7 dias</option>
+      <option value="mes">Este mês</option>
+      <option value="ano">Este ano</option>
+      <option value="todos">Todos</option>
+    </select>
+  </div>
+
+  <div style={{ fontSize: 14 }}>
+    Logado como: <strong>{user?.email}</strong>
+  </div>
+</div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
           gap: 20,
           marginBottom: 40,
         }}
