@@ -159,10 +159,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             >
               Plano {plan === "pro" ? "Pro 🚀" : "Free"}
             </span>
-
-            <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center font-bold">
-              G
-            </div>
           </div>
         </header>
 
