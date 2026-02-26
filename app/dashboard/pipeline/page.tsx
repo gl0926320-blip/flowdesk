@@ -156,9 +156,9 @@
 
       return {
         total: items.length,
-        receita,
-        custo,
-        lucro: receita - custo,
+        receita: receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+custo: custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
       };
     }, [items]);
 
@@ -173,9 +173,9 @@
           {/* MÉTRICAS */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-10">
             <Metric title="Total" value={metrics.total} />
-            <Metric title="Receita" value={`R$ ${metrics.receita}`} />
-            <Metric title="Custos" value={`R$ ${metrics.custo}`} />
-            <Metric title="Lucro" value={`R$ ${metrics.lucro}`} />
+            <Metric title="Receita" value={` ${metrics.receita}`} />
+            <Metric title="Custos" value={` ${metrics.custo}`} />
+            <Metric title="Lucro" value={` ${metrics.lucro}`} />
           </div>
 
           {/* HEADER */}
@@ -194,7 +194,7 @@
 
           {/* PIPELINE */}
           <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-            <div className="flex flex-col md:flex-row gap-6 md:gap-10 pb-6 md:pb-10">
+            <div className="flex flex-wrap gap-6 md:gap-10 pb-6 md:pb-10">
               {columns.map((col) => (
                 <Column key={col} id={col} title={col}>
                   {items
@@ -315,7 +315,7 @@
         ref={setNodeRef}
         className={`
   relative overflow-hidden
-  w-full md:min-w-[360px]
+  w-full sm:w-[48%] lg:w-[360px]
   p-4 md:p-6
   relative
 rounded-3xl
@@ -463,13 +463,16 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
   /* METRIC */
   function Metric({ title, value }: any) {
   return (
-    <div className="p-8 rounded-2xl bg-[#111827] border border-[#1f2937] shadow-[0_10px_40px_rgba(0,0,0,0.6)] transition hover:border-blue-500/40">
-      <div className="text-xs uppercase tracking-widest text-gray-400">
+    <div className="p-8 rounded-2xl bg-gradient-to-br from-[#111827] to-[#0f172a] border border-[#1f2937] shadow-[0_10px_40px_rgba(0,0,0,0.6)] hover:border-blue-500/40 transition-all duration-300">
+      
+      <div className="text-xs uppercase tracking-widest text-gray-500">
         {title}
       </div>
-      <div className="text-4xl font-bold text-white mt-4">
+
+      <div className="text-5xl font-extrabold tracking-tight mt-3 bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
         {value}
       </div>
+
     </div>
   );
 }
