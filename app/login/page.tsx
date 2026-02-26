@@ -43,36 +43,41 @@ const [successMsg, setSuccessMsg] = useState<string | null>(null);
   }
 
   async function handleRegister() {
-    if (!email || !password) {
-      alert("Preencha email e senha.");
-      return;
-    }
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    if (password.length < 6) {
-      alert("A senha precisa ter no mínimo 6 caracteres.");
-      return;
-    }
-
-    setLoading(true);
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    console.log("SIGNUP DATA:", data);
-    console.log("SIGNUP ERROR:", error);
-
-    setLoading(false);
-
-    if (error) {
-      alert(error.message);
-    } else {
-      alert("Conta criada com sucesso! Agora faça login.");
-      setEmail("");
-      setPassword("");
-    }
+  if (!email || !password) {
+    setErrorMsg("Preencha email e senha.");
+    return;
   }
+
+  if (password.length < 6) {
+    setErrorMsg("A senha precisa ter no mínimo 6 caracteres.");
+    return;
+  }
+
+  setLoading(true);
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${window.location.origin}/dashboard`,
+    },
+  });
+
+  setLoading(false);
+
+  if (error) {
+    setErrorMsg(error.message);
+  } else {
+    setSuccessMsg(
+      "Conta criada com sucesso! Verifique seu email para confirmar."
+    );
+    setEmail("");
+    setPassword("");
+  }
+}
 
   async function handleResetPassword() {
   setErrorMsg(null);
