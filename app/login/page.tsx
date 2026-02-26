@@ -16,31 +16,32 @@ export default function Login() {
 const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   async function handleLogin(e: any) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!email || !password) {
-      alert("Preencha email e senha.");
-      return;
-    }
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    console.log("LOGIN ERROR:", error);
-
-    setLoading(false);
-
-    if (error) {
-      alert("Email ou senha incorretos.");
-    } else {
-      router.push("/dashboard");
-      router.refresh();
-    }
+  if (!email || !password) {
+    setErrorMsg("Preencha email e senha.");
+    return;
   }
+
+  setLoading(true);
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  setLoading(false);
+
+  if (error) {
+    setErrorMsg("Email ou senha incorretos.");
+  } else {
+    router.push("/dashboard");
+    router.refresh();
+  }
+}
 
   async function handleRegister() {
   setErrorMsg(null);
