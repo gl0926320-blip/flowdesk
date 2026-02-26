@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   try {
     switch (event.type) {
 
-      // ✅ CHECKOUT COMPLETO → apenas salvar IDs
+      // ✅ CHECKOUT COMPLETO → salvar IDs + definir plano imediatamente
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
 
@@ -48,6 +48,7 @@ export async function POST(req: Request) {
             break;
           }
 
+          // 🔹 Salvar IDs Stripe
           await supabase
             .from("profiles")
             .update({
@@ -57,11 +58,45 @@ export async function POST(req: Request) {
             .eq("id", userId);
 
           console.log("✅ IDs salvos no profile");
+
+          // 🔥 NOVO: buscar subscription direto no Stripe
+          if (session.subscription) {
+            const subscription = await stripe.subscriptions.retrieve(
+              session.subscription as string
+            );
+
+            const status = subscription.status;
+
+            let plan = "free";
+
+            if (
+              status === "active" ||
+              status === "trialing" ||
+              status === "past_due"
+            ) {
+              plan = "pro";
+            }
+
+            if (status === "canceled" || status === "unpaid") {
+              plan = "free";
+            }
+
+            // 🔥 Atualizar plano imediatamente
+            await supabase
+              .from("profiles")
+              .update({
+                plan,
+                subscription_status: status,
+              })
+              .eq("id", userId);
+
+            console.log("🚀 Plano atualizado no checkout:", status);
+          }
         }
         break;
       }
 
-      // 🔥 FONTE OFICIAL DA ASSINATURA
+      // 🔥 FONTE OFICIAL DA ASSINATURA (sincronização futura)
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
