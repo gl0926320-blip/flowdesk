@@ -11,6 +11,7 @@ import {
   Settings,
   CreditCard,
   Menu,
+  MessageCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -129,6 +130,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             )}
           </div>
         </div>
+         {/* Suporte WhatsApp */}
+      <div className="p-4">
+        <a
+          href="https://wa.me/5562994693465?text=Olá,%20preciso%20de%20ajuda%20no%20FlowDesk"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 p-3 rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 transition"
+        >
+          <MessageCircle size={18} />
+          Suporte Técnico
+        </a>
+      </div>
       </aside>
 
       {/* Overlay mobile */}
