@@ -212,12 +212,6 @@ async function handleUpgrade() {
   }
 }
 
-async function handleLogout() {
-  await supabase.auth.signOut();
-  router.push("/login");
-  router.refresh();
-}
-
     function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", {
     style: "currency",
@@ -370,21 +364,7 @@ const receitaMesFiltrada = aprovadosList
     Logado como: <strong>{user?.email}</strong>
   </div>
 </div>
-        <button
-  onClick={handleLogout}
-  style={{
-    marginTop: 12,
-    padding: "8px 14px",
-    borderRadius: 8,
-    background: "#dc2626",
-    color: "white",
-    border: "none",
-    cursor: "pointer",
-    fontWeight: 600
-  }}
->
-  Sair
-</button>
+    
       <div
         style={{
           display: "grid",

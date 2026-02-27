@@ -20,7 +20,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const [plan, setPlan] = useState<string>("free");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
+  async function handleLogout() {
+  await supabase.auth.signOut();
+  window.location.href = "/";
+}
   async function carregarPlano() {
   const {
     data: { session },
@@ -149,17 +152,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
           <h1 className="text-lg font-semibold">Área Restrita</h1>
 
-          <div className="flex items-center gap-4">
-            <span
-              className={`px-3 py-1 rounded-full text-xs ${
-                plan === "pro"
-                  ? "bg-purple-600/20 text-purple-400"
-                  : "bg-green-600/20 text-green-400"
-              }`}
-            >
-              Plano {plan === "pro" ? "Pro 🚀" : "Free"}
-            </span>
-          </div>
+         <div className="flex items-center gap-4">
+  <span
+    className={`px-3 py-1 rounded-full text-xs ${
+      plan === "pro"
+        ? "bg-purple-600/20 text-purple-400"
+        : "bg-green-600/20 text-green-400"
+    }`}
+  >
+    Plano {plan === "pro" ? "Pro 🚀" : "Free"}
+  </span>
+
+  <button
+    onClick={handleLogout}
+    className="px-4 py-2 text-sm bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-600/30 transition"
+  >
+    Sair
+  </button>
+</div>
         </header>
 
         <main className="flex-1 p-4 md:p-8 bg-[#0F172A]">
