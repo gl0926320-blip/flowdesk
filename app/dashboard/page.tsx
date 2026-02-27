@@ -370,7 +370,21 @@ const receitaMesFiltrada = aprovadosList
     Logado como: <strong>{user?.email}</strong>
   </div>
 </div>
-
+        <button
+  onClick={handleLogout}
+  style={{
+    marginTop: 12,
+    padding: "8px 14px",
+    borderRadius: 8,
+    background: "#dc2626",
+    color: "white",
+    border: "none",
+    cursor: "pointer",
+    fontWeight: 600
+  }}
+>
+  Sair
+</button>
       <div
         style={{
           display: "grid",
