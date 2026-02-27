@@ -101,6 +101,14 @@ export default function BillingPage() {
     return Math.max(Math.ceil(diff / (1000 * 60 * 60 * 24)), 0)
   }
 
+  function getCycleProgress(date: string) {
+    const now = new Date().getTime()
+    const end = new Date(date).getTime()
+    const total = 30 * 24 * 60 * 60 * 1000
+    const used = total - (end - now)
+    return Math.min(Math.max((used / total) * 100, 0), 100)
+  }
+
   if (loadingPlan) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-white">
@@ -112,11 +120,14 @@ export default function BillingPage() {
   const isPro = subscription?.plan === "pro"
   const isCanceling = subscription?.cancel_at_period_end
   const hasPeriodEnd = subscription?.current_period_end
+  const daysRemaining = hasPeriodEnd
+    ? getDaysRemaining(subscription.current_period_end)
+    : 0
 
   return (
     <div className="p-8 text-white max-w-6xl mx-auto">
 
-      {/* Header */}
+      {/* HEADER */}
       <div className="mb-12">
         <h1 className="text-3xl font-bold mb-2">Assinatura</h1>
         <p className="text-gray-400">
@@ -125,62 +136,90 @@ export default function BillingPage() {
       </div>
 
       {/* ============================= */}
-      {/* GERENCIAMENTO DA ASSINATURA */}
+      {/* CARD DE GERENCIAMENTO PRO */}
       {/* ============================= */}
 
       {isPro && (
-        <div className="bg-gradient-to-r from-purple-900 to-purple-800 p-8 rounded-3xl border border-purple-500 shadow-2xl mb-12">
+        <div className="mb-14 bg-gradient-to-br from-purple-900 via-purple-800 to-purple-700 p-10 rounded-3xl border border-purple-500 shadow-2xl">
 
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold">Sua Assinatura 🚀</h2>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-2">
+                Plano Pro 🚀
+              </h2>
 
-            <span
-              className={`px-4 py-1 rounded-full text-xs font-semibold ${
-                isCanceling
-                  ? "bg-yellow-500/20 text-yellow-400"
-                  : "bg-green-500/20 text-green-400"
-              }`}
-            >
-              {isCanceling ? "Cancelamento agendado" : "Ativo"}
-            </span>
+              <span
+                className={`inline-block px-4 py-1 rounded-full text-xs font-semibold ${
+                  isCanceling
+                    ? "bg-yellow-500/20 text-yellow-300"
+                    : "bg-green-500/20 text-green-300"
+                }`}
+              >
+                {isCanceling ? "Cancelamento agendado" : "Assinatura ativa"}
+              </span>
+            </div>
+
+            <div className="mt-6 md:mt-0">
+              <button
+                onClick={handlePortal}
+                disabled={loadingPortal}
+                className="bg-white text-purple-700 font-semibold px-6 py-3 rounded-xl hover:scale-105 transition disabled:opacity-40"
+              >
+                {loadingPortal
+                  ? "Redirecionando..."
+                  : "Gerenciar pagamento"}
+              </button>
+            </div>
           </div>
 
           {hasPeriodEnd && (
-            <div className="grid md:grid-cols-3 gap-6 mb-6">
+            <>
+              {/* MÉTRICAS */}
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
 
-              <div className="bg-black/30 p-5 rounded-2xl">
-                <p className="text-gray-400 text-sm">Próxima fatura</p>
-                <p className="text-lg font-semibold">
-                  {formatDate(subscription.current_period_end)}
-                </p>
+                <div className="bg-black/30 p-6 rounded-2xl">
+                  <p className="text-gray-300 text-sm mb-1">Próxima cobrança</p>
+                  <p className="text-xl font-bold">
+                    {formatDate(subscription.current_period_end)}
+                  </p>
+                </div>
+
+                <div className="bg-black/30 p-6 rounded-2xl">
+                  <p className="text-gray-300 text-sm mb-1">Dias restantes</p>
+                  <p className="text-xl font-bold">
+                    {daysRemaining} dias
+                  </p>
+                </div>
+
+                <div className="bg-black/30 p-6 rounded-2xl">
+                  <p className="text-gray-300 text-sm mb-1">Status</p>
+                  <p className="text-xl font-bold">
+                    {isCanceling
+                      ? "Encerrando ao final do ciclo"
+                      : "Renovação automática"}
+                  </p>
+                </div>
+
               </div>
 
-              <div className="bg-black/30 p-5 rounded-2xl">
-                <p className="text-gray-400 text-sm">Dias restantes</p>
-                <p className="text-lg font-semibold">
-                  {getDaysRemaining(subscription.current_period_end)} dias
-                </p>
-              </div>
+              {/* BARRA DE PROGRESSO */}
+              <div>
+                <div className="flex justify-between text-sm text-purple-200 mb-2">
+                  <span>Ciclo atual</span>
+                  <span>{daysRemaining} dias restantes</span>
+                </div>
 
-              <div className="bg-black/30 p-5 rounded-2xl">
-                <p className="text-gray-400 text-sm">Plano</p>
-                <p className="text-lg font-semibold">
-                  {isCanceling ? "Pro (encerrando)" : "Pro ativo"}
-                </p>
+                <div className="w-full bg-purple-950/60 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-3 bg-white transition-all duration-700"
+                    style={{
+                      width: `${100 - getCycleProgress(subscription.current_period_end)}%`,
+                    }}
+                  />
+                </div>
               </div>
-
-            </div>
+            </>
           )}
-
-          <button
-            onClick={handlePortal}
-            disabled={loadingPortal}
-            className="bg-white text-purple-700 font-semibold px-6 py-3 rounded-xl hover:scale-105 transition disabled:opacity-40"
-          >
-            {loadingPortal
-              ? "Redirecionando..."
-              : "Gerenciar pagamento / Cancelar assinatura"}
-          </button>
         </div>
       )}
 
@@ -208,7 +247,7 @@ export default function BillingPage() {
             className="w-full bg-gray-700 py-3 rounded-xl opacity-40 cursor-not-allowed"
           >
             {isPro
-              ? "Downgrade automático após vencimento"
+              ? "Downgrade automático ao final do ciclo"
               : "Plano Atual"}
           </button>
         </div>
