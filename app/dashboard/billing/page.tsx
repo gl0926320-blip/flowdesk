@@ -54,7 +54,6 @@ export default function BillingPage() {
 
     const { data: userData } = await supabase.auth.getUser()
     const user = userData.user
-
     if (!user) return
 
     const res = await fetch("/api/checkout", {
@@ -121,21 +120,22 @@ export default function BillingPage() {
       <div className="mb-12">
         <h1 className="text-3xl font-bold mb-2">Assinatura</h1>
         <p className="text-gray-400">
-          Gerencie sua assinatura e acompanhe sua fatura.
+          Gerencie seu plano e acompanhe seu ciclo de cobrança.
         </p>
       </div>
 
-      {/* Status Card */}
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-8 rounded-3xl border border-gray-700 shadow-xl mb-12">
+      {/* ============================= */}
+      {/* GERENCIAMENTO DA ASSINATURA */}
+      {/* ============================= */}
 
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">
-            {isPro ? "Plano Pro 🚀" : "Plano Free"}
-          </h2>
+      {isPro && (
+        <div className="bg-gradient-to-r from-purple-900 to-purple-800 p-8 rounded-3xl border border-purple-500 shadow-2xl mb-12">
 
-          {isPro && (
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-semibold">Sua Assinatura 🚀</h2>
+
             <span
-              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+              className={`px-4 py-1 rounded-full text-xs font-semibold ${
                 isCanceling
                   ? "bg-yellow-500/20 text-yellow-400"
                   : "bg-green-500/20 text-green-400"
@@ -143,58 +143,51 @@ export default function BillingPage() {
             >
               {isCanceling ? "Cancelamento agendado" : "Ativo"}
             </span>
+          </div>
+
+          {hasPeriodEnd && (
+            <div className="grid md:grid-cols-3 gap-6 mb-6">
+
+              <div className="bg-black/30 p-5 rounded-2xl">
+                <p className="text-gray-400 text-sm">Próxima fatura</p>
+                <p className="text-lg font-semibold">
+                  {formatDate(subscription.current_period_end)}
+                </p>
+              </div>
+
+              <div className="bg-black/30 p-5 rounded-2xl">
+                <p className="text-gray-400 text-sm">Dias restantes</p>
+                <p className="text-lg font-semibold">
+                  {getDaysRemaining(subscription.current_period_end)} dias
+                </p>
+              </div>
+
+              <div className="bg-black/30 p-5 rounded-2xl">
+                <p className="text-gray-400 text-sm">Plano</p>
+                <p className="text-lg font-semibold">
+                  {isCanceling ? "Pro (encerrando)" : "Pro ativo"}
+                </p>
+              </div>
+
+            </div>
           )}
+
+          <button
+            onClick={handlePortal}
+            disabled={loadingPortal}
+            className="bg-white text-purple-700 font-semibold px-6 py-3 rounded-xl hover:scale-105 transition disabled:opacity-40"
+          >
+            {loadingPortal
+              ? "Redirecionando..."
+              : "Gerenciar pagamento / Cancelar assinatura"}
+          </button>
         </div>
+      )}
 
-        {isPro && hasPeriodEnd && (
-          <div className="space-y-2 text-gray-300">
-            {!isCanceling ? (
-              <>
-                <p>
-                  📅 Próxima fatura:{" "}
-                  <strong>{formatDate(subscription.current_period_end)}</strong>
-                </p>
-                <p>
-                  ⏳ Dias restantes:{" "}
-                  <strong>
-                    {getDaysRemaining(subscription.current_period_end)} dias
-                  </strong>
-                </p>
-              </>
-            ) : (
-              <>
-                <p>
-                  🛑 Acesso Pro até:{" "}
-                  <strong>{formatDate(subscription.current_period_end)}</strong>
-                </p>
-                <p>
-                  ⏳ Restam{" "}
-                  <strong>
-                    {getDaysRemaining(subscription.current_period_end)} dias
-                  </strong>{" "}
-                  para voltar ao plano Free.
-                </p>
-              </>
-            )}
-          </div>
-        )}
+      {/* ============================= */}
+      {/* PLANOS */}
+      {/* ============================= */}
 
-        {isPro && (
-          <div className="flex gap-4 mt-6 flex-wrap">
-            <button
-              onClick={handlePortal}
-              disabled={loadingPortal}
-              className="bg-white text-purple-700 font-semibold px-6 py-3 rounded-xl hover:scale-105 transition disabled:opacity-40"
-            >
-              {loadingPortal
-                ? "Redirecionando..."
-                : "Gerenciar assinatura"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Planos */}
       <div className="grid md:grid-cols-2 gap-8">
 
         {/* FREE */}
@@ -214,7 +207,9 @@ export default function BillingPage() {
             disabled
             className="w-full bg-gray-700 py-3 rounded-xl opacity-40 cursor-not-allowed"
           >
-            {isPro ? "Downgrade automático após vencimento" : "Plano Atual"}
+            {isPro
+              ? "Downgrade automático após vencimento"
+              : "Plano Atual"}
           </button>
         </div>
 
