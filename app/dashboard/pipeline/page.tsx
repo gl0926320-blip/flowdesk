@@ -165,11 +165,19 @@
     0
   );
 
+  const comissao = concluidos.reduce(
+  (acc, i) => acc + Number(i.valor_comissao || 0),
+  0
+);
+
   return {
     total: ativos.length,
     receita: receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
     custo: custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-    lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    lucro: (receita - custo - comissao).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+}),
   };
 
 }, [items]);

@@ -144,10 +144,11 @@ const statusCount = {
   );
 
   const lucroTotal = aprovadosList.reduce((acc, item) => {
-    const receita = Number(item.valor_orcamento || 0);
-    const custo = Number(item.custo || 0);
-    return acc + (receita - custo);
-  }, 0);
+  const receita = Number(item.valor_orcamento || 0);
+  const custo = Number(item.custo || 0);
+  const comissao = Number(item.valor_comissao || 0);
+  return acc + (receita - custo - comissao);
+}, 0);
 
   const comissaoTotal = aprovadosList.reduce(
     (acc, item) => acc + Number(item.valor_comissao || 0), 0
@@ -178,12 +179,15 @@ const statusCount = {
 
     totalPorMes[mes] = (totalPorMes[mes] || 0) + 1;
 
-    if (["aprovado","proposta_validada","concluido"].includes(item.status)) {
+    if (item.status === "concluido") {
       const receita = Number(item.valor_orcamento || 0);
       const custo = Number(item.custo || 0);
 
       receitaPorMes[mes] = (receitaPorMes[mes] || 0) + receita;
-      lucroPorMes[mes] = (lucroPorMes[mes] || 0) + (receita - custo);
+      const comissao = Number(item.valor_comissao || 0);
+
+lucroPorMes[mes] =
+  (lucroPorMes[mes] || 0) + (receita - custo - comissao);
       aprovadosPorMes[mes] = (aprovadosPorMes[mes] || 0) + 1;
     }
   });
