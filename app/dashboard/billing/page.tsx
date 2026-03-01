@@ -46,7 +46,7 @@ export default function BillingPage() {
   const isPro = subscription?.plan === "pro"
 
   const whatsappLink =
-    "https://wa.me/55994693465?text=Tenho%20interesse%20em%20virar%20Pro%20no%20FlowDesk"
+    "https://wa.me/5562994693465?text=Olá!%20👋%20Tudo%20bem?%20Estou%20conhecendo%20o%20FlowDesk%20e%20gostaria%20de%20receber%20mais%20informações%20sobre%20como%20funciona,%20valores%20e%20como%20pode%20ajudar%20minha%20empresa.%20Poderia%20me%20orientar?%20😊"
 
   return (
     <div className="p-10 text-white max-w-7xl mx-auto space-y-16">
