@@ -12,6 +12,10 @@ import {
   CreditCard,
   Menu,
   MessageCircle,
+  UserPlus,
+  DollarSign,
+  Percent,
+  Users2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -65,14 +69,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  const menu = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
-    { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
-    { name: "Clientes", href: "/dashboard/clientes", icon: Users },
-    { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
-    { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
-  ];
+ const menu = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+
+  // 🔥 Comercial
+  { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
+  { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
+  { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
+  { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
+  { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
+
+  // 👥 Gestão
+  { name: "Clientes", href: "/dashboard/clientes", icon: Users },
+  { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
+
+  // ⚙️ Sistema
+  { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
+  { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
+];
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">

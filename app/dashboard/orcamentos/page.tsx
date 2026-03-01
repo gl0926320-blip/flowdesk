@@ -8,9 +8,15 @@ import autoTable from "jspdf-autotable";
 
 interface Orcamento {
   id: string;
+  numero_os: string | null;
   cliente: string | null;
+  tipo_servico: string | null;
   valor_orcamento: number | null;
+  custo: number | null;
+  responsavel: string | null;
+  origem_lead: string | null;
   status: string | null;
+  data_orcamento: string | null;
   created_at: string;
 }
 
@@ -22,6 +28,8 @@ export default function OrcamentosPage() {
   const [statusFiltro, setStatusFiltro] = useState("all");
   const [valorMin, setValorMin] = useState("");
   const [valorMax, setValorMax] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
   const [periodo, setPeriodo] = useState("all");
   const [loading, setLoading] = useState(true);
 
@@ -37,85 +45,109 @@ export default function OrcamentosPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error(error);
-    } else {
-      setOrcamentos(data || []);
-    }
-
+    if (!error) setOrcamentos(data || []);
     setLoading(false);
   }
 
-  // 🔥 FILTROS COMBINÁVEIS
+  function limparFiltros() {
+    setBusca("");
+    setStatusFiltro("all");
+    setValorMin("");
+    setValorMax("");
+    setDataInicio("");
+    setDataFim("");
+    setPeriodo("all");
+  }
+
   const filtrado = orcamentos.filter((o) => {
-    // Cliente
-    if (!(o.cliente || "").toLowerCase().includes(busca.toLowerCase())) {
+    if (!(o.cliente || "").toLowerCase().includes(busca.toLowerCase()))
       return false;
-    }
 
-    // Status
-    if (statusFiltro !== "all" && o.status !== statusFiltro) {
+    if (statusFiltro !== "all" && o.status !== statusFiltro)
       return false;
-    }
 
-    // Valor mínimo
-    if (valorMin && (o.valor_orcamento || 0) < Number(valorMin)) {
+    if (valorMin && (o.valor_orcamento || 0) < Number(valorMin))
       return false;
-    }
 
-    // Valor máximo
-    if (valorMax && (o.valor_orcamento || 0) > Number(valorMax)) {
+    if (valorMax && (o.valor_orcamento || 0) > Number(valorMax))
       return false;
-    }
 
-    // Período - Este mês
+    const dataRef = new Date(o.data_orcamento || o.created_at);
+
     if (periodo === "mes") {
       const now = new Date();
-      const data = new Date(o.created_at);
-
       if (
-        data.getMonth() !== now.getMonth() ||
-        data.getFullYear() !== now.getFullYear()
-      ) {
+        dataRef.getMonth() !== now.getMonth() ||
+        dataRef.getFullYear() !== now.getFullYear()
+      )
         return false;
-      }
     }
+
+    if (dataInicio && dataRef < new Date(dataInicio))
+      return false;
+
+    if (dataFim && dataRef > new Date(dataFim + "T23:59:59"))
+      return false;
 
     return true;
   });
 
-  // 🔥 EXPORTAR CSV
   function exportCSV() {
-    const headers = ["Cliente", "Valor", "Status", "Data"];
+    const headers = [
+      "OS",
+      "Cliente",
+      "Serviço",
+      "Valor",
+      "Custo",
+      "Responsável",
+      "Origem",
+      "Status",
+      "Data",
+    ];
 
     const rows = filtrado.map((o) => [
+      o.numero_os,
       o.cliente,
+      o.tipo_servico,
       o.valor_orcamento,
+      o.custo,
+      o.responsavel,
+      o.origem_lead,
       o.status,
-      new Date(o.created_at).toLocaleDateString(),
+      new Date(
+        o.data_orcamento || o.created_at
+      ).toLocaleDateString(),
     ]);
 
     const csvContent = [headers, ...rows]
       .map((e) => e.join(","))
       .join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "orcamentos.csv";
-    a.click();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "orcamentos.csv";
+    link.click();
   }
 
-  // 🔥 EXPORTAR EXCEL
   function exportExcel() {
     const ws = XLSX.utils.json_to_sheet(
       filtrado.map((o) => ({
+        OS: o.numero_os,
         Cliente: o.cliente,
+        Serviço: o.tipo_servico,
         Valor: o.valor_orcamento,
+        Custo: o.custo,
+        Responsável: o.responsavel,
+        Origem: o.origem_lead,
         Status: o.status,
-        Data: new Date(o.created_at).toLocaleDateString(),
+        Data: new Date(
+          o.data_orcamento || o.created_at
+        ).toLocaleDateString(),
       }))
     );
 
@@ -124,20 +156,24 @@ export default function OrcamentosPage() {
     XLSX.writeFile(wb, "orcamentos.xlsx");
   }
 
-  // 🔥 EXPORTAR PDF
   function exportPDF() {
     const doc = new jsPDF();
 
-    const tableData = filtrado.map((o) => [
+    const rows = filtrado.map((o) => [
+      o.numero_os,
       o.cliente,
+      o.tipo_servico,
       `R$ ${(o.valor_orcamento || 0).toFixed(2)}`,
+      `R$ ${(o.custo || 0).toFixed(2)}`,
       o.status,
-      new Date(o.created_at).toLocaleDateString(),
+      new Date(
+        o.data_orcamento || o.created_at
+      ).toLocaleDateString(),
     ]);
 
     autoTable(doc, {
-      head: [["Cliente", "Valor", "Status", "Data"]],
-      body: tableData,
+      head: [["OS", "Cliente", "Serviço", "Valor", "Custo", "Status", "Data"]],
+      body: rows,
     });
 
     doc.save("orcamentos.pdf");
@@ -147,27 +183,27 @@ export default function OrcamentosPage() {
     <div className="p-6 text-white">
       <h1 className="text-2xl mb-6 text-center">Orçamentos</h1>
 
-      {/* BUSCA */}
       <input
         type="text"
-        placeholder="Buscar por cliente..."
-        className="mb-6 p-3 w-full bg-gray-800 rounded outline-none focus:ring-2 focus:ring-purple-600 text-center"
+        placeholder="Buscar cliente..."
         value={busca}
         onChange={(e) => setBusca(e.target.value)}
+        className="mb-6 p-3 w-full bg-gray-800 rounded text-center"
       />
 
       {/* FILTROS */}
-      <div className="grid md:grid-cols-4 gap-4 mb-6">
+      <div className="grid md:grid-cols-6 gap-4 mb-6">
         <select
           value={statusFiltro}
           onChange={(e) => setStatusFiltro(e.target.value)}
           className="p-3 bg-gray-800 rounded"
         >
           <option value="all">Todos Status</option>
-          <option value="aprovado">Aprovado</option>
-          <option value="concluido">Concluído</option>
+          <option value="lead">Lead</option>
           <option value="proposta_enviada">Proposta Enviada</option>
-          <option value="recusado">Recusado</option>
+          <option value="proposta_validada">Proposta Validada</option>
+          <option value="andamento">Andamento</option>
+          <option value="concluido">Concluído</option>
         </select>
 
         <input
@@ -186,6 +222,20 @@ export default function OrcamentosPage() {
           className="p-3 bg-gray-800 rounded"
         />
 
+        <input
+          type="date"
+          value={dataInicio}
+          onChange={(e) => setDataInicio(e.target.value)}
+          className="p-3 bg-gray-800 rounded"
+        />
+
+        <input
+          type="date"
+          value={dataFim}
+          onChange={(e) => setDataFim(e.target.value)}
+          className="p-3 bg-gray-800 rounded"
+        />
+
         <select
           value={periodo}
           onChange={(e) => setPeriodo(e.target.value)}
@@ -196,76 +246,87 @@ export default function OrcamentosPage() {
         </select>
       </div>
 
-      {/* BOTÕES EXPORTAÇÃO */}
-      <div className="flex gap-4 mb-4 justify-end">
+      {/* BOTÕES */}
+      <div className="flex flex-wrap justify-between gap-4 mb-4">
         <button
-          onClick={exportCSV}
-          className="bg-blue-600 px-4 py-2 rounded hover:opacity-80"
+          onClick={limparFiltros}
+          className="bg-gray-700 px-4 py-2 rounded hover:bg-gray-600 transition"
         >
-          CSV
+          Limpar Filtros
         </button>
 
-        <button
-          onClick={exportExcel}
-          className="bg-green-600 px-4 py-2 rounded hover:opacity-80"
-        >
-          Excel
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={exportCSV}
+            className="bg-blue-600 px-4 py-2 rounded"
+          >
+            CSV
+          </button>
 
-        <button
-          onClick={exportPDF}
-          className="bg-red-600 px-4 py-2 rounded hover:opacity-80"
-        >
-          PDF
-        </button>
+          <button
+            onClick={exportExcel}
+            className="bg-green-600 px-4 py-2 rounded"
+          >
+            Excel
+          </button>
+
+          <button
+            onClick={exportPDF}
+            className="bg-red-600 px-4 py-2 rounded"
+          >
+            PDF
+          </button>
+        </div>
       </div>
 
       {/* TABELA */}
-      <div className="bg-gray-900 rounded border border-gray-800 overflow-hidden">
-        <table className="w-full table-fixed text-center border-collapse">
-          <thead className="bg-gray-800 text-gray-300">
+      <div className="bg-gray-900 rounded border border-gray-800 overflow-auto">
+        <table className="w-full text-sm text-center">
+          <thead className="bg-gray-800">
             <tr>
-              <th className="p-4 w-1/4">Cliente</th>
-              <th className="p-4 w-1/4">Valor</th>
-              <th className="p-4 w-1/4">Status</th>
-              <th className="p-4 w-1/4">Data</th>
+              <th className="p-3">OS</th>
+              <th className="p-3">Cliente</th>
+              <th className="p-3">Serviço</th>
+              <th className="p-3">Valor</th>
+              <th className="p-3">Custo</th>
+              <th className="p-3">Responsável</th>
+              <th className="p-3">Origem</th>
+              <th className="p-3">Status</th>
+              <th className="p-3">Data</th>
             </tr>
           </thead>
 
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="p-6 text-gray-400">
+                <td colSpan={9} className="p-6">
                   Carregando...
                 </td>
               </tr>
             ) : filtrado.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-6 text-gray-400">
+                <td colSpan={9} className="p-6 text-gray-400">
                   Nenhum orçamento encontrado
                 </td>
               </tr>
             ) : (
-              filtrado.map((orcamento) => (
-                <tr
-                  key={orcamento.id}
-                  className="border-t border-gray-800 hover:bg-gray-800/40 transition"
-                >
-                  <td className="p-4 truncate">
-                    {orcamento.cliente || "Sem nome"}
+              filtrado.map((o) => (
+                <tr key={o.id} className="border-t border-gray-800">
+                  <td className="p-3">{o.numero_os}</td>
+                  <td className="p-3">{o.cliente}</td>
+                  <td className="p-3">{o.tipo_servico}</td>
+                  <td className="p-3 text-blue-400 font-semibold">
+                    R$ {(o.valor_orcamento || 0).toFixed(2)}
                   </td>
-
-                  <td className="p-4 font-semibold text-blue-400">
-                    R$ {(orcamento.valor_orcamento || 0).toFixed(2)}
+                  <td className="p-3 text-red-400">
+                    R$ {(o.custo || 0).toFixed(2)}
                   </td>
-
-                  <td className="p-4 truncate">
-                    {orcamento.status || "Sem status"}
-                  </td>
-
-                  <td className="p-4">
+                  <td className="p-3">{o.responsavel}</td>
+                  <td className="p-3">{o.origem_lead}</td>
+                  <td className="p-3">{o.status}</td>
+                  <td className="p-3">
                     {new Date(
-                      orcamento.created_at
+                      o.data_orcamento || o.created_at
                     ).toLocaleDateString()}
                   </td>
                 </tr>
