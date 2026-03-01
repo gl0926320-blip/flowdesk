@@ -37,6 +37,7 @@ export default function LeadsPage() {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [openModal, setOpenModal] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingItens, setEditingItens] = useState<any[]>([]);
@@ -148,56 +149,79 @@ export default function LeadsPage() {
   );
 
   async function salvarNovoLead(e: any) {
-    e.preventDefault();
+  e.preventDefault();
 
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return;
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return;
 
-    const { error } = await supabase.from("servicos").insert([
-      {
-        user_id: userData.user.id,
-        titulo: form.cliente,
-        descricao: form.descricao,
-        status: "lead",
-        cliente: form.cliente,
-        origem_lead: form.origem_lead,
-        telefone: form.telefone,
-        responsavel: form.responsavel,
-        valor_orcamento: totalOrcamento,
-        itens,
-        tipo_pessoa: form.tipo_pessoa,
-        cpf: form.cpf,
-        cnpj: form.cnpj,
-        forma_pagamento: form.forma_pagamento,
-        entrega: form.entrega,
-        tipo_servico: form.tipo_servico,
-        observacoes: form.observacoes,
-      },
-    ]);
+  const userId = userData.user.id;
 
-    if (error) {
-      alert("Erro: " + error.message);
+  // 🔎 1️⃣ Verifica plano
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", userId)
+    .single();
+
+  if (profileError) {
+    alert("Erro ao verificar plano");
+    return;
+  }
+
+  const plan = profile?.plan ?? "free";
+  const LIMITE_FREE = 5;
+
+  // 🔒 2️⃣ Se for FREE, verifica limite
+  if (plan === "free") {
+    const { data: servicos, error: erroCount } = await supabase
+      .from("servicos")
+      .select("id")
+      .eq("user_id", userId);
+
+    if (erroCount) {
+      alert("Erro ao verificar limite");
       return;
     }
 
-    setOpenModal(false);
-    setForm({
-      cliente: "",
-      origem_lead: "",
-      telefone: "",
-      responsavel: "",
-      descricao: "",
-      tipo_pessoa: "pf",
-      cpf: "",
-      cnpj: "",
-      forma_pagamento: "",
-      entrega: false,
-      tipo_servico: "",
-      observacoes: "",
-    });
-    setItens([{ nome: "", quantidade: 1, valor: 0 }]);
-    load();
+    if (servicos && servicos.length >= LIMITE_FREE) {
+      setOpenModal(false);
+      setShowUpgrade(true);
+      // ou melhor ainda: criar o mesmo modal showUpgrade da pipeline
+      return;
+    }
   }
+
+  // 3️⃣ Se passou na validação, salva
+  const { error } = await supabase.from("servicos").insert([
+    {
+      user_id: userId,
+      titulo: form.cliente,
+      descricao: form.descricao,
+      status: "lead",
+      cliente: form.cliente,
+      origem_lead: form.origem_lead,
+      telefone: form.telefone,
+      responsavel: form.responsavel,
+      valor_orcamento: totalOrcamento,
+      itens,
+      tipo_pessoa: form.tipo_pessoa,
+      cpf: form.cpf,
+      cnpj: form.cnpj,
+      forma_pagamento: form.forma_pagamento,
+      entrega: form.entrega,
+      tipo_servico: form.tipo_servico,
+      observacoes: form.observacoes,
+    },
+  ]);
+
+  if (error) {
+    alert("Erro ao salvar");
+    return;
+  }
+
+  setOpenModal(false);
+  load();
+}
 
   const filtered = useMemo(() => {
   const now = new Date();
@@ -766,6 +790,7 @@ function adicionarItemEditado() {
   ) : (
     <p className="font-semibold">{selectedLead.cliente}</p>
   )}
+
 </div>
         <div className="bg-white/5 p-4 rounded-xl">
   <p className="text-gray-400 text-xs">Telefone</p>
@@ -1035,6 +1060,41 @@ function adicionarItemEditado() {
 
   </div>
 )}
+      </div>
+    </div>
+  </div>
+)}
+
+  {showUpgrade && (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50">
+    <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-10 rounded-3xl w-[420px] space-y-6 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white text-center">
+      
+      <h3 className="text-xl font-semibold text-blue-200">
+        Limite do plano Free atingido 🚀
+      </h3>
+
+      <p className="text-blue-100 text-sm">
+        Seu plano Free permite até 5 orçamentos.
+        Faça upgrade para desbloquear orçamentos ilimitados.
+      </p>
+
+      <div className="flex justify-center gap-4 pt-4">
+        <button
+          onClick={() => setShowUpgrade(false)}
+          className="px-5 py-2 rounded-xl border border-white/30 hover:bg-white/10 transition"
+        >
+          Fechar
+        </button>
+
+        <button
+          onClick={() => {
+            setShowUpgrade(false);
+            window.location.href = "/dashboard/billing";
+          }}
+          className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-xl transition"
+        >
+          Fazer Upgrade
+        </button>
       </div>
     </div>
   </div>
