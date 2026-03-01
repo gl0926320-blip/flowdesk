@@ -269,28 +269,65 @@ export default function LeadsPage() {
   ).length;
 }
   const metrics = useMemo(() => {
-    const total = filtered.length;
-    const receita = filtered.reduce(
+  const total = filtered.length;
+
+  // 🔒 Status que contam como receita real
+  const STATUS_RECEITA = ["concluido"];
+
+  // 💰 Receita REAL (somente vendas confirmadas)
+  const receitaReal = filtered
+    .filter((i) => STATUS_RECEITA.includes(i.status))
+    .reduce(
       (acc, i) => acc + Number(i.valor_orcamento || 0),
       0
     );
-    const concluidos = filtered.filter(
-      (i) => i.status === "concluido"
-    ).length;
 
-    return {
-      total,
-      receita: receita.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      concluidos,
-      conversao:
-        total > 0
-          ? `${Math.round((concluidos / total) * 100)}%`
-          : "0%",
-    };
-  }, [filtered]);
+  // 🔮 Receita POTENCIAL (todos os leads do período)
+  const receitaPotencial = filtered.reduce(
+    (acc, i) => acc + Number(i.valor_orcamento || 0),
+    0
+  );
+
+  // 📈 Quantidade de vendas reais
+  const concluidos = filtered.filter((i) =>
+    STATUS_RECEITA.includes(i.status)
+  ).length;
+  // 💎 Receita Total Geral (independente do período)
+const receitaTotalGeral = items
+  .filter((i) =>
+    ["proposta_validada", "concluido"].includes(i.status)
+  )
+  .reduce(
+    (acc, i) => acc + Number(i.valor_orcamento || 0),
+    0
+  );
+  return {
+  total,
+
+  receitaReal: receitaReal.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+
+  receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+
+  // 💎 ADICIONE ISSO AQUI
+  receitaTotalGeral: receitaTotalGeral.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+
+  concluidos,
+
+  conversao:
+    total > 0
+      ? `${Math.round((concluidos / total) * 100)}%`
+      : "0%",
+};
+}, [filtered, items]);
   const funnelData = useMemo(() => {
   const counts: Record<string, number> = {};
 
@@ -316,7 +353,7 @@ export default function LeadsPage() {
       percentage,
     };
   });
-}, [filtered]);
+}, [filtered, items]);
       function EditableField({
     label,
     value,
@@ -383,10 +420,16 @@ function adicionarItemEditado() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
         
         <Metric icon={<Layers />} title="Total Leads" value={metrics.total} />
-        <Metric icon={<DollarSign />} title="Receita Potencial" value={metrics.receita} />
+        <Metric icon={<DollarSign />} title="Receita Realizada" value={metrics.receitaReal} />
+        <Metric icon={<DollarSign />} title="Receita Potencial" value={metrics.receitaPotencial} />
+        <Metric 
+  icon={<DollarSign />} 
+  title="Receita Confirmada" 
+  value={metrics.receitaTotalGeral} 
+/>
         <Metric icon={<TrendingUp />} title="Concluídos" value={metrics.concluidos} />
         <Metric icon={<TrendingUp />} title="Taxa Conversão" value={metrics.conversao} />
       </div>

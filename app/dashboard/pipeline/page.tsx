@@ -102,16 +102,17 @@
     }
 
     const novo = {
-      user_id: userId,
-      numero_os: `OS-${Date.now()}`,
-      cliente: form.cliente,
-      titulo: form.tipo_servico,
-      descricao: form.descricao,
-      tipo_servico: form.tipo_servico,
-      valor_orcamento: Number(form.valor_orcamento),
-      custo: Number(form.custo),
-      status: form.status,
-    };
+  user_id: userId,
+  numero_os: `OS-${Date.now()}`,
+  cliente: form.cliente,
+  titulo: form.tipo_servico,
+  descricao: form.descricao,
+  tipo_servico: form.tipo_servico,
+  valor_orcamento: Number(form.valor_orcamento),
+  custo: Number(form.custo),
+  status: form.status,
+  ativo: true, // 🔥 IMPORTANTE
+};
 
     const { data, error } = await supabase
       .from("servicos")
@@ -147,20 +148,31 @@
       atualizarItem(active.id, { status: over.id });
     }
 
-    const metrics = useMemo(() => {
-      const receita = items.reduce(
-        (acc, i) => acc + Number(i.valor_orcamento || 0),
-        0
-      );
-      const custo = items.reduce((acc, i) => acc + Number(i.custo || 0), 0);
+   const metrics = useMemo(() => {
 
-      return {
-        total: items.length,
-        receita: receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-custo: custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      };
-    }, [items]);
+  // ✅ SOMENTE ativos verdadeiros
+  const ativos = items.filter(i => i.ativo === true);
+
+  const concluidos = ativos.filter(i => i.status === "concluido");
+
+  const receita = concluidos.reduce(
+    (acc, i) => acc + Number(i.valor_orcamento || 0),
+    0
+  );
+
+  const custo = concluidos.reduce(
+    (acc, i) => acc + Number(i.custo || 0),
+    0
+  );
+
+  return {
+    total: ativos.length,
+    receita: receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    custo: custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+  };
+
+}, [items]);
 
     return (
       <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
@@ -198,7 +210,7 @@ lucro: (receita - custo).toLocaleString("pt-BR", { style: "currency", currency: 
               {columns.map((col) => (
                 <Column key={col} id={col} title={col}>
                   {items
-                    .filter((i) => i.status === col)
+  .filter((i) => i.status === col && i.ativo === true)
                     .map((item) => (
                       <Card
                         key={item.id}
@@ -370,7 +382,10 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
   /* CARD */
   function Card({ item, expanded, toggleExpand, atualizarItem, deletar }: any) {
     const { attributes, listeners, setNodeRef, transform, isDragging } =
-      useDraggable({ id: item.id });
+      useDraggable({ 
+  id: item.id,
+  disabled: item.ativo === false
+});
 
     const style = {
       transform: CSS.Translate.toString(transform),
@@ -389,17 +404,23 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
       <div
         ref={setNodeRef}
         style={style}
-        className={`
-          p-4 md:p-5 rounded-2xl
-          bg-gradient-to-br from-white/20 to-white/5
-          backdrop-blur-xl
-          border border-white/10
-          text-white
-          shadow-[0_20px_60px_rgba(0,0,0,0.7)]
-          transition-all duration-300
-          hover:scale-[1.05] hover:-translate-y-2
-          ${isDragging ? "scale-[1.08] rotate-1 shadow-[0_40px_100px_rgba(0,0,0,0.9)]" : ""}
-        `}
+       className={`
+  p-4 md:p-5 rounded-2xl
+  backdrop-blur-xl
+  border
+  text-white
+  shadow-[0_20px_60px_rgba(0,0,0,0.7)]
+  transition-all duration-300
+  hover:scale-[1.05] hover:-translate-y-2
+
+  ${
+    item.ativo === false
+      ? "bg-gradient-to-br from-red-900/60 to-red-700/30 border-red-500/40 opacity-70"
+      : "bg-gradient-to-br from-white/20 to-white/5 border-white/10"
+  }
+
+  ${isDragging ? "scale-[1.08] rotate-1 shadow-[0_40px_100px_rgba(0,0,0,0.9)]" : ""}
+`}
       >
         <div {...listeners} {...attributes} className="cursor-grab font-medium flex justify-between">
           <span>{item.cliente}</span>

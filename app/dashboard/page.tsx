@@ -13,63 +13,53 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
 } from "recharts";
 
 export default function Dashboard() {
   const supabase = createClient();
   const router = useRouter();
-  const [loadingCheckout, setLoadingCheckout] = useState(false);
+
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  const [totalOrcamentos, setTotalOrcamentos] = useState(0);
-  const [receitaTotal, setReceitaTotal] = useState(0);
-  const [receitaMes, setReceitaMes] = useState(0);
-  const [aprovados, setAprovados] = useState(0);
-  const [pendentes, setPendentes] = useState(0);
-  const [recusados, setRecusados] = useState(0);
   const [filtroPeriodo, setFiltroPeriodo] = useState("mes");
-  const [filters, setFilters] = useState({
-  status: "all",
-  tipo_servico: "all",
-  cliente: "all",
-  minValue: "",
-  maxValue: "",
-});
-  const [orcamentosRecentes, setOrcamentosRecentes] = useState<any[]>([]);
-  const [todosServicos, setTodosServicos] = useState<any[]>([]);
+  const [dataInicioCustom, setDataInicioCustom] = useState("");
+  const [dataFimCustom, setDataFimCustom] = useState("");
 
-  const [graficoMensal, setGraficoMensal] = useState<any[]>([]);
-  const [graficoStatus, setGraficoStatus] = useState<any[]>([]);
+  const [todosServicos, setTodosServicos] = useState<any[]>([]);
+  const [orcamentosRecentes, setOrcamentosRecentes] = useState<any[]>([]);
 
   function getDataInicio(periodo: string) {
-  const agora = new Date();
-
-  switch (periodo) {
-    case "hoje":
-      return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-
-    case "semana":
-      const seteDiasAtras = new Date();
-      seteDiasAtras.setDate(agora.getDate() - 7);
-      return seteDiasAtras;
-
-    case "mes":
-      return new Date(agora.getFullYear(), agora.getMonth(), 1);
-
-    case "ano":
-      return new Date(agora.getFullYear(), 0, 1);
-
-    default:
-      return null;
+    const agora = new Date();
+    switch (periodo) {
+      case "hoje":
+        return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+      case "7dias":
+        const sete = new Date();
+        sete.setDate(agora.getDate() - 7);
+        return sete;
+      case "30dias":
+        const trinta = new Date();
+        trinta.setDate(agora.getDate() - 30);
+        return trinta;
+      case "mes":
+        return new Date(agora.getFullYear(), agora.getMonth(), 1);
+      case "ano":
+        return new Date(agora.getFullYear(), 0, 1);
+      default:
+        return null;
+    }
   }
-}
 
   useEffect(() => {
     async function checkUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
         router.push("/login");
@@ -80,17 +70,23 @@ export default function Dashboard() {
       setLoadingUser(false);
 
       let query = supabase
-  .from("servicos")
-  .select("*")
-  .eq("user_id", user.id);
+        .from("servicos")
+        .select("*")
+        .eq("user_id", user.id)
+       
 
-const dataInicio = getDataInicio(filtroPeriodo);
+      if (filtroPeriodo === "custom" && dataInicioCustom && dataFimCustom) {
+        query = query
+          .gte("created_at", new Date(dataInicioCustom).toISOString())
+          .lte("created_at", new Date(dataFimCustom).toISOString());
+      } else {
+        const dataInicio = getDataInicio(filtroPeriodo);
+        if (dataInicio) {
+          query = query.gte("created_at", dataInicio.toISOString());
+        }
+      }
 
-if (dataInicio) {
-  query = query.gte("data_abertura", dataInicio.toISOString());
-}
-
-const { data, error } = await query.order("data_abertura", { ascending: false });
+      const { data, error } = await query.order("created_at", { ascending: false });
 
       if (error) {
         console.error(error);
@@ -100,473 +96,378 @@ const { data, error } = await query.order("data_abertura", { ascending: false })
       if (data) {
         setTodosServicos(data);
         setOrcamentosRecentes(data.slice(0, 5));
-
-        const aprovadosList = data.filter(
-          (o) =>
-            o.status === "aprovado" ||
-            o.status === "proposta_validada" ||
-            o.status === "concluido"
-        );
-
-        const pendentesList = data.filter(
-          (o) =>
-            o.status === "lead" ||
-            o.status === "proposta_enviada" ||
-            o.status === "aguardando_cliente" ||
-            o.status === "andamento"
-        );
-
-        const recusadosList = data.filter(
-          (o) => o.status === "recusado" || o.status === "cancelado"
-        );
-
-        setAprovados(aprovadosList.length);
-        setPendentes(pendentesList.length);
-        setRecusados(recusadosList.length);
-
-        const total = aprovadosList.reduce(
-          (acc, item) => acc + Number(item.valor_orcamento || 0),
-          0
-        );
-
-        setReceitaTotal(total);
-
-        const mesAtual = new Date().getMonth();
-        const anoAtual = new Date().getFullYear();
-
-        const receitaMesAtual = aprovadosList
-          .filter((o) => {
-            const dataOrc = new Date(o.created_at);
-            return (
-              
-              dataOrc.getMonth() === mesAtual &&
-              dataOrc.getFullYear() === anoAtual
-            );
-          })
-          .reduce(
-            (acc, item) => acc + Number(item.valor_orcamento || 0),
-            0
-          );
-
-        setReceitaMes(receitaMesAtual);
-
-        const meses = [
-          "Jan","Fev","Mar","Abr","Mai","Jun",
-          "Jul","Ago","Set","Out","Nov","Dez"
-        ];
-
-        const receitaPorMes: any = {};
-
-        aprovadosList.forEach((o) => {
-          const dataOrc = new Date(o.created_at);
-          const mes = dataOrc.getMonth();
-          receitaPorMes[mes] =
-            (receitaPorMes[mes] || 0) + Number(o.valor_orcamento || 0);
-        });
-
-        const graficoLinha = meses.map((mes, index) => ({
-          mes,
-          receita: receitaPorMes[index] || 0,
-        }));
-
-        setGraficoMensal(graficoLinha);
-
-        setGraficoStatus([
-          { name: "Aprovados", valor: aprovadosList.length },
-          { name: "Pendentes", valor: pendentesList.length },
-          { name: "Recusados", valor: recusadosList.length },
-        ]);
       }
     }
 
     checkUser();
-  }, [router, filtroPeriodo]);
+  }, [router, filtroPeriodo, dataInicioCustom, dataFimCustom]);
 
-async function handleUpgrade() {
-  if (!user) return;
-
-  try {
-    setLoadingCheckout(true);
-
-    const res = await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: user.id,
-        email: user.email,
-      }),
+  function formatCurrency(value: number) {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     });
-
-    const data = await res.json();
-
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Erro ao criar sessão Stripe");
-      setLoadingCheckout(false);
-    }
-  } catch (err) {
-    console.error(err);
-    alert("Erro inesperado");
-    setLoadingCheckout(false);
   }
-}
 
-    function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
   if (loadingUser) {
-    return (
-    
-      <div
-  style={{
-    padding: "20px 16px",
-    maxWidth: 1400,
-    margin: "0 auto",
-  }}
->
-        <h2>Carregando...</h2>
-      </div>
-    );
+    return <div style={{ padding: 40, color: "white" }}>Carregando...</div>;
   }
 
-  
+  const servicosAtivos = todosServicos.filter(s => s.ativo === true);
+const servicosInativos = todosServicos.filter(s => s.ativo === false);
+
+const servicosFiltrados = servicosAtivos; // DASH considera só ativos
+const statusCount = {
+  lead: servicosFiltrados.filter(s => s.status === "lead").length,
+  proposta_enviada: servicosFiltrados.filter(s => s.status === "proposta_enviada").length,
+  aguardando_cliente: servicosFiltrados.filter(s => s.status === "aguardando_cliente").length,
+  proposta_validada: servicosFiltrados.filter(s => s.status === "proposta_validada").length,
+  andamento: servicosFiltrados.filter(s => s.status === "andamento").length,
+  concluido: servicosFiltrados.filter(s => s.status === "concluido").length,
+};
+  const totalOrcamentos = servicosFiltrados.length;
+
+  const aprovadosList = servicosFiltrados.filter(o =>
+  ["concluido"].includes(o.status)
+  );
+
+  const pendentesList = servicosFiltrados.filter(o =>
+    ["lead","proposta_enviada","aguardando_cliente","andamento"].includes(o.status)
+  );
+
+  const recusadosList = servicosFiltrados.filter(o =>
+    ["recusado","cancelado"].includes(o.status)
+  );
+
+  const receitaTotal = aprovadosList.reduce(
+    (acc, item) => acc + Number(item.valor_orcamento || 0), 0
+  );
+
+  const lucroTotal = aprovadosList.reduce((acc, item) => {
+    const receita = Number(item.valor_orcamento || 0);
+    const custo = Number(item.custo || 0);
+    return acc + (receita - custo);
+  }, 0);
+
+  const comissaoTotal = aprovadosList.reduce(
+    (acc, item) => acc + Number(item.valor_comissao || 0), 0
+  );
+
+  const receitaLiquida = receitaTotal - comissaoTotal;
 
   const ticketMedio =
-    aprovados > 0 ? (receitaTotal / aprovados).toFixed(2) : "0.00";
-  // 🔥 FILTROS COMBINÁVEIS
-const servicosFiltrados = todosServicos.filter((item) => {
+    aprovadosList.length > 0 ? receitaTotal / aprovadosList.length : 0;
 
-  if (filters.status !== "all" && item.status !== filters.status) {
-    return false;
-  }
+  const taxaConversao =
+    totalOrcamentos > 0
+      ? (aprovadosList.length / totalOrcamentos) * 100
+      : 0;
+  const graficoTaxaAprovacao = [
+  { name: "Aprovação", valor: Number(taxaConversao.toFixed(1)) }
+];
+  const meses = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
-  if (
-    filters.tipo_servico !== "all" &&
-    item.tipo_servico !== filters.tipo_servico
-  ) {
-    return false;
-  }
+  const receitaPorMes:any = {};
+  const lucroPorMes:any = {};
+  const conversaoPorMes:any = {};
+  const totalPorMes:any = {};
+  const aprovadosPorMes:any = {};
 
-  if (filters.cliente !== "all" && item.cliente !== filters.cliente) {
-    return false;
-  }
+  servicosFiltrados.forEach((item) => {
+    const mes = new Date(item.created_at).getMonth();
 
-  if (
-    filters.minValue &&
-    Number(item.valor_orcamento) < Number(filters.minValue)
-  ) {
-    return false;
-  }
+    totalPorMes[mes] = (totalPorMes[mes] || 0) + 1;
 
-  if (
-    filters.maxValue &&
-    Number(item.valor_orcamento) > Number(filters.maxValue)
-  ) {
-    return false;
-  }
+    if (["aprovado","proposta_validada","concluido"].includes(item.status)) {
+      const receita = Number(item.valor_orcamento || 0);
+      const custo = Number(item.custo || 0);
 
-  return true;
-}); 
+      receitaPorMes[mes] = (receitaPorMes[mes] || 0) + receita;
+      lucroPorMes[mes] = (lucroPorMes[mes] || 0) + (receita - custo);
+      aprovadosPorMes[mes] = (aprovadosPorMes[mes] || 0) + 1;
+    }
+  });
 
-  
+  const graficoReceitaLucro = meses.map((mes,index)=>({
+    mes,
+    receita: receitaPorMes[index] || 0,
+    lucro: lucroPorMes[index] || 0
+  }));
 
-  const totalOrcamentosFiltrados = servicosFiltrados.length;
+  const graficoConversao = meses.map((mes,index)=>({
+    mes,
+    conversao:
+      totalPorMes[index] > 0
+        ? ((aprovadosPorMes[index] || 0) / totalPorMes[index]) * 100
+        : 0
+  }));
 
-const aprovadosList = servicosFiltrados.filter(
-  (o) =>
-    o.status === "aprovado" ||
-    o.status === "proposta_validada" ||
-    o.status === "concluido"
-);
-const taxaAprovacao =
-  totalOrcamentosFiltrados > 0
-    ? ((aprovadosList.length / totalOrcamentosFiltrados) * 100).toFixed(1)
-    : "0";
-const pendentesList = servicosFiltrados.filter(
-  (o) =>
-    o.status === "lead" ||
-    o.status === "proposta_enviada" ||
-    o.status === "aguardando_cliente" ||
-    o.status === "andamento"
-);
+  const graficoStatus = [
+    { name:"Aprovados", valor:aprovadosList.length },
+    { name:"Pendentes", valor:pendentesList.length },
+    { name:"Recusados", valor:recusadosList.length }
+  ];
+const graficoCarteira = [
+  { name: "Ativos", valor: servicosAtivos.length },
+  { name: "Inativos", valor: servicosInativos.length }
+];
+  const cores = ["#7c3aed","#22c55e","#ef4444"];
 
-const recusadosList = servicosFiltrados.filter(
-  (o) => o.status === "recusado" || o.status === "cancelado"
-);
-
-const receitaTotalFiltrada = aprovadosList.reduce(
-  (acc, item) => acc + Number(item.valor_orcamento || 0),
-  0
-);
-
-const mesAtual = new Date().getMonth();
-const anoAtual = new Date().getFullYear();
-
-const receitaMesFiltrada = aprovadosList
-  .filter((o) => {
-    const dataOrc = new Date(o.created_at);
-    return (
-      dataOrc.getMonth() === mesAtual &&
-      dataOrc.getFullYear() === anoAtual
-    );
-  })
-  .reduce(
-    (acc, item) => acc + Number(item.valor_orcamento || 0),
-    0
-  );
   return (
-    
-    <div style={{ padding: 40 }}>
+    <div style={{
+      minHeight:"100vh",
+      background:"#0f172a",
+      padding:"40px",
+      color:"white",
+      fontFamily:"Inter, sans-serif"
+    }}>
 
-      <div
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    gap: 20,
-    marginBottom: 40,
-  }}
->
-  <div
-    style={{
-      display: "flex",
-      flexWrap: "wrap",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 12,
-    }}
-  >
-    <h1 style={{ fontSize: 26, margin: 0 }}>Dashboard</h1>
+      <h1 style={{ fontSize:32, fontWeight:700, marginBottom:30 }}>
+        📊 Dashboard Financeiro
+      </h1>
 
-    <select
-      value={filtroPeriodo}
-      onChange={(e) => setFiltroPeriodo(e.target.value)}
-      style={{
-        padding: "8px 12px",
-        borderRadius: 8,
-        background: "#111827",
-        color: "white",
-        border: "1px solid rgba(255,255,255,0.1)",
-      }}
-    >
-      <option value="hoje">Hoje</option>
-      <option value="semana">Últimos 7 dias</option>
-      <option value="mes">Este mês</option>
-      <option value="ano">Este ano</option>
-      <option value="todos">Todos</option>
-    </select>
-  </div>
+      {/* FILTROS (MANTIDOS) */}
+      <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:30 }}>
+        {["hoje","7dias","30dias","mes","ano","custom"].map((item)=>(
+          <button
+            key={item}
+            onClick={()=>setFiltroPeriodo(item)}
+            style={{
+              padding:"8px 16px",
+              borderRadius:10,
+              border:"1px solid rgba(255,255,255,0.1)",
+              cursor:"pointer",
+              background:filtroPeriodo===item?"#7c3aed":"#1e293b",
+              color:"white",
+              fontWeight:600
+            }}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
 
-  <div style={{ fontSize: 14 }}>
-    Logado como: <strong>{user?.email}</strong>
+      {filtroPeriodo==="custom" && (
+        <div style={{ display:"flex", gap:10, marginBottom:30 }}>
+          <input type="date" value={dataInicioCustom} onChange={(e)=>setDataInicioCustom(e.target.value)} />
+          <input type="date" value={dataFimCustom} onChange={(e)=>setDataFimCustom(e.target.value)} />
+        </div>
+      )}
+
+      {/* CARDS MELHORADOS */}
+      <div style={{
+        display:"grid",
+        gridTemplateColumns:"repeat(auto-fit, minmax(220px,1fr))",
+        gap:20,
+        marginBottom:40
+      }}>
+        <Card title="Receita Realizada" value={formatCurrency(receitaTotal)} />
+        <Card title="Lucro Total" value={formatCurrency(lucroTotal)} />
+        <Card title="Receita Líquida" value={formatCurrency(receitaLiquida)} />
+        <Card title="Comissão Total" value={formatCurrency(comissaoTotal)} />
+        <Card title="Ticket Médio" value={formatCurrency(ticketMedio)} />
+        <Card title="Conversão" value={taxaConversao.toFixed(1)+"%"} />
+        <Card title="Pendentes" value={pendentesList.length} />
+        <Card title="Recusados" value={recusadosList.length} />
+      </div>
+
+      {/* STATUS DO PIPELINE */}
+<div style={{
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))",
+  gap:20,
+  marginBottom:60
+}}>
+  <Card title="Leads" value={statusCount.lead} />
+  <Card title="Propostas Enviadas" value={statusCount.proposta_enviada} />
+  <Card title="Aguardando Cliente" value={statusCount.aguardando_cliente} />
+  <Card title="Propostas Validadas" value={statusCount.proposta_validada} />
+  <Card title="Em Andamento" value={statusCount.andamento} />
+  <Card title="Concluídos" value={statusCount.concluido} />
+</div>
+
+      {/* INDICADOR PRINCIPAL - TAXA DE APROVAÇÃO */}
+<div style={{
+  marginBottom: 50
+}}>
+  <h3 style={{
+    fontSize: 18,
+    marginBottom: 15,
+    fontWeight: 600
+  }}>
+    Taxa de Aprovação
+  </h3>
+
+  <div style={{
+    position: "relative",
+    height: 40,
+    background: "#1e293b",
+    borderRadius: 50,
+    overflow: "hidden",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.4)"
+  }}>
+    <div style={{
+      height: "100%",
+      width: `${taxaConversao}%`,
+      background: "linear-gradient(90deg,#7c3aed,#22c55e)",
+      borderRadius: 50,
+      transition: "width 0.6s ease"
+    }} />
+
+    {/* TEXTO CENTRAL */}
+<div style={{
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center"
+}}>
+  <span style={{
+    fontSize: 18,
+    fontWeight: 800,
+    letterSpacing: 1
+  }}>
+    {taxaConversao.toFixed(1)}%
+  </span>
+
+  <span style={{
+    fontSize: 12,
+    opacity: 0.65,
+    marginTop: 4,
+    fontWeight: 500
+  }}>
+    {aprovadosList.length} de {totalOrcamentos} propostas
+  </span>
+</div>
   </div>
 </div>
+
+      {/* RECEITA vs LUCRO */}
+      <ChartBlock title="Receita vs Lucro Mensal">
+        <AreaChart data={graficoReceitaLucro}>
+          <CartesianGrid stroke="#1e293b"/>
+          <XAxis dataKey="mes" stroke="#94a3b8"/>
+          <YAxis stroke="#94a3b8"/>
+          <Tooltip formatter={(v:any)=>formatCurrency(v)}/>
+          <Area type="monotone" dataKey="receita" stroke="#7c3aed" fill="#7c3aed33"/>
+          <Area type="monotone" dataKey="lucro" stroke="#22c55e" fill="#22c55e33"/>
+        </AreaChart>
+      </ChartBlock>
+
+      <ChartBlock title="Conversão Mensal (%)">
+        <LineChart data={graficoConversao}>
+          <CartesianGrid stroke="#1e293b"/>
+          <XAxis dataKey="mes" stroke="#94a3b8"/>
+          <YAxis stroke="#94a3b8"/>
+          <Tooltip/>
+          <Line type="monotone" dataKey="conversao" stroke="#22c55e" strokeWidth={3}/>
+        </LineChart>
+      </ChartBlock>
+
+        <ChartBlock title="Carteira: Ativos x Inativos">
+  <PieChart>
+    <Pie
+      data={graficoCarteira}
+      dataKey="valor"
+      nameKey="name"
+      outerRadius={100}
+      label
+    >
+      {graficoCarteira.map((entry, index) => (
+        <Cell key={index} fill={index === 0 ? "#22c55e" : "#ef4444"} />
+      ))}
+    </Pie>
+    <Tooltip />
+    <Legend />
+  </PieChart>
+</ChartBlock>
+
+      <ChartBlock title="Distribuição Status">
+        <BarChart data={graficoStatus}>
+          <CartesianGrid stroke="#1e293b"/>
+          <XAxis dataKey="name" stroke="#94a3b8"/>
+          <YAxis stroke="#94a3b8"/>
+          <Tooltip/>
+          <Bar dataKey="valor" fill="#7c3aed"/>
+        </BarChart>
+      </ChartBlock>
+      
+
+    </div>
     
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: 20,
-          marginBottom: 40,
-        }}
-      >
-        <DashboardCard title="Total de Serviços" value={totalOrcamentosFiltrados} />
-        <DashboardCard title="Receita Total" value={formatCurrency(receitaTotalFiltrada)} />
-        <DashboardCard title="Receita no Mês" value={formatCurrency(receitaMesFiltrada)} />
-        <DashboardCard title="Ticket Médio" value={`R$ ${ticketMedio}`} />
-        <DashboardCard title="Aprovados" value={aprovadosList.length} />
-        <DashboardCard title="Pendentes" value={pendentesList.length} />
-        <DashboardCard title="Recusados" value={recusadosList.length} />
-      </div>
+  );
+  }
 
-      <div style={{
-        background: "#0B1120",
-        padding: 30,
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.1)",
-        marginBottom: 30,
-      }}>
-        <h3>Taxa de Aprovação</h3>
-        <p style={{ marginBottom: 10 }}>{taxaAprovacao}%</p>
-        <div style={{
-          background: "#1f2937",
-          height: 10,
-          borderRadius: 5,
-          overflow: "hidden",
-        }}>
-          <div style={{
-            width: `${taxaAprovacao}%`,
-            background: "#6b21a8",
-            height: "100%",
-          }} />
-        </div>
-      </div>
+function Card({ title, value }: any) {
+  const [rotate, setRotate] = useState({ x: 0, y: 0 });
 
-      <div style={{
-        background: "#0B1120",
-        padding: 30,
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.1)",
-      }}>
-        <h3 style={{ marginBottom: 20 }}>Serviços Recentes</h3>
+  function handleMouseMove(e: any) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-        {orcamentosRecentes.length === 0 && (
-  <p>Nenhum serviço ainda.</p>
-)}
+    const rotateY = ((x / rect.width) - 0.5) * 20; // esquerda/direita
+    const rotateX = -((y / rect.height) - 0.5) * 20; // cima/baixo
 
-{orcamentosRecentes.length > 0 && (
-  <>
+    setRotate({ x: rotateX, y: rotateY });
+  }
+
+  function resetRotate() {
+    setRotate({ x: 0, y: 0 });
+  }
+
+  return (
     <div
+      onMouseMove={handleMouseMove}
+      onMouseLeave={resetRotate}
       style={{
-        display: "flex",
-        padding: "10px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-        fontSize: 13,
-        fontWeight: 600,
-        color: "#9ca3af",
+        background: "linear-gradient(145deg,#1e293b,#0f172a)",
+        padding: 25,
+        borderRadius: 20,
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        transform: `
+          perspective(1000px)
+          rotateX(${rotate.x}deg)
+          rotateY(${rotate.y}deg)
+          scale3d(1.03,1.03,1.03)
+        `,
+        boxShadow: `
+          0 20px 40px rgba(0,0,0,0.6),
+          0 0 40px rgba(124,58,237,0.15)
+        `,
+        cursor: "pointer"
       }}
     >
-      <div style={{ flex: 1 }}>Serviço</div>
-      <div style={{ width: 120, textAlign: "right" }}>
-        Valor do Serviço
-      </div>
-      <div style={{ width: 160, textAlign: "right" }}>
-        Status do Pedido
-      </div>
-    </div>
+      <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 8 }}>
+        {title}
+      </p>
 
-    {orcamentosRecentes.map((orc) => (
-      <div
-        key={orc.id}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "12px 0",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          gap: 20,
-        }}
-      >
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {orc.descricao || "Sem descrição"}
-        </div>
-
-        <div
-          style={{
-            width: 120,
-            textAlign: "right",
-            fontWeight: "bold",
-          }}
-        >
-          R$ {formatCurrency(Number(orc.valor_orcamento || 0))}
-        </div>
-
-        <div
-          style={{
-            width: 160,
-            textAlign: "right",
-            color: "#9ca3af",
-          }}
-        >
-          {orc.status}
-        </div>
-      </div>
-    ))}
-  </>
-)}
-      </div>
-
-      <div
-        style={{
-          marginTop: 40,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-          gap: 30,
-        }}
-      >
-        <div style={{
-          background: "#0B1120",
-          padding: 30,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.1)",
-          height: 350,
-        }}>
-          <h3 style={{ marginBottom: 20 }}>Receita por Mês</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <LineChart data={graficoMensal}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="mes" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="receita"
-                stroke="#6b21a8"
-                strokeWidth={3}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div style={{
-          background: "#0B1120",
-          padding: 30,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.1)",
-          height: 350,
-        }}>
-          <h3 style={{ marginBottom: 20 }}>Status dos Serviços</h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={graficoStatus}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="name" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip />
-              <Bar dataKey="valor" fill="#6b21a8" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <h2 style={{ fontSize: 26, fontWeight: 800 }}>
+        {value}
+      </h2>
     </div>
   );
 }
 
-function DashboardCard({ title, value }: any) {
+function ChartBlock({ title, children }: any) {
   return (
-    <div
-      style={{
-        background: "#0B1120",
-        padding: 20,
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.1)",
-        minHeight: 100,
-        flexWrap: "wrap",
-        flexDirection: "column",
-        justifyContent: "center",
-      }}
-    >
-      <p style={{ fontSize: 13, color: "#9ca3af" }}>{title}</p>
-
-      <h2
-        style={{
-          fontSize: "clamp(18px, 2.5vw, 24px)",
-          fontWeight: "bold",
-          marginTop: 8,
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
-      </h2>
+    <div style={{
+      background:"#1e293b",
+      padding:30,
+      borderRadius:20,
+      marginBottom:40,
+      boxShadow:"0 10px 40px rgba(0,0,0,0.3)"
+    }}>
+      <h3 style={{ marginBottom:20, fontSize:18 }}>{title}</h3>
+      <div style={{ width:"100%", height:320 }}>
+        <ResponsiveContainer>
+          {children}
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
