@@ -25,6 +25,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const [plan, setPlan] = useState<string>("free");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [email, setEmail] = useState<string>("");
   async function handleLogout() {
   await supabase.auth.signOut();
   window.location.href = "/";
@@ -36,6 +37,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const user = session?.user;
   if (!user) return;
+  setEmail(user.email || "");
 
   const { data: profile, error } = await supabase
     .from("profiles")
@@ -189,6 +191,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   >
     Plano {plan === "pro" ? "Pro 🚀" : "Free"}
   </span>
+
+    <span className="text-sm text-gray-400 hidden sm:block">
+  {email}
+</span>
 
   <button
     onClick={handleLogout}

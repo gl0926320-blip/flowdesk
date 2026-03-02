@@ -26,6 +26,9 @@
     const [openModal, setOpenModal] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [showUpgrade, setShowUpgrade] = useState(false);
+    const [filtro, setFiltro] = useState<"hoje" | "7dias" | "30dias" | "mes" | "custom">("hoje");
+    const [dataInicio, setDataInicio] = useState<string | null>(null);
+    const [dataFim, setDataFim] = useState<string | null>(null);
 
     const [form, setForm] = useState({
       cliente: "",
@@ -148,10 +151,47 @@
       atualizarItem(active.id, { status: over.id });
     }
 
+    const itensFiltrados = useMemo(() => {
+  const agora = new Date();
+
+  return items.filter((item) => {
+    if (!item.created_at) return true;
+
+    const dataItem = new Date(item.created_at);
+
+    switch (filtro) {
+      case "hoje":
+        return dataItem.toDateString() === agora.toDateString();
+
+      case "7dias":
+        return dataItem >= new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      case "30dias":
+        return dataItem >= new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      case "mes":
+        return (
+          dataItem.getMonth() === agora.getMonth() &&
+          dataItem.getFullYear() === agora.getFullYear()
+        );
+
+      case "custom":
+        if (!dataInicio || !dataFim) return true;
+        return (
+          dataItem >= new Date(dataInicio) &&
+          dataItem <= new Date(dataFim)
+        );
+
+      default:
+        return true;
+    }
+  });
+}, [items, filtro, dataInicio, dataFim]);
+
    const metrics = useMemo(() => {
 
   // ✅ SOMENTE ativos verdadeiros
-  const ativos = items.filter(i => i.ativo === true);
+  const ativos = itensFiltrados.filter(i => i.ativo === true);
 
   const concluidos = ativos.filter(i => i.status === "concluido");
 
@@ -180,7 +220,58 @@
 }),
   };
 
-}, [items]);
+}, [itensFiltrados]);
+
+    function FiltroPeriodo({
+  filtro,
+  setFiltro,
+  setDataInicio,
+  setDataFim,
+}: any) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {["hoje","7dias","30dias","mes"].map((tipo) => (
+        <button
+          key={tipo}
+          onClick={() => setFiltro(tipo as any)}
+          className={`px-4 py-2 rounded-xl border transition text-sm ${
+  filtro === tipo
+    ? "bg-cyan-600 text-white border-cyan-500 shadow-lg shadow-cyan-600/30"
+    : "bg-white/10 border-white/20 hover:bg-white/20"
+}`}
+        >
+          {tipo}
+        </button>
+      ))}
+
+      <button
+        onClick={() => setFiltro("custom")}
+        className={`px-4 py-2 rounded-xl border transition text-sm ${
+  filtro === "custom"
+    ? "bg-cyan-600 text-white border-cyan-500 shadow-lg shadow-cyan-600/30"
+    : "bg-white/10 border-white/20 hover:bg-white/20"
+}`}
+      >
+        Personalizado
+      </button>
+
+      {filtro === "custom" && (
+        <div className="flex gap-2">
+          <input
+            type="date"
+            onChange={(e) => setDataInicio(e.target.value)}
+            className="p-2 rounded-lg bg-white/10 border border-white/20"
+          />
+          <input
+            type="date"
+            onChange={(e) => setDataFim(e.target.value)}
+            className="p-2 rounded-lg bg-white/10 border border-white/20"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
     return (
       <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
@@ -189,6 +280,13 @@
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_60%)]" />
 
         <div className="relative z-10 p-6 md:p-14 space-y-10 md:space-y-14 text-white">
+
+          <FiltroPeriodo
+  filtro={filtro}
+  setFiltro={setFiltro}
+  setDataInicio={setDataInicio}
+  setDataFim={setDataFim}
+/>
 
           {/* MÉTRICAS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -217,7 +315,7 @@
             <div className="flex flex-wrap gap-6 md:gap-10 pb-6 md:pb-10">
               {columns.map((col) => (
                 <Column key={col} id={col} title={col}>
-                  {items
+                  {itensFiltrados
   .filter((i) => i.status === col && i.ativo === true)
                     .map((item) => (
                       <Card
