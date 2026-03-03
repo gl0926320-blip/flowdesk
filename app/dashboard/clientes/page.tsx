@@ -23,7 +23,7 @@ export default function ClientesPage() {
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
-  const [filtroPeriodo, setFiltroPeriodo] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Personalizado">("30 Dias");
+  const [filtroPeriodo, setFiltroPeriodo] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Personalizado">("Hoje");
   const [dataInicio, setDataInicio] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
 

@@ -25,11 +25,19 @@ type Servico = {
   status: string;
 };
 
+
+  const formatBRL = (value: number) => {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+};
+
 export default function ComissoesPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<Servico[]>([]);
-  const [periodo, setPeriodo] = useState("hoje");
+  const [periodo, setPeriodo] = useState("Hoje");
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -108,7 +116,7 @@ export default function ComissoesPage() {
         return date >= new Date(now.getTime() - 30 * 86400000);
       }
 
-      if (periodo === "Mes") {
+      if (periodo === "Mês") {
         return (
           date.getMonth() === now.getMonth() &&
           date.getFullYear() === now.getFullYear()
@@ -194,7 +202,7 @@ export default function ComissoesPage() {
 
       {/* FILTROS */}
       <div className="flex gap-3 flex-wrap">
-        {["hoje", "7dias", "30dias", "mes"].map((p) => (
+        {["Hoje", "7 Dias", "30 Dias", "Mês"].map((p) => (
           <button
             key={p}
             onClick={() => {
@@ -219,7 +227,7 @@ export default function ComissoesPage() {
           value={dataSelecionada || ""}
           onChange={(e) => {
             setDataSelecionada(e.target.value);
-            setPeriodo("custom");
+            setPeriodo("Personalizado");
           }}
           className="px-4 py-2 rounded-xl bg-white/10 border border-white/20"
         />
@@ -251,11 +259,11 @@ export default function ComissoesPage() {
           </div>
 
           <div className="text-cyan-400 font-semibold">
-            R$ {topSeller.total.toFixed(2)}
+            {formatBRL(topSeller.total)}
           </div>
 
           <div className="text-sm text-white/60 mt-1">
-            {topSeller.quantidade} vendas • Ticket médio R$ {topSeller.ticketMedio.toFixed(2)}
+            {topSeller.quantidade} vendas • Ticket médio {formatBRL(topSeller.ticketMedio)}
           </div>
         </div>
       )}
@@ -286,7 +294,7 @@ export default function ComissoesPage() {
                   </span>
 
                   <span className="text-cyan-400 font-bold">
-                    R$ {item.total.toFixed(2)}
+                    {formatBRL(item.total)}
                   </span>
                 </div>
 
@@ -342,10 +350,10 @@ export default function ComissoesPage() {
 
               <div className="text-right">
                 <div className="text-lg font-bold text-cyan-400">
-                  R$ {item.valor_comissao.toFixed(2)}
+                  {formatBRL(item.valor_comissao)}
                 </div>
                 <div className="text-xs text-white/50">
-                  Sobre R$ {(item.valor_orcamento || 0).toFixed(2)}
+                Sobre {formatBRL(item.valor_orcamento || 0)}
                 </div>
 
                 {!item.comissao_paga && (
@@ -381,8 +389,8 @@ function MegaCard({ title, value, icon }: any) {
       </div>
       <div className="mt-4 text-3xl font-bold text-cyan-400">
         {typeof value === "number"
-          ? `R$ ${value.toFixed(2)}`
-          : value}
+  ? formatBRL(value)
+  : value}
       </div>
     </div>
   );

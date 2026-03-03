@@ -76,7 +76,7 @@ export default function Dashboard() {
         .eq("user_id", user.id)
        
 
-      if (filtroPeriodo === "custom" && dataInicioCustom && dataFimCustom) {
+      if (filtroPeriodo === "Personalizado" && dataInicioCustom && dataFimCustom) {
         query = query
           .gte("created_at", new Date(dataInicioCustom).toISOString())
           .lte("created_at", new Date(dataFimCustom).toISOString());
@@ -277,7 +277,7 @@ const graficoCarteira = [
 
       {/* FILTROS (MANTIDOS) */}
       <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:30 }}>
-        {["Hoje","7 Dias","30 Dias","Mes","Ano","Custom"].map((item)=>(
+        {["Hoje","7 Dias","30 Dias","Mes","Ano","Personalizado"].map((item)=>(
           <button
             key={item}
             onClick={()=>setFiltroPeriodo(item)}
@@ -296,7 +296,7 @@ const graficoCarteira = [
         ))}
       </div>
 
-      {filtroPeriodo==="custom" && (
+      {filtroPeriodo==="Personalizado" && (
         <div style={{ display:"flex", gap:10, marginBottom:30 }}>
           <input type="date" value={dataInicioCustom} onChange={(e)=>setDataInicioCustom(e.target.value)} />
           <input type="date" value={dataFimCustom} onChange={(e)=>setDataFimCustom(e.target.value)} />

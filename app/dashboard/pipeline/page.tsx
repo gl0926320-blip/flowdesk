@@ -26,7 +26,7 @@
     const [openModal, setOpenModal] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [showUpgrade, setShowUpgrade] = useState(false);
-    const [filtro, setFiltro] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mes" | "Custom">("Hoje");
+    const [filtro, setFiltro] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mês" | "Custom">("Hoje");
     const [dataInicio, setDataInicio] = useState<string | null>(null);
     const [dataFim, setDataFim] = useState<string | null>(null);
 
@@ -172,7 +172,7 @@
       case "30 Dias":
         return dataItem >= new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      case "Mes":
+      case "Mês":
         return (
           dataItem.getMonth() === agora.getMonth() &&
           dataItem.getFullYear() === agora.getFullYear()
@@ -233,7 +233,7 @@
 }: any) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {["Hoje","7 Dias","30 Dias","Mes"].map((tipo) => (
+      {["Hoje","7 Dias","30 Dias","Mês"].map((tipo) => (
         <button
           key={tipo}
           onClick={() => setFiltro(tipo as any)}
@@ -255,7 +255,7 @@
     : "bg-white/10 border-white/20 hover:bg-white/20"
 }`}
       >
-        Personalizado
+       Personalizado
       </button>
 
       {filtro === "custom" && (

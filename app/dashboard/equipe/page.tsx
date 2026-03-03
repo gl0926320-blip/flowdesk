@@ -59,22 +59,29 @@ export default function EquipePage() {
     return data.filter((item) => {
       const d = new Date(item.created_at);
 
-      if (periodo === "hoje")
-        return d.toDateString() === now.toDateString();
+      if (periodo === "Hoje") {
+  const inicio = new Date();
+  inicio.setHours(0, 0, 0, 0);
 
-      if (periodo === "7dias") {
+  const fim = new Date();
+  fim.setHours(23, 59, 59, 999);
+
+  return d >= inicio && d <= fim;
+}
+
+      if (periodo === "7 Dias") {
         const past = new Date();
         past.setDate(now.getDate() - 7);
         return d >= past;
       }
 
-      if (periodo === "30dias") {
+      if (periodo === "30 Dias") {
         const past = new Date();
         past.setDate(now.getDate() - 30);
         return d >= past;
       }
 
-      if (periodo === "mes")
+      if (periodo === "Mês")
         return (
           d.getMonth() === now.getMonth() &&
           d.getFullYear() === now.getFullYear()
@@ -170,11 +177,10 @@ export default function EquipePage() {
       {/* FILTROS */}
       <div className="flex flex-wrap gap-3">
         {[
-          ["todos", "Todos"],
-          ["hoje", "Hoje"],
-          ["7dias", "7 dias"],
-          ["30dias", "30 dias"],
-          ["mes", "Mês"],
+          ["Hoje", "Hoje"],
+          ["7 Dias", "7 dias"],
+          ["30 Dias", "30 dias"],
+          ["Mês", "Mês"],
         ].map(([v, l]) => (
           <button
             key={v}
@@ -194,11 +200,17 @@ export default function EquipePage() {
         ))}
 
         <button
-          onClick={() => setPeriodo("manual")}
-          className="px-4 py-2 rounded-xl bg-purple-600"
-        >
-          Personalizado
-        </button>
+  onClick={() => {
+    setPeriodo("manual");
+  }}
+  className={`px-4 py-2 rounded-xl transition ${
+    periodo === "manual"
+      ? "bg-cyan-600 shadow-lg shadow-cyan-600/30"
+      : "bg-white/5 hover:bg-white/10"
+  }`}
+>
+  Personalizado
+</button>
       </div>
 
       {periodo === "manual" && (
@@ -224,7 +236,10 @@ export default function EquipePage() {
         <StatCard
           icon={<DollarSign />}
           title="Faturamento"
-          value={`R$ ${totalFaturamento.toFixed(2)}`}
+          value={totalFaturamento.toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+})}
         />
 
         <StatCard
@@ -254,7 +269,10 @@ export default function EquipePage() {
                   {item.nome}
                 </div>
                 <div className="text-cyan-400 font-bold">
-                  R$ {item.faturamento.toFixed(2)}
+                  {item.faturamento.toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+})}
                 </div>
               </div>
 
@@ -270,7 +288,10 @@ export default function EquipePage() {
                 <span>Propostas: {item.propostas}</span>
                 <span>Conversão: {item.conversao.toFixed(1)}%</span>
                 <span>
-                  Comissão: R$ {item.comissao.toFixed(2)}
+                  Comissão: {item.comissao.toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+})}
                 </span>
               </div>
             </div>

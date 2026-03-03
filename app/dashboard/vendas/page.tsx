@@ -75,14 +75,14 @@ export default function VendasPage() {
       return dataVenda >= trintaDias;
     }
 
-    if (periodo === "Mes") {
+    if (periodo === "Mês") {
       return (
         dataVenda.getMonth() === hoje.getMonth() &&
         dataVenda.getFullYear() === hoje.getFullYear()
       );
     }
 
-    if (periodo === "Custom" && dataInicio && dataFim) {
+    if (periodo === "Personalizado" && dataInicio && dataFim) {
       return (
         dataVenda >= new Date(dataInicio) &&
         dataVenda <= new Date(dataFim)
@@ -156,14 +156,14 @@ export default function VendasPage() {
           onChange={(e) => setPeriodo(e.target.value)}
           className="bg-[#1f2937] p-2 rounded"
         >
-          <option value="hoje">Hoje</option>
+          <option value="Hoje">Hoje</option>
           <option value="7">Últimos 7 dias</option>
           <option value="30">Últimos 30 dias</option>
-          <option value="mes">Este mês</option>
-          <option value="custom">Personalizado</option>
+          <option value="Mês">Este mês</option>
+          <option value="Personalizado">Personalizado</option>
         </select>
 
-        {periodo === "custom" && (
+        {periodo === "Personalizado" && (
           <>
             <input
               type="date"

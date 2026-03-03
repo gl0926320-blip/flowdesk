@@ -477,7 +477,7 @@ function adicionarItemEditado() {
     { id: "hoje", label: "Hoje" },
     { id: "7dias", label: "7 dias" },
     { id: "30dias", label: "30 dias" },
-    { id: "mes", label: "Mês atual" },
+    { id: "mes", label: "Mês" },
     { id: "todos", label: "Todos" },
   ].map((p) => (
     <button
@@ -1086,20 +1086,24 @@ function adicionarItemEditado() {
       Salvar Alterações
     </button>
 
-    <button
-      onClick={async () => {
-        await supabase
-          .from("servicos")
-          .update({ ativo: false })
-          .eq("id", selectedLead.id);
+ <button
+  onClick={async () => {
+    await supabase
+      .from("servicos")
+      .update({ ativo: !selectedLead.ativo })
+      .eq("id", selectedLead.id);
 
-        setSelectedLead(null);
-        load();
-      }}
-      className="w-full py-3 bg-red-600 rounded-xl font-bold"
-    >
-      Inativar Lead
-    </button>
+    setSelectedLead(null);
+    load();
+  }}
+  className={`w-full py-3 rounded-xl font-bold ${
+    selectedLead.ativo
+      ? "bg-red-600"
+      : "bg-green-600"
+  }`}
+>
+  {selectedLead.ativo ? "Inativar Lead" : "Reativar Lead"}
+</button>
 
   </div>
 )}
