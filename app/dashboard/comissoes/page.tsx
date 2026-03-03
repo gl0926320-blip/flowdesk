@@ -92,7 +92,7 @@ export default function ComissoesPage() {
         );
       }
 
-      if (periodo === "hoje") {
+      if (periodo === "Hoje") {
         return (
           date.getDate() === now.getDate() &&
           date.getMonth() === now.getMonth() &&
@@ -100,15 +100,15 @@ export default function ComissoesPage() {
         );
       }
 
-      if (periodo === "7dias") {
+      if (periodo === "7 Dias") {
         return date >= new Date(now.getTime() - 7 * 86400000);
       }
 
-      if (periodo === "30dias") {
+      if (periodo === "30 Dias") {
         return date >= new Date(now.getTime() - 30 * 86400000);
       }
 
-      if (periodo === "mes") {
+      if (periodo === "Mes") {
         return (
           date.getMonth() === now.getMonth() &&
           date.getFullYear() === now.getFullYear()

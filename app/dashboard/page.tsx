@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DollarSign, TrendingUp, BarChart3 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
 import {
@@ -28,7 +29,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  const [filtroPeriodo, setFiltroPeriodo] = useState("mes");
+  const [filtroPeriodo, setFiltroPeriodo] = useState("Hoje");
   const [dataInicioCustom, setDataInicioCustom] = useState("");
   const [dataFimCustom, setDataFimCustom] = useState("");
 
@@ -38,19 +39,19 @@ export default function Dashboard() {
   function getDataInicio(periodo: string) {
     const agora = new Date();
     switch (periodo) {
-      case "hoje":
+      case "Hoje":
         return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-      case "7dias":
+      case "7 Dias":
         const sete = new Date();
         sete.setDate(agora.getDate() - 7);
         return sete;
-      case "30dias":
+      case "30 Dias":
         const trinta = new Date();
         trinta.setDate(agora.getDate() - 30);
         return trinta;
-      case "mes":
+      case "Mes":
         return new Date(agora.getFullYear(), agora.getMonth(), 1);
-      case "ano":
+      case "Ano":
         return new Date(agora.getFullYear(), 0, 1);
       default:
         return null;
@@ -127,42 +128,85 @@ const statusCount = {
 };
   const totalOrcamentos = servicosFiltrados.length;
 
-  const aprovadosList = servicosFiltrados.filter(o =>
-  ["concluido"].includes(o.status)
-  );
+ // 🔥 NOVA REGRA ALINHADA COM LEADS
 
-  const pendentesList = servicosFiltrados.filter(o =>
-    ["lead","proposta_enviada","aguardando_cliente","andamento"].includes(o.status)
-  );
+const STATUS_POTENCIAL = [
+  "lead",
+  "proposta_enviada",
+  "aguardando_cliente",
+];
 
-  const recusadosList = servicosFiltrados.filter(o =>
-    ["recusado","cancelado"].includes(o.status)
-  );
+const STATUS_CONFIRMADA = [
+  "proposta_validada",
+  "andamento",
+];
 
-  const receitaTotal = aprovadosList.reduce(
-    (acc, item) => acc + Number(item.valor_orcamento || 0), 0
-  );
+const STATUS_REALIZADA = [
+  "concluido",
+];
 
-  const lucroTotal = aprovadosList.reduce((acc, item) => {
+const potencialList = servicosFiltrados.filter(o =>
+  STATUS_POTENCIAL.includes(o.status)
+);
+
+const confirmadaList = servicosFiltrados.filter(o =>
+  STATUS_CONFIRMADA.includes(o.status)
+);
+
+const realizadosList = servicosFiltrados.filter(o =>
+  STATUS_REALIZADA.includes(o.status)
+);
+
+const recusadosList = servicosFiltrados.filter(o =>
+  ["recusado","cancelado"].includes(o.status)
+);
+
+// 💰 Receita Realizada
+const receitaTotal = realizadosList.reduce(
+  (acc, item) => acc + Number(item.valor_orcamento || 0), 0
+);
+
+// 💎 Receita Confirmada
+const receitaConfirmada = confirmadaList.reduce(
+  (acc, item) => acc + Number(item.valor_orcamento || 0), 0
+);
+
+// 🔮 Receita Potencial
+const receitaPotencial = potencialList.reduce(
+  (acc, item) => acc + Number(item.valor_orcamento || 0), 0
+);
+
+// 💵 Comissão (apenas realizados)
+const comissaoTotal = realizadosList.reduce(
+  (acc, item) => acc + Number(item.valor_comissao || 0), 0
+);
+
+// 📈 Lucro (apenas realizados)
+const lucroTotal = realizadosList.reduce((acc, item) => {
   const receita = Number(item.valor_orcamento || 0);
   const custo = Number(item.custo || 0);
   const comissao = Number(item.valor_comissao || 0);
   return acc + (receita - custo - comissao);
 }, 0);
 
-  const comissaoTotal = aprovadosList.reduce(
-    (acc, item) => acc + Number(item.valor_comissao || 0), 0
-  );
 
-  const receitaLiquida = receitaTotal - comissaoTotal;
 
-  const ticketMedio =
-    aprovadosList.length > 0 ? receitaTotal / aprovadosList.length : 0;
+const ticketMedio =
+  realizadosList.length > 0
+    ? receitaTotal / realizadosList.length
+    : 0;
 
-  const taxaConversao =
-    totalOrcamentos > 0
-      ? (aprovadosList.length / totalOrcamentos) * 100
-      : 0;
+// 🎯 Conversão real (realizados ÷ potencial+confirmada)
+const baseConversao = potencialList.length + confirmadaList.length + realizadosList.length;
+
+const taxaConversao =
+  baseConversao > 0
+    ? (realizadosList.length / baseConversao) * 100
+    : 0;
+
+
+ 
+
   const graficoTaxaAprovacao = [
   { name: "Aprovação", valor: Number(taxaConversao.toFixed(1)) }
 ];
@@ -207,10 +251,11 @@ lucroPorMes[mes] =
   }));
 
   const graficoStatus = [
-    { name:"Aprovados", valor:aprovadosList.length },
-    { name:"Pendentes", valor:pendentesList.length },
-    { name:"Recusados", valor:recusadosList.length }
-  ];
+  { name:"Potenciais", valor: potencialList.length },
+  { name:"Confirmadas", valor: confirmadaList.length },
+  { name:"Realizadas", valor: realizadosList.length },
+  { name:"Recusados", valor: recusadosList.length }
+];
 const graficoCarteira = [
   { name: "Ativos", valor: servicosAtivos.length },
   { name: "Inativos", valor: servicosInativos.length }
@@ -232,7 +277,7 @@ const graficoCarteira = [
 
       {/* FILTROS (MANTIDOS) */}
       <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:30 }}>
-        {["hoje","7dias","30dias","mes","ano","custom"].map((item)=>(
+        {["Hoje","7 Dias","30 Dias","Mes","Ano","Custom"].map((item)=>(
           <button
             key={item}
             onClick={()=>setFiltroPeriodo(item)}
@@ -258,37 +303,43 @@ const graficoCarteira = [
         </div>
       )}
 
-      {/* CARDS MELHORADOS */}
-      <div style={{
-        display:"grid",
-        gridTemplateColumns:"repeat(auto-fit, minmax(220px,1fr))",
-        gap:20,
-        marginBottom:40
-      }}>
-        <Card title="Receita Realizada" value={formatCurrency(receitaTotal)} />
-        <Card title="Lucro Total" value={formatCurrency(lucroTotal)} />
-        <Card title="Receita Líquida" value={formatCurrency(receitaLiquida)} />
-        <Card title="Comissão Total" value={formatCurrency(comissaoTotal)} />
-        <Card title="Ticket Médio" value={formatCurrency(ticketMedio)} />
-        <Card title="Conversão" value={taxaConversao.toFixed(1)+"%"} />
-        <Card title="Pendentes" value={pendentesList.length} />
-        <Card title="Recusados" value={recusadosList.length} />
-      </div>
+{/* CARDS MELHORADOS */}
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
 
-      {/* STATUS DO PIPELINE */}
-<div style={{
-  display:"grid",
-  gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))",
-  gap:20,
-  marginBottom:60
-}}>
-  <Card title="Leads" value={statusCount.lead} />
-  <Card title="Propostas Enviadas" value={statusCount.proposta_enviada} />
-  <Card title="Aguardando Cliente" value={statusCount.aguardando_cliente} />
-  <Card title="Propostas Validadas" value={statusCount.proposta_validada} />
-  <Card title="Em Andamento" value={statusCount.andamento} />
-  <Card title="Concluídos" value={statusCount.concluido} />
+  <Metric 
+    icon={<DollarSign size={18} />} 
+    title="Receita Realizada" 
+    value={formatCurrency(receitaTotal)} 
+  />
+
+  <Metric 
+    icon={<TrendingUp size={18} />} 
+    title="Lucro Total" 
+    value={formatCurrency(lucroTotal)} 
+  />
+
+  <Metric 
+    icon={<DollarSign size={18} />} 
+    title="Comissão Total" 
+    value={formatCurrency(comissaoTotal)} 
+  />
+
+  <Metric 
+    icon={<BarChart3 size={18} />} 
+    title="Ticket Médio" 
+    value={formatCurrency(ticketMedio)} 
+  />
+
+  <Metric 
+    icon={<TrendingUp size={18} />} 
+    title="Conversão" 
+    value={taxaConversao.toFixed(1) + "%"} 
+  />
+
 </div>
+
+
+
 
       {/* INDICADOR PRINCIPAL - TAXA DE APROVAÇÃO */}
 <div style={{
@@ -344,7 +395,7 @@ const graficoCarteira = [
     marginTop: 4,
     fontWeight: 500
   }}>
-    {aprovadosList.length} de {totalOrcamentos} propostas
+    {realizadosList.length} de {baseConversao} propostas
   </span>
 </div>
   </div>
@@ -406,56 +457,6 @@ const graficoCarteira = [
   );
   }
 
-function Card({ title, value }: any) {
-  const [rotate, setRotate] = useState({ x: 0, y: 0 });
-
-  function handleMouseMove(e: any) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const rotateY = ((x / rect.width) - 0.5) * 20; // esquerda/direita
-    const rotateX = -((y / rect.height) - 0.5) * 20; // cima/baixo
-
-    setRotate({ x: rotateX, y: rotateY });
-  }
-
-  function resetRotate() {
-    setRotate({ x: 0, y: 0 });
-  }
-
-  return (
-    <div
-      onMouseMove={handleMouseMove}
-      onMouseLeave={resetRotate}
-      style={{
-        background: "linear-gradient(145deg,#1e293b,#0f172a)",
-        padding: 25,
-        borderRadius: 20,
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-        transform: `
-          perspective(1000px)
-          rotateX(${rotate.x}deg)
-          rotateY(${rotate.y}deg)
-          scale3d(1.03,1.03,1.03)
-        `,
-        boxShadow: `
-          0 20px 40px rgba(0,0,0,0.6),
-          0 0 40px rgba(124,58,237,0.15)
-        `,
-        cursor: "pointer"
-      }}
-    >
-      <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 8 }}>
-        {title}
-      </p>
-
-      <h2 style={{ fontSize: 26, fontWeight: 800 }}>
-        {value}
-      </h2>
-    </div>
-  );
-}
 
 function ChartBlock({ title, children }: any) {
   return (
@@ -472,6 +473,23 @@ function ChartBlock({ title, children }: any) {
           {children}
         </ResponsiveContainer>
       </div>
+    </div>
+  );
+}
+
+function Metric({ icon, title, value }: any) {
+  return (
+    <div className="p-6 rounded-2xl bg-gradient-to-br from-[#111827] to-[#0f172a] border border-[#1f2937] hover:scale-[1.02] transition-all duration-200">
+      
+      <div className="flex justify-between text-gray-400 text-sm">
+        <span>{title}</span>
+        <span className="text-blue-400">{icon}</span>
+      </div>
+
+      <div className="mt-4 text-3xl font-bold text-cyan-400">
+        {value}
+      </div>
+
     </div>
   );
 }

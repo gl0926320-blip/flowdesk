@@ -28,7 +28,7 @@ export default function EquipePage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<Servico[]>([]);
-  const [periodo, setPeriodo] = useState("hoje")
+  const [periodo, setPeriodo] = useState("Hoje")
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [loading, setLoading] = useState(true);

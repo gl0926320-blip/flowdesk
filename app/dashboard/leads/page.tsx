@@ -271,63 +271,63 @@ export default function LeadsPage() {
   const metrics = useMemo(() => {
   const total = filtered.length;
 
-  // 🔒 Status que contam como receita real
-  const STATUS_RECEITA = ["concluido"];
+  const STATUS_POTENCIAL = [
+    "lead",
+    "proposta_enviada",
+    "aguardando_cliente",
+  ];
 
-  // 💰 Receita REAL (somente vendas confirmadas)
+  const STATUS_CONFIRMADA = [
+    "proposta_validada",
+    "andamento",
+  ];
+
+  const STATUS_REALIZADA = [
+    "concluido",
+  ];
+
+  const receitaPotencial = filtered
+    .filter((i) => STATUS_POTENCIAL.includes(i.status))
+    .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+
+  const receitaConfirmada = filtered
+    .filter((i) => STATUS_CONFIRMADA.includes(i.status))
+    .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+
   const receitaReal = filtered
-    .filter((i) => STATUS_RECEITA.includes(i.status))
-    .reduce(
-      (acc, i) => acc + Number(i.valor_orcamento || 0),
-      0
-    );
+    .filter((i) => STATUS_REALIZADA.includes(i.status))
+    .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-  // 🔮 Receita POTENCIAL (todos os leads do período)
-  const receitaPotencial = filtered.reduce(
-    (acc, i) => acc + Number(i.valor_orcamento || 0),
-    0
-  );
-
-  // 📈 Quantidade de vendas reais
   const concluidos = filtered.filter((i) =>
-    STATUS_RECEITA.includes(i.status)
+    STATUS_REALIZADA.includes(i.status)
   ).length;
-  // 💎 Receita Total Geral (independente do período)
-const receitaTotalGeral = items
-  .filter((i) =>
-    ["proposta_validada", "concluido"].includes(i.status)
-  )
-  .reduce(
-    (acc, i) => acc + Number(i.valor_orcamento || 0),
-    0
-  );
+
   return {
-  total,
+    total,
 
-  receitaReal: receitaReal.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }),
+    receitaReal: receitaReal.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }),
 
-  receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }),
+    receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }),
 
-  // 💎 ADICIONE ISSO AQUI
-  receitaTotalGeral: receitaTotalGeral.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }),
+    receitaConfirmada: receitaConfirmada.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }),
 
-  concluidos,
+    concluidos,
 
-  conversao:
-    total > 0
-      ? `${Math.round((concluidos / total) * 100)}%`
-      : "0%",
-};
-}, [filtered, items]);
+    conversao:
+      total > 0
+        ? `${Math.round((concluidos / total) * 100)}%`
+        : "0%",
+  };
+}, [filtered]);
   const funnelData = useMemo(() => {
   const counts: Record<string, number> = {};
 
@@ -428,7 +428,7 @@ function adicionarItemEditado() {
         <Metric 
   icon={<DollarSign />} 
   title="Receita Confirmada" 
-  value={metrics.receitaTotalGeral} 
+  value={metrics.receitaConfirmada} 
 />
         <Metric icon={<TrendingUp />} title="Concluídos" value={metrics.concluidos} />
         <Metric icon={<TrendingUp />} title="Taxa Conversão" value={metrics.conversao} />

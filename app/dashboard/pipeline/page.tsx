@@ -26,7 +26,7 @@
     const [openModal, setOpenModal] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [showUpgrade, setShowUpgrade] = useState(false);
-    const [filtro, setFiltro] = useState<"hoje" | "7dias" | "30dias" | "mes" | "custom">("hoje");
+    const [filtro, setFiltro] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mes" | "Custom">("Hoje");
     const [dataInicio, setDataInicio] = useState<string | null>(null);
     const [dataFim, setDataFim] = useState<string | null>(null);
 
@@ -47,10 +47,11 @@
         setUserId(data.user.id);
 
         const { data: servicos } = await supabase
-          .from("servicos")
-          .select("*")
-          .eq("user_id", data.user.id)
-          .order("created_at", { ascending: false });
+  .from("servicos")
+  .select("*")
+  .eq("user_id", data.user.id)
+  .eq("ativo", true)
+  .order("created_at", { ascending: false });
 
         if (servicos) setItems(servicos);
       }
@@ -148,7 +149,9 @@
     function handleDragEnd(event: any) {
       const { active, over } = event;
       if (!over) return;
-      atualizarItem(active.id, { status: over.id });
+      if (columns.includes(over.id)) {
+  atualizarItem(active.id, { status: over.id });
+}
     }
 
     const itensFiltrados = useMemo(() => {
@@ -160,22 +163,22 @@
     const dataItem = new Date(item.created_at);
 
     switch (filtro) {
-      case "hoje":
+      case "Hoje":
         return dataItem.toDateString() === agora.toDateString();
 
-      case "7dias":
+      case "7 Dias":
         return dataItem >= new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-      case "30dias":
+      case "30 Dias":
         return dataItem >= new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      case "mes":
+      case "Mes":
         return (
           dataItem.getMonth() === agora.getMonth() &&
           dataItem.getFullYear() === agora.getFullYear()
         );
 
-      case "custom":
+      case "Custom":
         if (!dataInicio || !dataFim) return true;
         return (
           dataItem >= new Date(dataInicio) &&
@@ -230,7 +233,7 @@
 }: any) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {["hoje","7dias","30dias","mes"].map((tipo) => (
+      {["Hoje","7 Dias","30 Dias","Mes"].map((tipo) => (
         <button
           key={tipo}
           onClick={() => setFiltro(tipo as any)}

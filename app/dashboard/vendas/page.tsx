@@ -59,7 +59,7 @@ export default function VendasPage() {
     const hoje = new Date();
     const dataVenda = new Date(data);
 
-    if (periodo === "hoje") {
+    if (periodo === "Hoje") {
       return dataVenda.toDateString() === hoje.toDateString();
     }
 
@@ -75,14 +75,14 @@ export default function VendasPage() {
       return dataVenda >= trintaDias;
     }
 
-    if (periodo === "mes") {
+    if (periodo === "Mes") {
       return (
         dataVenda.getMonth() === hoje.getMonth() &&
         dataVenda.getFullYear() === hoje.getFullYear()
       );
     }
 
-    if (periodo === "custom" && dataInicio && dataFim) {
+    if (periodo === "Custom" && dataInicio && dataFim) {
       return (
         dataVenda >= new Date(dataInicio) &&
         dataVenda <= new Date(dataFim)

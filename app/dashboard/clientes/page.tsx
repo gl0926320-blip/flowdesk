@@ -23,21 +23,76 @@ export default function ClientesPage() {
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [filtroPeriodo, setFiltroPeriodo] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Personalizado">("30 Dias");
+  const [dataInicio, setDataInicio] = useState<string>("");
+  const [dataFim, setDataFim] = useState<string>("");
 
-  useEffect(() => {
-    fetchClientes();
-  }, []);
+  function calcularPeriodo() {
+  const agora = new Date();
+  let inicio = new Date();
+  let fim = new Date();
+
+  if (filtroPeriodo === "Hoje") {
+    inicio.setHours(0, 0, 0, 0);
+  }
+
+  if (filtroPeriodo === "7 Dias") {
+  inicio.setDate(agora.getDate() - 7);
+  inicio.setHours(0, 0, 0, 0);
+}
+
+  if (filtroPeriodo === "30 Dias") {
+  inicio.setDate(agora.getDate() - 30);
+  inicio.setHours(0, 0, 0, 0);
+}
+
+  if (filtroPeriodo === "Personalizado") {
+    if (!dataInicio || !dataFim) {
+      return {
+        inicio: "1900-01-01",
+        fim: "2999-12-31",
+      };
+    }
+
+    return {
+      inicio: new Date(dataInicio).toISOString(),
+      fim: new Date(dataFim + "T23:59:59").toISOString(),
+    };
+  }
+
+  return {
+    inicio: inicio.toISOString(),
+    fim: fim.toISOString(),
+  };
+}
+
 
   async function fetchClientes() {
     setLoading(true);
 
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return;
+    if (!userData.user) {
+  setLoading(false);
+  return;
+}
+ 
 
-    const { data, error } = await supabase
-      .from("servicos")
-      .select("*")
-      .eq("user_id", userData.user.id);
+const { data, error } = await supabase
+  .from("servicos")
+  .select(`
+  cliente,
+  telefone,
+  email,
+  tipo_pessoa,
+  valor_orcamento,
+  custo,
+  valor_comissao,
+  created_at,
+  status
+`)
+  .eq("user_id", userData.user.id)
+  .eq("status", "concluido");
+
 
     if (error) {
       console.error(error);
@@ -45,14 +100,30 @@ export default function ClientesPage() {
       return;
     }
 
+    console.log("SERVICOS DO BANCO:", data);
+
+    const { inicio, fim } = calcularPeriodo();
+
+const dataFiltrada = data?.filter((servico: any) => {
+  if (!servico.created_at) return false;
+
+  const d = new Date(servico.created_at);
+  const dataInicioObj = new Date(inicio);
+  const dataFimObj = new Date(fim);
+
+  return d >= dataInicioObj && d <= dataFimObj;
+});
+
     const agrupado: { [key: string]: Cliente } = {};
 
-    data?.forEach((servico: any) => {
-      const nomeCliente = servico.cliente || "Sem nome";
+    dataFiltrada?.forEach((servico: any) => {
+      const nomeCliente = (servico.cliente || "Sem nome")
+  .trim()
+  .toLowerCase();
 
       if (!agrupado[nomeCliente]) {
         agrupado[nomeCliente] = {
-          nome: nomeCliente,
+          nome: servico.cliente || "Sem nome",
           total_servicos: 0,
           total_orcado: 0,
           total_custo: 0,
@@ -64,21 +135,23 @@ export default function ClientesPage() {
         };
       }
 
-      const valor = Number(servico.valor_orcamento) || 0;
-      const custo = Number(servico.custo) || 0;
+const valor = Number(servico.valor_orcamento) || 0;
+const custo = Number(servico.custo) || 0;
+const comissao = Number(servico.valor_comissao) || 0;
 
-      agrupado[nomeCliente].total_servicos += 1;
-      agrupado[nomeCliente].total_orcado += valor;
-      agrupado[nomeCliente].total_custo += custo;
-      agrupado[nomeCliente].total_lucro += valor - custo;
+agrupado[nomeCliente].total_servicos += 1;
+agrupado[nomeCliente].total_orcado += valor;
+agrupado[nomeCliente].total_custo += custo + comissao;
+agrupado[nomeCliente].total_lucro += valor - custo - comissao;
 
-      if (
-        servico.created_at &&
-        new Date(servico.created_at) >
-          new Date(agrupado[nomeCliente].ultima_compra || 0)
-      ) {
-        agrupado[nomeCliente].ultima_compra = servico.created_at;
-      }
+     if (
+  servico.created_at &&
+  (!agrupado[nomeCliente].ultima_compra ||
+    new Date(servico.created_at) >
+      new Date(agrupado[nomeCliente].ultima_compra))
+) {
+  agrupado[nomeCliente].ultima_compra = servico.created_at;
+}
     });
 
     const lista = Object.values(agrupado);
@@ -95,11 +168,63 @@ export default function ClientesPage() {
 
   const totalClientes = clientes.length;
   const receitaTotal = clientes.reduce((acc, c) => acc + c.total_orcado, 0);
-  const lucroTotal = clientes.reduce((acc, c) => acc + c.total_lucro, 0);
+const custoTotal = clientes.reduce((acc, c) => acc + c.total_custo, 0);
+const lucroTotal = receitaTotal - custoTotal;
+
+  useEffect(() => {
+  fetchClientes();
+}, [filtroPeriodo, dataInicio, dataFim]);
 
   return (
     <div className="p-6 text-white min-h-screen bg-gradient-to-b from-[#0f172a] to-[#0b1120]">
       <h1 className="text-3xl font-bold mb-6">👥 Clientes</h1>
+
+   <div className="flex flex-wrap gap-2 mb-4">
+  <button
+    onClick={() => setFiltroPeriodo("Hoje")}
+    className={`px-4 py-2 rounded-lg ${filtroPeriodo === "Hoje" ? "bg-purple-600" : "bg-gray-700"}`}
+  >
+    Hoje
+  </button>
+
+  <button
+    onClick={() => setFiltroPeriodo("7 Dias")}
+    className={`px-4 py-2 rounded-lg ${filtroPeriodo === "7 Dias" ? "bg-purple-600" : "bg-gray-700"}`}
+  >
+    7 dias
+  </button>
+
+  <button
+    onClick={() => setFiltroPeriodo("30 Dias")}
+    className={`px-4 py-2 rounded-lg ${filtroPeriodo === "30 Dias" ? "bg-purple-600" : "bg-gray-700"}`}
+  >
+    30 dias
+  </button>
+
+  <button
+    onClick={() => setFiltroPeriodo("Personalizado")}
+    className={`px-4 py-2 rounded-lg ${filtroPeriodo === "Personalizado" ? "bg-purple-600" : "bg-gray-700"}`}
+  >
+    Personalizado
+  </button>
+</div>
+
+{filtroPeriodo === "Personalizado" && (
+  <div className="flex gap-4 mb-6">
+    <input
+      type="date"
+      value={dataInicio}
+      onChange={(e) => setDataInicio(e.target.value)}
+      className="bg-[#1f2937] p-2 rounded-lg"
+    />
+    <input
+      type="date"
+      value={dataFim}
+      onChange={(e) => setDataFim(e.target.value)}
+      className="bg-[#1f2937] p-2 rounded-lg"
+    />
+  </div>
+)}
 
       {/* CARDS RESUMO */}
       <div className="grid md:grid-cols-3 gap-4 mb-8">
@@ -153,9 +278,9 @@ export default function ClientesPage() {
             ) : (
               clientesFiltrados.map((cliente, index) => {
                 const margem =
-                  cliente.total_orcado > 0
-                    ? (cliente.total_lucro / cliente.total_orcado) * 100
-                    : 0;
+  cliente.total_orcado > 0
+    ? (cliente.total_lucro / cliente.total_orcado) * 100
+    : 0;
 
                 return (
                   <tr
