@@ -477,7 +477,7 @@ function adicionarItemEditado() {
     { id: "hoje", label: "Hoje" },
     { id: "7dias", label: "7 dias" },
     { id: "30dias", label: "30 dias" },
-    { id: "mes", label: "Mês" },
+    { id: "mes", label: "Mês atual" },
     { id: "todos", label: "Todos" },
   ].map((p) => (
     <button
