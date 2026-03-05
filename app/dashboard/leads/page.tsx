@@ -597,10 +597,11 @@ function adicionarItemEditado() {
                 <td className="p-4 text-xs">
   {item.ultima_compra ? (
     (() => {
-      const dias = Math.floor(
-        (Date.now() - new Date(item.ultima_compra).getTime()) /
-          (1000 * 60 * 60 * 24)
-      );
+     const diasBruto =
+  (Date.now() - new Date(item.ultima_compra).getTime()) /
+  (1000 * 60 * 60 * 24);
+
+const dias = Math.max(0, Math.floor(diasBruto));
 
       return (
         <span
@@ -610,7 +611,7 @@ function adicionarItemEditado() {
               : "text-yellow-300"
           }
         >
-          {dias} dias
+          {dias === 1 ? "Há 1 dia" : `Há ${dias} dias`}
         </span>
       );
     })()

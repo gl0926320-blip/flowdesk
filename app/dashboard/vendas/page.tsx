@@ -44,6 +44,7 @@ export default function VendasPage() {
       .select("*")
       .eq("user_id", userData.user.id)
       .eq("status", "concluido")
+.eq("ativo", true)
       .order("created_at", { ascending: false });
 
     if (error) {

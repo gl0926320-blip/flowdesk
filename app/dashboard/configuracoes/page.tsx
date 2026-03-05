@@ -113,16 +113,16 @@ const margemMedia =
     : 0
 
       // ⏳ Tempo médio de fechamento
+const fechadosComData = concluidos.filter(s => s.data_fechamento)
+
 const tempoMedioFechamento =
-  concluidos.length > 0
-    ? concluidos.reduce((acc, s) => {
-        if (!s.data_fechamento) return acc
+  fechadosComData.length > 0
+    ? fechadosComData.reduce((acc, s) => {
         const inicio = new Date(s.created_at)
         const fim = new Date(s.data_fechamento)
-        const diff =
-          (fim.getTime() - inicio.getTime()) / 86400000
+        const diff = (fim.getTime() - inicio.getTime()) / 86400000
         return acc + diff
-      }, 0) / concluidos.length
+      }, 0) / fechadosComData.length
     : 0
 
       // 🔥 Alertas
@@ -211,7 +211,7 @@ if (oportunidades < 3) {
   score = Math.min(score, 85)
 }
 
-if (score < 0) score = 0
+score = Math.min(score, 98)
 
 const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
 
@@ -351,26 +351,63 @@ Abaixo de 15% é considerada margem apertada."
           </div>
         )}
 
-        {/* 🎯 SUGESTÕES */}
-        <div className="bg-gray-900 p-6 rounded-xl space-y-3">
-          <h2 className="text-xl font-semibold text-yellow-400">
-            🎯 Recomendações Inteligentes
-          </h2>
+{/* 🧠 DIAGNÓSTICO DO FUNIL */}
+<div className="bg-gray-900 p-6 rounded-xl space-y-3">
+  <h2 className="text-xl font-semibold text-yellow-400">
+    🧠 Diagnóstico do Funil
+  </h2>
 
-          {diagnostico.conversao < 20 && (
-            <p>👉 Sua taxa de conversão está baixa. Ajuste abordagem.</p>
-          )}
+  {/* 🚀 FUNIL FORTE */}
+  {diagnostico.score >= 85 && (
+    <p className="text-green-400">
+      ⭐ Excelente performance! Seu funil está saudável e gerando resultados consistentes.
+    </p>
+  )}
 
-          {diagnostico.margemMedia < 15 && (
-            <p>👉 Margem baixa. Revise custos ou precificação.</p>
-          )}
+  {/* ⚠️ CONVERSÃO BAIXA */}
+  {diagnostico.score < 85 && diagnostico.conversao < 25 && (
+    <p className="text-yellow-400">
+      ⚠️ Sua taxa de conversão está abaixo do ideal. Revise abordagem e follow-ups.
+    </p>
+  )}
 
-          {diagnostico.taxaPerda > 40 && (
-            <p>👉 Alta taxa de perda. Revise seu funil comercial.</p>
-          )}
+  {/* 🚨 MUITAS PERDAS */}
+  {diagnostico.taxaPerda > 40 && (
+    <p className="text-red-400">
+      🚨 Alta taxa de perda detectada. Pode haver problema na qualificação ou proposta.
+    </p>
+  )}
 
-          <p>📌 Maior concentração está em: {diagnostico.gargalo}</p>
-        </div>
+  {/* 💤 LEADS PARADOS */}
+  {diagnostico.leadsParados.length > 0 && (
+    <p className="text-yellow-400">
+      🔔 {diagnostico.leadsParados.length} lead(s) aguardando ação imediata.
+    </p>
+  )}
+
+  {/* 📈 CRESCIMENTO */}
+  {diagnostico.variacaoReceita > 0 && (
+    <p className="text-green-400">
+      📈 Receita cresceu {diagnostico.variacaoReceita.toFixed(1)}% em relação ao mês anterior.
+    </p>
+  )}
+
+  {/* 📉 QUEDA */}
+  {diagnostico.variacaoReceita < 0 && (
+    <p className="text-red-400">
+      📉 Receita caiu {Math.abs(diagnostico.variacaoReceita).toFixed(1)}% vs mês anterior.
+    </p>
+  )}
+
+  {/* 🟢 SEM ALERTAS */}
+  {diagnostico.score >= 85 &&
+    diagnostico.leadsParados.length === 0 &&
+    diagnostico.taxaPerda < 30 && (
+      <p className="text-green-400">
+        🚀 Nenhum ponto crítico identificado no momento.
+      </p>
+    )}
+</div>
 
       </div>
     )

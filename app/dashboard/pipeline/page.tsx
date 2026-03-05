@@ -2,6 +2,7 @@
 
   import { useEffect, useState, useMemo } from "react";
   import { createClient } from "@/lib/supabase-browser";
+  import { DollarSign, TrendingUp, BarChart3, Layers } from "lucide-react";
   import {
     DndContext,
     useDraggable,
@@ -292,12 +293,33 @@
 />
 
           {/* MÉTRICAS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Metric title="Total" value={metrics.total} />
-            <Metric title="Receita" value={` ${metrics.receita}`} />
-            <Metric title="Custos" value={` ${metrics.custo}`} />
-            <Metric title="Lucro" value={` ${metrics.lucro}`} />
-          </div>
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+  
+  <Metric 
+    icon={<Layers size={18} />} 
+    title="Total" 
+    value={metrics.total} 
+  />
+
+  <Metric 
+    icon={<DollarSign size={18} />} 
+    title="Receita" 
+    value={metrics.receita} 
+  />
+
+  <Metric 
+    icon={<BarChart3 size={18} />} 
+    title="Custos" 
+    value={metrics.custo} 
+  />
+
+  <Metric 
+    icon={<TrendingUp size={18} />} 
+    title="Lucro" 
+    value={metrics.lucro} 
+  />
+
+</div>
 
           {/* HEADER */}
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
@@ -590,45 +612,7 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
     );
   }
 
-  /* METRIC */
-  function Metric({ title, value }: any) {
-  return (
-    <div className="
-      p-6 sm:p-8
-      rounded-2xl
-      bg-gradient-to-br from-[#111827] to-[#0f172a]
-      border border-[#1f2937]
-      shadow-[0_10px_40px_rgba(0,0,0,0.6)]
-      hover:border-blue-500/40
-      transition-all duration-300
-      min-h-[120px]
-      flex flex-col justify-center
-    ">
-      
-      <div className="text-xs uppercase tracking-widest text-gray-500">
-        {title}
-      </div>
 
-      <div className="
-        mt-3
-        font-extrabold
-        leading-none
-        tracking-tight
-        text-2xl
-        sm:text-3xl
-        md:text-4xl
-        lg:text-5xl
-        break-words
-        bg-gradient-to-r from-blue-400 to-cyan-300
-        bg-clip-text
-        text-transparent
-      ">
-        {value}
-      </div>
-
-    </div>
-  );
-}
 
   /* INPUT */
   type InputProps = {
@@ -656,3 +640,20 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
       />
     );
   }
+
+  function Metric({ icon, title, value }: any) {
+  return (
+    <div className="p-6 rounded-2xl bg-gradient-to-br from-[#111827] to-[#0f172a] border border-[#1f2937] hover:scale-[1.02] transition-all duration-200">
+      
+      <div className="flex justify-between text-gray-400 text-sm">
+        <span>{title}</span>
+        <span className="text-blue-400">{icon}</span>
+      </div>
+
+      <div className="mt-4 text-3xl font-bold text-cyan-400">
+        {value}
+      </div>
+
+    </div>
+  );
+}

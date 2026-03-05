@@ -14,14 +14,13 @@ import {
 
 type Servico = {
   id: string;
-  user_id: string;
   responsavel: string | null;
-  vendedor_id: string | null;
   valor_orcamento: number | null;
   valor_comissao: number | null;
   percentual_comissao: number | null;
   status: string;
   created_at: string;
+  ativo: boolean;
 };
 
 export default function EquipePage() {
@@ -43,10 +42,21 @@ export default function EquipePage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
-    const { data, error } = await supabase
-      .from("servicos")
-      .select("*")
-      .eq("user_id", userData.user.id);
+ const { data, error } = await supabase
+  .from("servicos")
+  .select(`
+    id,
+    responsavel,
+    valor_orcamento,
+    valor_comissao,
+    percentual_comissao,
+    status,
+    created_at,
+    ativo
+  `)
+  .eq("user_id", userData.user.id)
+  .eq("status", "concluido")
+  .eq("ativo", true);
 
     if (!error) setData(data || []);
     setLoading(false);
@@ -103,49 +113,35 @@ export default function EquipePage() {
     const map: any = {};
 
     filtered.forEach((item) => {
-      let nome =
-        item.responsavel?.trim() ||
-        item.vendedor_id?.trim() ||
-        "Não definido";
+      let nome = item.responsavel?.trim() || "Não definido";
 
       if (!map[nome]) {
         map[nome] = {
           vendas: 0,
           faturamento: 0,
           comissao: 0,
-          propostas: 0,
         };
       }
 
-      map[nome].propostas++;
 
-      if (item.status?.toLowerCase() === "concluido") {
-        map[nome].vendas++;
-        map[nome].faturamento += Number(item.valor_orcamento) || 0;
+map[nome].vendas++;
+map[nome].faturamento += Number(item.valor_orcamento) || 0;
 
-        let valorComissao = item.valor_comissao;
+let valorComissao = item.valor_comissao;
 
-        if (
-          !valorComissao &&
-          item.valor_orcamento &&
-          item.percentual_comissao
-        ) {
-          valorComissao =
-            (item.valor_orcamento * item.percentual_comissao) / 100;
-        }
+if (!valorComissao && item.valor_orcamento && item.percentual_comissao) {
+  valorComissao =
+    (item.valor_orcamento * item.percentual_comissao) / 100;
+}
 
-        map[nome].comissao += valorComissao || 0;
-      }
+map[nome].comissao += valorComissao || 0;
     });
 
     return Object.entries(map)
       .map(([nome, stats]: any) => ({
         nome,
         ...stats,
-        conversao:
-          stats.propostas > 0
-            ? (stats.vendas / stats.propostas) * 100
-            : 0,
+
         ticketMedio:
           stats.vendas > 0
             ? stats.faturamento / stats.vendas
@@ -283,10 +279,14 @@ export default function EquipePage() {
                 />
               </div>
 
-              <div className="grid grid-cols-4 text-sm text-white/60 mt-4">
+              <div className="grid grid-cols-3 text-sm text-white/60 mt-4">
                 <span>Vendas: {item.vendas}</span>
-                <span>Propostas: {item.propostas}</span>
-                <span>Conversão: {item.conversao.toFixed(1)}%</span>
+                <span>
+  Ticket Médio: {item.ticketMedio.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  })}
+</span>
                 <span>
                   Comissão: {item.comissao.toLocaleString("pt-BR", {
   style: "currency",
