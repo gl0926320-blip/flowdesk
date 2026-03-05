@@ -643,17 +643,20 @@ className={`
 <div className="flex justify-between pt-3">
 
   {/* WhatsApp */}
-  <button
-    onClick={() => {
-      const pdfUrl = `${window.location.origin}/orcamento/${item.id}`;
-      const mensagem = `Olá ${item.cliente}, segue sua Ordem de Serviço:\n\n${pdfUrl}`;
-      const link = `${window.location.origin}/orcamento/${item.id}`
-      window.open(link, "_blank");
-    }}
-    className="bg-emerald-600 p-2 rounded-xl hover:scale-110 transition"
-  >
-    <MessageCircle size={14} />
-  </button>
+<button
+  onClick={() => {
+    const link = `${window.location.origin}/orcamento/${item.id}`
+
+    const mensagem = `Olá ${item.cliente}, segue sua Ordem de Serviço:\n\n${link}`
+
+    const whatsapp = `https://wa.me/?text=${encodeURIComponent(mensagem)}`
+
+    window.open(whatsapp, "_blank")
+  }}
+  className="bg-emerald-600 p-2 rounded-xl hover:scale-110 transition"
+>
+  <MessageCircle size={14} />
+</button>
 
   {/* PDF */}
   <button
