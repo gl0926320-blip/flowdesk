@@ -51,6 +51,7 @@
 
     const [form, setForm] = useState({
       cliente: "",
+      telefone: "",
       tipo_servico: "",
       descricao: "",
       valor_orcamento: "",
@@ -81,6 +82,7 @@
     function resetForm() {
       setForm({
         cliente: "",
+        telefone: "",
         tipo_servico: "",
         descricao: "",
         valor_orcamento: "",
@@ -128,6 +130,7 @@
   user_id: userId,
   numero_os: `OS-${Date.now()}`,
   cliente: form.cliente,
+  telefone: form.telefone,
   titulo: form.tipo_servico,
   descricao: form.descricao,
   tipo_servico: form.tipo_servico,
@@ -397,6 +400,11 @@
                 </h3>
 
                 <Input placeholder="Cliente" value={form.cliente} onChange={(v)=>setForm({...form,cliente:v})}/>
+                <Input
+    placeholder="Telefone WhatsApp (ex: 5511999999999)"
+    value={form.telefone}
+    onChange={(v)=>setForm({...form,telefone:v})}
+  />
                 <Input placeholder="Tipo Serviço" value={form.tipo_servico} onChange={(v)=>setForm({...form,tipo_servico:v})}/>
                 <Input placeholder="Descrição" value={form.descricao} onChange={(v)=>setForm({...form,descricao:v})}/>
                 <Input type="number" placeholder="Valor" value={form.valor_orcamento} onChange={(v)=>setForm({...form,valor_orcamento:v})}/>
@@ -624,6 +632,11 @@ className={`
             {editMode ? (
               <>
                 <Input value={local.cliente} onChange={(v)=>setLocal({...local,cliente:v})}/>
+                <Input 
+  placeholder="Telefone WhatsApp"
+  value={local.telefone || ""} 
+  onChange={(v)=>setLocal({...local,telefone:v})}
+/>
                 <Input value={local.descricao} onChange={(v)=>setLocal({...local,descricao:v})}/>
                 <Input type="number" value={local.valor_orcamento} onChange={(v)=>setLocal({...local,valor_orcamento:v})}/>
                 <Input type="number" value={local.custo} onChange={(v)=>setLocal({...local,custo:v})}/>
@@ -642,16 +655,23 @@ className={`
 </div>
 <div className="flex justify-between pt-3">
 
-  {/* WhatsApp */}
+ {/* WhatsApp */}
 <button
   onClick={() => {
+
+    if (!item.telefone) {
+      alert("Cliente não possui telefone cadastrado")
+      return
+    }
+
     const link = `${window.location.origin}/orcamento/${item.id}`
 
-    const mensagem = `Olá ${item.cliente}, segue sua Ordem de Serviço:\n\n${link}`
+    const mensagem = `Olá ${item.cliente}, segue seu orçamento:\n\n${link}`
 
-    const whatsapp = `https://wa.me/?text=${encodeURIComponent(mensagem)}`
+    const whatsapp = `https://wa.me/${item.telefone}?text=${encodeURIComponent(mensagem)}`
 
     window.open(whatsapp, "_blank")
+
   }}
   className="bg-emerald-600 p-2 rounded-xl hover:scale-110 transition"
 >
