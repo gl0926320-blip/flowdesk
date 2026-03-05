@@ -1,12 +1,12 @@
 import { createClient } from "@/lib/supabase-server"
 import { notFound } from "next/navigation"
 
-export default async function OrcamentoPage({
+export default async function OrcamentoPublico({
   params,
 }: {
   params: { id: string }
 }) {
-  const supabase = await createClient() // 👈 AQUI
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from("servicos")
@@ -19,10 +19,11 @@ export default async function OrcamentoPage({
   }
 
   return (
-    <div>
-      <h1>Ordem de Serviço</h1>
-      <p>Cliente: {data.cliente}</p>
-      <p>Valor: {data.valor_orcamento}</p>
+    <div style={{ padding: 40 }}>
+      <h1>Orçamento</h1>
+      <hr />
+      <p><strong>Cliente:</strong> {data.cliente}</p>
+      <p><strong>Valor:</strong> R$ {data.valor_orcamento}</p>
     </div>
   )
 }

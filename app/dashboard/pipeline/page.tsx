@@ -647,7 +647,7 @@ className={`
     onClick={() => {
       const pdfUrl = `${window.location.origin}/orcamento/${item.id}`;
       const mensagem = `Olá ${item.cliente}, segue sua Ordem de Serviço:\n\n${pdfUrl}`;
-      const link = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+      const link = `${window.location.origin}/orcamento/${item.id}`
       window.open(link, "_blank");
     }}
     className="bg-emerald-600 p-2 rounded-xl hover:scale-110 transition"
