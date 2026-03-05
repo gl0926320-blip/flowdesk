@@ -2,7 +2,16 @@
 
   import { useEffect, useState, useMemo } from "react";
   import { createClient } from "@/lib/supabase-browser";
-  import { DollarSign, TrendingUp, BarChart3, Layers } from "lucide-react";
+  import { 
+  DollarSign, 
+  TrendingUp, 
+  BarChart3, 
+  Layers,
+  Trash2,
+  Pencil,
+  FileText,
+  MessageCircle
+} from "lucide-react";
   import {
     DndContext,
     useDraggable,
@@ -10,6 +19,13 @@
     closestCorners,
   } from "@dnd-kit/core";
   import { CSS } from "@dnd-kit/utilities";
+
+      function formatMoney(value: number) {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
 
   const columns = [
     "lead",
@@ -30,6 +46,8 @@
     const [filtro, setFiltro] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mês" | "Custom">("Hoje");
     const [dataInicio, setDataInicio] = useState<string | null>(null);
     const [dataFim, setDataFim] = useState<string | null>(null);
+
+
 
     const [form, setForm] = useState({
       cliente: "",
@@ -338,26 +356,35 @@
           {/* PIPELINE */}
           <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
             <div className="flex flex-wrap gap-6 md:gap-10 pb-6 md:pb-10">
-              {columns.map((col) => (
-                <Column key={col} id={col} title={col}>
-                  {itensFiltrados
-  .filter((i) => i.status === col && i.ativo === true)
-                    .map((item) => (
-                      <Card
-                        key={item.id}
-                        item={item}
-                        expanded={expandedId === item.id}
-                        toggleExpand={() =>
-                          setExpandedId(
-                            expandedId === item.id ? null : item.id
-                          )
-                        }
-                        atualizarItem={atualizarItem}
-                        deletar={deletar}
-                      />
-                    ))}
-                </Column>
-              ))}
+{columns.map((col) => {
+  const itensDaColuna = itensFiltrados.filter(
+    (i) => i.status === col && i.ativo === true
+  );
+
+  return (
+    <Column
+      key={col}
+      id={col}
+      title={col}
+      count={itensDaColuna.length}
+    >
+      {itensDaColuna.map((item) => (
+        <Card
+          key={item.id}
+          item={item}
+          expanded={expandedId === item.id}
+          toggleExpand={() =>
+            setExpandedId(
+              expandedId === item.id ? null : item.id
+            )
+          }
+          atualizarItem={atualizarItem}
+          deletar={deletar}
+        />
+      ))}
+    </Column>
+  );
+})}
             </div>
           </DndContext>
 
@@ -427,10 +454,10 @@
   }
 
   /* COLUMN */
-  function Column({ id, title, children }: any) {
+  function Column({ id, title, children, count }: any) {
     const { setNodeRef, isOver } = useDroppable({ id });
 
-    const count = Array.isArray(children) ? children.length : 0;
+
 
     function getColumnStyle(columnId: string) {
       switch (columnId) {
@@ -469,6 +496,8 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
   ${isOver ? "scale-[1.02] border-blue-500 shadow-[0_20px_70px_rgba(59,130,246,0.3)]" : ""}
 `}
       >
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+
           {/* 🔥 BARRA SUPERIOR */}
   <div
     className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl bg-gradient-to-r ${colorStyle}`}
@@ -526,6 +555,10 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
     const [editMode, setEditMode] = useState(false);
     const [local, setLocal] = useState(item);
 
+      const lucro =
+  Number(item.valor_orcamento || 0) -
+  Number(item.custo || 0);
+
     function salvarEdicao() {
       atualizarItem(item.id, local);
       setEditMode(false);
@@ -535,30 +568,52 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
       <div
         ref={setNodeRef}
         style={style}
-       className={`
-  p-4 md:p-5 rounded-2xl
-  backdrop-blur-xl
-  border
+className={`
+  relative
+  p-4 md:p-5
+  rounded-2xl
   text-white
-  shadow-[0_20px_60px_rgba(0,0,0,0.7)]
+
+  backdrop-blur-2xl
+  bg-white/5
+  border border-white/10
+
+  shadow-[0_20px_60px_rgba(0,0,0,0.6)]
+  hover:shadow-[0_25px_80px_rgba(59,130,246,0.15)]
+
   transition-all duration-300
-  hover:scale-[1.05] hover:-translate-y-2
+  hover:scale-[1.04]
+  hover:-translate-y-1
 
   ${
     item.ativo === false
-      ? "bg-gradient-to-br from-red-900/60 to-red-700/30 border-red-500/40 opacity-70"
-      : "bg-gradient-to-br from-white/20 to-white/5 border-white/10"
+      ? "bg-red-900/20 border-red-500/30 opacity-60"
+      : ""
   }
 
-  ${isDragging ? "scale-[1.08] rotate-1 shadow-[0_40px_100px_rgba(0,0,0,0.9)]" : ""}
+  ${
+    isDragging
+      ? "scale-[1.06] rotate-1 shadow-[0_40px_100px_rgba(0,0,0,0.8)]"
+      : ""
+  }
 `}
       >
-        <div {...listeners} {...attributes} className="cursor-grab font-medium flex justify-between">
-          <span>{item.cliente}</span>
-          <span className="text-blue-300 font-semibold">
-            R$ {item.valor_orcamento}
-          </span>
-        </div>
+<div
+  {...listeners}
+  {...attributes}
+  className="cursor-grab font-medium"
+>
+  <div className="flex justify-between">
+    <span>{item.cliente}</span>
+<span className="text-blue-400 font-semibold">
+  {formatMoney(Number(item.valor_orcamento || 0))}
+</span>
+  </div>
+
+<div className="text-xs text-emerald-400 mt-1">
+  Lucro: {formatMoney(lucro)}
+</div>
+</div>
 
         <div onClick={toggleExpand} className="text-xs text-blue-200 mt-3 cursor-pointer">
           {expanded ? "Fechar ↑" : "Detalhes ↓"}
@@ -573,20 +628,7 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
                 <Input type="number" value={local.valor_orcamento} onChange={(v)=>setLocal({...local,valor_orcamento:v})}/>
                 <Input type="number" value={local.custo} onChange={(v)=>setLocal({...local,custo:v})}/>
 
-{/* 🔥 NOVO CAMPO DE STATUS */}
-<select
-  value={local.status}
-  onChange={(e) =>
-    setLocal({ ...local, status: e.target.value })
-  }
-  className="w-full p-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
->
-  {columns.map((col) => (
-    <option key={col} value={col} className="bg-[#0f172a]">
-      {col.replaceAll("_", " ").toUpperCase()}
-    </option>
-  ))}
-</select>
+
 
 <button onClick={salvarEdicao} className="w-full bg-blue-600 py-2 rounded-xl">
   Salvar Alterações
@@ -595,15 +637,59 @@ shadow-[0_15px_50px_rgba(0,0,0,0.6)]
             ) : (
               <>
                 <div>{item.descricao}</div>
-                <div>Custo: R$ {item.custo}</div>
-                <div className="flex gap-3 pt-2">
-                  <button onClick={()=>setEditMode(true)} className="flex-1 bg-blue-600 py-2 rounded-xl">
-                    Editar
-                  </button>
-                  <button onClick={()=>deletar(item.id)} className="flex-1 bg-red-600 py-2 rounded-xl">
-                    Deletar
-                  </button>
-                </div>
+               <div>
+  Custo: {formatMoney(Number(item.custo || 0))}
+</div>
+<div className="flex justify-between pt-3">
+
+  {/* WhatsApp */}
+  <button
+    onClick={() => {
+      const pdfUrl = `${window.location.origin}/orcamento/${item.id}`;
+      const mensagem = `Olá ${item.cliente}, segue sua Ordem de Serviço:\n\n${pdfUrl}`;
+      const link = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+      window.open(link, "_blank");
+    }}
+    className="bg-emerald-600 p-2 rounded-xl hover:scale-110 transition"
+  >
+    <MessageCircle size={14} />
+  </button>
+
+  {/* PDF */}
+  <button
+    onClick={async () => {
+      const response = await fetch("/api/gerar-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item),
+      });
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }}
+    className="bg-purple-600 p-2 rounded-xl hover:scale-110 hover:shadow-lg transition-all duration-200"
+  >
+    <FileText size={16} />
+  </button>
+
+  {/* Editar */}
+  <button
+    onClick={() => setEditMode(true)}
+    className="bg-blue-600 p-2 rounded-xl hover:scale-110 transition"
+  >
+    <Pencil size={16} />
+  </button>
+
+  {/* Deletar */}
+  <button
+    onClick={() => deletar(item.id)}
+    className="bg-red-600 p-2 rounded-xl hover:scale-110 transition"
+  >
+    <Trash2 size={16} />
+  </button>
+
+</div>
               </>
             )}
           </div>

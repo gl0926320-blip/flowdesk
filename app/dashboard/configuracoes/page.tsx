@@ -58,27 +58,64 @@
   const status = s.status?.trim().toLowerCase()
   return status === "proposta_enviada" || status === "aguardando_cliente"
 })
+const concluidos = ativos.filter(
+  s => s.status?.trim().toLowerCase() === "concluido"
+)
 
-      const concluidos = servicos.filter(
-        s => s.status?.trim().toLowerCase() === "concluido"
-      )
+const perdidos = ativos.filter(
+  s => ["recusado","cancelado","perdido"].includes(
+    s.status?.trim().toLowerCase()
+  )
+)
 
-      const perdidos = servicos.filter(
-        s => s.status?.trim().toLowerCase() === "perdido"
-      )
+// 🔥 PADRÃO DASHBOARD
 
-      // 📊 Conversão baseada em oportunidades reais
-const oportunidades =
-  propostas.length + concluidos.length + perdidos.length
+const STATUS_POTENCIAL = [
+  "lead",
+  "proposta_enviada",
+  "aguardando_cliente",
+];
+
+const STATUS_CONFIRMADA = [
+  "proposta_validada",
+  "andamento",
+];
+
+const STATUS_REALIZADA = [
+  "concluido",
+];
+
+const potencialList = ativos.filter(o =>
+  STATUS_POTENCIAL.includes(
+    o.status?.trim().toLowerCase()
+  )
+);
+
+const confirmadaList = ativos.filter(o =>
+  STATUS_CONFIRMADA.includes(
+    o.status?.trim().toLowerCase()
+  )
+);
+
+const realizadosList = ativos.filter(o =>
+  STATUS_REALIZADA.includes(
+    o.status?.trim().toLowerCase()
+  )
+);
+
+const baseConversao =
+  potencialList.length +
+  confirmadaList.length +
+  realizadosList.length;
 
 const conversao =
-  oportunidades > 0
-    ? (concluidos.length / oportunidades) * 100
-    : 0
+  baseConversao > 0
+    ? (realizadosList.length / baseConversao) * 100
+    : 0;
 
 
       // 💰 Receita do mês
-const receitaMes = concluidos
+const receitaMes = realizadosList
   .filter(s => {
     const data = new Date(s.data_fechamento || s.created_at)
     return (
@@ -86,13 +123,13 @@ const receitaMes = concluidos
       data.getFullYear() === hoje.getFullYear()
     )
   })
-  .reduce((acc, s) => acc + (s.valor_orcamento || 0), 0)
+  .reduce((acc, s) => acc + Number(s.valor_orcamento || 0), 0)
 
 
 // 📉 Taxa de perda baseada em oportunidades reais
 const taxaPerda =
-  oportunidades > 0
-    ? (perdidos.length / oportunidades) * 100
+  baseConversao > 0
+    ? (perdidos.length / baseConversao) * 100
     : 0
 
       // 💎 Ticket médio
@@ -138,7 +175,7 @@ const tempoMedioFechamento =
         s => !s.comissao_paga && diasDesde(s.created_at) > 7
       )
 
-      const clientesInativos = servicos.filter(
+      const clientesInativos = ativos.filter(
         s => diasDesde(s.ultima_compra) > 30
       )
 
@@ -174,12 +211,12 @@ if (ativos.length < 5) {
 }
 
 // 🎯 GERAÇÃO DE OPORTUNIDADES
-if (leads.length > 5 && oportunidades < 3) {
+if (leads.length >= 5 && realizadosList.length === 0) {
   score -= 15 // funil travado no topo
 }
 
 // 📊 CONVERSÃO REAL
-if (oportunidades >= 3) {
+if (baseConversao >= 3) {
   if (conversao < 15) score -= 25
   else if (conversao < 25) score -= 15
   else if (conversao < 35) score -= 8
@@ -207,15 +244,16 @@ else if (propostasParadas.length >= 2) score -= 6
 if (tempoMedioFechamento > 30) score -= 10
 
 // 🧊 EVITAR SCORE 100 FALSO
-if (oportunidades < 3) {
+if (baseConversao < 3) {
   score = Math.min(score, 85)
 }
-
+score = Math.min(score, 98)
+score = Math.max(score, 0)
 score = Math.min(score, 98)
 
 const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
 
-const receitaMesAnterior = concluidos
+const receitaMesAnterior = realizadosList
   .filter(s => {
     const data = new Date(s.data_fechamento || s.created_at)
     return (
