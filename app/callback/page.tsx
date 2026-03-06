@@ -19,36 +19,45 @@ export default function AuthCallback() {
         return;
       }
 
-      // 1) Se já existe vínculo pelo user_id, não tenta aceitar convite novamente
+      // vínculo atual do usuário
       const { data: existingMembership } = await supabase
         .from("company_users")
-        .select("id, role, status")
+        .select("id, company_id, role, status")
         .eq("user_id", user.id)
+        .eq("status", "accepted")
         .maybeSingle();
 
-      if (existingMembership) {
-        router.push("/dashboard");
-        return;
-      }
-
-      // 2) Procura convite pendente pelo email
+      // convite pendente por email
       const { data: invite } = await supabase
         .from("company_users")
-        .select("*")
+        .select("id, company_id, email, role, status")
         .eq("email", user.email)
         .eq("status", "pending")
         .maybeSingle();
 
-      // 3) Se existir convite, vincula o user autenticado e aceita
-      if (invite) {
-        await supabase
-          .from("company_users")
-          .update({
-            status: "accepted",
-            user_id: user.id,
-          })
-          .eq("id", invite.id);
+      // se não existe convite, segue normal
+      if (!invite) {
+        router.push("/dashboard");
+        return;
       }
+
+      // se existe convite e já existe vínculo em outra empresa, pedir confirmação
+      if (
+        existingMembership &&
+        existingMembership.company_id !== invite.company_id
+      ) {
+        router.push(`/dashboard/trocar-empresa?inviteId=${invite.id}`);
+        return;
+      }
+
+      // se não tem vínculo atual, ou o vínculo é da mesma empresa, aceita direto
+      await supabase
+        .from("company_users")
+        .update({
+          user_id: user.id,
+          status: "accepted",
+        })
+        .eq("id", invite.id);
 
       router.push("/dashboard");
     }

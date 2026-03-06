@@ -17,6 +17,9 @@ import {
   Trash2,
   RefreshCcw,
   AlertTriangle,
+  LogOut,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react"
 
 type User = {
@@ -24,6 +27,17 @@ type User = {
   email: string
   role: string
   status: string
+}
+
+type InviteData = {
+  id: string
+  company_id: string
+  email: string
+  role: string
+  status: string
+  companies?: {
+    name: string
+  } | null
 }
 
 export default function EmpresaPage() {
@@ -35,12 +49,15 @@ export default function EmpresaPage() {
   const [savingName, setSavingName] = useState(false)
   const [sendingInvite, setSendingInvite] = useState(false)
   const [processingEmail, setProcessingEmail] = useState<string | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
 
   const [myRole, setMyRole] = useState("")
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
 
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("vendedor")
+
+  const [receivedInvite, setReceivedInvite] = useState<InviteData | null>(null)
 
   const precisaDefinirNome =
     !companyName.trim() || companyName.trim().toLowerCase() === "minha empresa"
@@ -106,6 +123,10 @@ export default function EmpresaPage() {
       .maybeSingle()
 
     if (!me?.company_id) {
+      setMyRole("")
+      setMyCompanyId(null)
+      setCompanyName("")
+      setUsers([])
       setLoading(false)
       return
     }
@@ -147,8 +168,35 @@ export default function EmpresaPage() {
     setLoading(false)
   }
 
+  async function loadReceivedInvite() {
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData.user
+    if (!user?.email) {
+      setReceivedInvite(null)
+      return
+    }
+
+    const { data: invite } = await supabase
+      .from("company_users")
+      .select("id, company_id, email, role, status, companies(name)")
+      .eq("email", user.email)
+      .eq("status", "pending")
+      .maybeSingle()
+
+    if (invite) {
+      setReceivedInvite(invite as any)
+    } else {
+      setReceivedInvite(null)
+    }
+  }
+
   useEffect(() => {
-    loadCompany()
+    async function init() {
+      await loadCompany()
+      await loadReceivedInvite()
+    }
+
+    init()
   }, [])
 
   async function updateCompanyName() {
@@ -179,7 +227,7 @@ export default function EmpresaPage() {
     }
 
     toast.success("Empresa atualizada com sucesso")
-    loadCompany()
+    await loadCompany()
   }
 
   async function inviteUser() {
@@ -229,7 +277,8 @@ export default function EmpresaPage() {
     toast.success("Convite enviado com sucesso")
     setInviteEmail("")
     setInviteRole("vendedor")
-    loadCompany()
+    await loadCompany()
+    await loadReceivedInvite()
   }
 
   async function updateRole(email: string, role: string) {
@@ -251,7 +300,7 @@ export default function EmpresaPage() {
     }
 
     toast.success("Perfil atualizado")
-    loadCompany()
+    await loadCompany()
   }
 
   async function deactivateUser(email: string) {
@@ -273,7 +322,7 @@ export default function EmpresaPage() {
     }
 
     toast.success("Usuário desativado")
-    loadCompany()
+    await loadCompany()
   }
 
   async function reactivateUser(email: string) {
@@ -295,7 +344,7 @@ export default function EmpresaPage() {
     }
 
     toast.success("Usuário reativado")
-    loadCompany()
+    await loadCompany()
   }
 
   async function removeUser(email: string) {
@@ -318,7 +367,72 @@ export default function EmpresaPage() {
     }
 
     toast.success("Usuário removido")
-    loadCompany()
+    await loadCompany()
+  }
+
+  async function aceitarConviteRecebido() {
+    if (!receivedInvite) return
+
+    setInviteLoading(true)
+
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData.user
+
+    if (!user) {
+      setInviteLoading(false)
+      toast.error("Usuário não autenticado")
+      return
+    }
+
+    // remove vínculo atual ativo do usuário
+    await supabase
+      .from("company_users")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("status", "accepted")
+
+    // aceita o convite novo
+    const { error } = await supabase
+      .from("company_users")
+      .update({
+        user_id: user.id,
+        status: "accepted",
+      })
+      .eq("id", receivedInvite.id)
+
+    setInviteLoading(false)
+
+    if (error) {
+      toast.error("Erro ao aceitar convite")
+      return
+    }
+
+    toast.success("Você agora faz parte da nova empresa")
+    setReceivedInvite(null)
+    await loadCompany()
+    await loadReceivedInvite()
+  }
+
+  async function recusarConviteRecebido() {
+    if (!receivedInvite) return
+
+    setInviteLoading(true)
+
+    const { error } = await supabase
+      .from("company_users")
+      .delete()
+      .eq("id", receivedInvite.id)
+
+    setInviteLoading(false)
+
+    if (error) {
+      toast.error("Erro ao recusar convite")
+      return
+    }
+
+    toast.success("Convite recusado")
+    setReceivedInvite(null)
+    await loadReceivedInvite()
   }
 
   if (loading) {
@@ -329,7 +443,7 @@ export default function EmpresaPage() {
     )
   }
 
-  if (myRole === "vendedor") {
+  if (myRole === "vendedor" && !receivedInvite) {
     return (
       <div className="p-6 md:p-10 text-white max-w-4xl mx-auto">
         <div className="bg-zinc-900/90 border border-zinc-800 p-10 rounded-3xl text-center shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
@@ -365,6 +479,56 @@ export default function EmpresaPage() {
           Gerencie identidade da empresa, convites, permissões da equipe e status de acesso em um único painel.
         </p>
       </div>
+
+      {receivedInvite && receivedInvite.company_id !== myCompanyId && (
+        <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5 md:p-6 shadow-[0_15px_60px_rgba(0,0,0,0.25)]">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
+            <div className="flex gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
+                <Mail size={22} />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-cyan-300">
+                  Você recebeu um convite para outra empresa
+                </h2>
+
+                <p className="text-sm text-cyan-100/80 mt-1">
+                  Empresa convidando: <strong>{receivedInvite.companies?.name || "Empresa não identificada"}</strong>
+                </p>
+
+                <p className="text-sm text-cyan-100/80">
+                  Perfil no convite: <strong>{roleLabel(receivedInvite.role)}</strong>
+                </p>
+
+                <p className="text-sm text-amber-300 mt-3">
+                  Ao aceitar, você perderá o vínculo com sua empresa atual e passará a fazer parte da nova empresa.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={recusarConviteRecebido}
+                disabled={inviteLoading}
+                className="h-11 px-5 rounded-xl border border-red-500/20 bg-red-500/15 text-red-400 font-semibold hover:bg-red-500/20 transition disabled:opacity-60 flex items-center gap-2"
+              >
+                <XCircle size={16} />
+                Recusar
+              </button>
+
+              <button
+                onClick={aceitarConviteRecebido}
+                disabled={inviteLoading}
+                className="h-11 px-5 rounded-xl bg-cyan-500 text-black font-semibold hover:bg-cyan-400 transition disabled:opacity-60 flex items-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                {inviteLoading ? "Processando..." : "Aceitar e trocar de empresa"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {precisaDefinirNome && (
         <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-5 md:p-6 shadow-[0_15px_60px_rgba(0,0,0,0.25)]">
