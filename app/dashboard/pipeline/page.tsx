@@ -70,7 +70,8 @@ const { data: companyUser } = await supabase
   .from("company_users")
   .select("company_id, role")
   .eq("user_id", data.user.id)
-  .single();
+.limit(1)
+.maybeSingle()
 
 if (!companyUser?.company_id) return;
 
@@ -110,18 +111,19 @@ const { data: servicos } = await query.order("created_at", { ascending: false })
 
   async function salvar() {
     if (!userId || !companyId) return;
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("plan")
-      .eq("id", userId)
-      .single();
+const { data: profile, error: profileError } = await supabase
+  .from("profiles")
+  .select("plan")
+  .eq("id", userId)
+  .maybeSingle();
 
-    if (profileError) {
-      alert("Erro ao verificar plano");
-      return;
-    }
+if (profileError) {
+  console.error("Erro ao verificar plano:", profileError);
+  alert("Erro ao verificar plano");
+  return;
+}
 
-    const plan = profile?.plan ?? "free";
+const plan = profile?.plan ?? "free";
     const LIMITE_FREE = 5;
 
     // 🔒 Só aplica limite se for FREE
