@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-import { Search, TrendingUp, DollarSign, Layers, X } from "lucide-react";
+import {
+  Search,
+  TrendingUp,
+  DollarSign,
+  Layers,
+  X,
+  Users,
+  Thermometer,
+  ClipboardList,
+  Filter,
+} from "lucide-react";
 
 const STATUS_COLUMNS = [
   "lead",
@@ -45,11 +55,27 @@ const TEMPERATURA_COLORS: Record<string, string> = {
   quente: "bg-red-500/20 text-red-300 border-red-500/40",
 };
 
+const OPTION_STYLE = {
+  color: "#111827",
+  backgroundColor: "#ffffff",
+};
+
+type TeamMember = {
+  user_id: string | null;
+  email: string;
+  role: string;
+  status: string;
+};
+
 export default function LeadsPage() {
   const supabase = createClient();
 
   const [items, setItems] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string>("");
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
   const [search, setSearch] = useState("");
   const [openModal, setOpenModal] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -59,6 +85,10 @@ export default function LeadsPage() {
   const [filtroAtivo, setFiltroAtivo] = useState<"ativos" | "inativos" | "todos">("ativos");
   const [periodo, setPeriodo] = useState<"hoje" | "7dias" | "30dias" | "mes" | "todos">("hoje");
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
+
+  const [filtroResponsavel, setFiltroResponsavel] = useState("todos");
+  const [filtroTemperatura, setFiltroTemperatura] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
 
   const [form, setForm] = useState({
     cliente: "",
@@ -76,9 +106,7 @@ export default function LeadsPage() {
     temperatura: "morno",
   });
 
-  const [itens, setItens] = useState<any[]>([
-    { nome: "", quantidade: 1, valor: 0 },
-  ]);
+  const [itens, setItens] = useState<any[]>([{ nome: "", quantidade: 1, valor: 0 }]);
 
   useEffect(() => {
     load();
@@ -105,6 +133,10 @@ export default function LeadsPage() {
       }
     `;
     document.head.appendChild(style);
+
+    return () => {
+      document.head.removeChild(style);
+    };
   }, []);
 
   async function load() {
@@ -112,26 +144,41 @@ export default function LeadsPage() {
     if (!userData.user) return;
 
     const userId = userData.user.id;
+    setMyUserId(userId);
 
     const { data: companyUser } = await supabase
       .from("company_users")
       .select("company_id, role")
       .eq("user_id", userId)
+      .eq("status", "accepted")
       .single();
 
     if (!companyUser) return;
 
-    const companyId = companyUser.company_id;
-    const role = companyUser.role;
+    const currentCompanyId = companyUser.company_id;
+    const currentRole = companyUser.role;
 
-    setCompanyId(companyId);
+    setCompanyId(currentCompanyId);
+    setMyRole(currentRole);
+
+    if (currentRole === "vendedor") {
+      setFiltroResponsavel(userId);
+    }
+
+    const { data: equipe } = await supabase
+      .from("company_users")
+      .select("user_id, email, role, status")
+      .eq("company_id", currentCompanyId)
+      .order("email", { ascending: true });
+
+    setTeamMembers((equipe as TeamMember[]) || []);
 
     let query = supabase
       .from("servicos")
       .select("*")
-      .eq("company_id", companyId);
+      .eq("company_id", currentCompanyId);
 
-    if (role === "vendedor") {
+    if (currentRole === "vendedor") {
       query = query.eq("user_id", userId);
     }
 
@@ -190,7 +237,7 @@ export default function LeadsPage() {
   }
 
   const totalOrcamento = itens.reduce(
-    (acc, item) => acc + item.quantidade * item.valor,
+    (acc, item) => acc + Number(item.quantidade || 0) * Number(item.valor || 0),
     0
   );
 
@@ -235,6 +282,11 @@ export default function LeadsPage() {
       }
     }
 
+    const responsavelSelecionado =
+      myRole === "vendedor"
+        ? userData.user.email || ""
+        : form.responsavel;
+
     const { error } = await supabase.from("servicos").insert([
       {
         company_id: companyId,
@@ -245,7 +297,7 @@ export default function LeadsPage() {
         cliente: form.cliente,
         origem_lead: form.origem_lead,
         telefone: form.telefone,
-        responsavel: form.responsavel,
+        responsavel: responsavelSelecionado,
         valor_orcamento: totalOrcamento,
         itens,
         tipo_pessoa: form.tipo_pessoa,
@@ -288,7 +340,7 @@ export default function LeadsPage() {
   const filtered = useMemo(() => {
     const now = new Date();
 
-    const filtradoPorPeriodo = items.filter((item) => {
+    let base = items.filter((item) => {
       if (!item.created_at) return true;
 
       const date = new Date(item.created_at);
@@ -328,10 +380,31 @@ export default function LeadsPage() {
       return true;
     });
 
-    return filtradoPorPeriodo.filter((i) =>
-      i.cliente?.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [items, search, periodo, dataSelecionada]);
+    if (search.trim()) {
+      const termo = search.toLowerCase();
+      base = base.filter((i) =>
+        i.cliente?.toLowerCase().includes(termo) ||
+        i.origem_lead?.toLowerCase().includes(termo) ||
+        i.telefone?.toLowerCase().includes(termo) ||
+        i.responsavel?.toLowerCase().includes(termo) ||
+        i.tipo_servico?.toLowerCase().includes(termo)
+      );
+    }
+
+    if (filtroResponsavel !== "todos") {
+      base = base.filter((i) => i.user_id === filtroResponsavel);
+    }
+
+    if (filtroTemperatura !== "todos") {
+      base = base.filter((i) => (i.temperatura || "morno") === filtroTemperatura);
+    }
+
+    if (filtroStatus !== "todos") {
+      base = base.filter((i) => i.status === filtroStatus);
+    }
+
+    return base;
+  }, [items, search, periodo, dataSelecionada, filtroResponsavel, filtroTemperatura, filtroStatus]);
 
   function contarCompras(cliente: string) {
     return items.filter(
@@ -342,20 +415,9 @@ export default function LeadsPage() {
   const metrics = useMemo(() => {
     const total = filtered.length;
 
-    const STATUS_POTENCIAL = [
-      "lead",
-      "proposta_enviada",
-      "aguardando_cliente",
-    ];
-
-    const STATUS_CONFIRMADA = [
-      "proposta_validada",
-      "andamento",
-    ];
-
-    const STATUS_REALIZADA = [
-      "concluido",
-    ];
+    const STATUS_POTENCIAL = ["lead", "proposta_enviada", "aguardando_cliente"];
+    const STATUS_CONFIRMADA = ["proposta_validada", "andamento"];
+    const STATUS_REALIZADA = ["concluido"];
 
     const receitaPotencial = filtered
       .filter((i) => STATUS_POTENCIAL.includes(i.status))
@@ -375,28 +437,20 @@ export default function LeadsPage() {
 
     return {
       total,
-
       receitaReal: receitaReal.toLocaleString("pt-BR", {
         style: "currency",
         currency: "BRL",
       }),
-
       receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
         style: "currency",
         currency: "BRL",
       }),
-
       receitaConfirmada: receitaConfirmada.toLocaleString("pt-BR", {
         style: "currency",
         currency: "BRL",
       }),
-
       concluidos,
-
-      conversao:
-        total > 0
-          ? `${Math.round((concluidos / total) * 100)}%`
-          : "0%",
+      conversao: total > 0 ? `${Math.round((concluidos / total) * 100)}%` : "0%",
     };
   }, [filtered]);
 
@@ -404,19 +458,14 @@ export default function LeadsPage() {
     const counts: Record<string, number> = {};
 
     STATUS_COLUMNS.forEach((status) => {
-      counts[status] = filtered.filter(
-        (i) => i.status === status
-      ).length;
+      counts[status] = filtered.filter((i) => i.status === status).length;
     });
 
     const totalLeads = filtered.length;
 
     return STATUS_COLUMNS.map((status) => {
       const value = counts[status];
-      const percentage =
-        totalLeads > 0
-          ? Math.round((value / totalLeads) * 100)
-          : 0;
+      const percentage = totalLeads > 0 ? Math.round((value / totalLeads) * 100) : 0;
 
       return {
         status,
@@ -427,11 +476,7 @@ export default function LeadsPage() {
     });
   }, [filtered]);
 
-  function EditableField({
-    label,
-    value,
-    field,
-  }: any) {
+  function EditableField({ label, value, field }: any) {
     return (
       <div className="bg-white/5 p-4 rounded-xl">
         <p className="text-gray-400 text-xs">{label}</p>
@@ -476,12 +521,8 @@ export default function LeadsPage() {
     <div className="min-h-screen bg-[#0A0F1C] text-white p-12 space-y-10">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-4xl font-bold text-blue-200">
-            Gestão de Leads
-          </h1>
-          <p className="text-blue-100/60 mt-2">
-            CRM Comercial Profissional
-          </p>
+          <h1 className="text-4xl font-bold text-blue-200">Gestão de Leads</h1>
+          <p className="text-blue-100/60 mt-2">CRM Comercial Profissional</p>
         </div>
 
         <button
@@ -502,9 +543,7 @@ export default function LeadsPage() {
       </div>
 
       <div className="w-full bg-[#0f172a] border border-white/10 rounded-3xl p-8 mt-8">
-        <h3 className="text-lg font-bold text-cyan-400 mb-6">
-          Funil de Conversão
-        </h3>
+        <h3 className="text-lg font-bold text-cyan-400 mb-6">Funil de Conversão</h3>
 
         <div className="space-y-4">
           {funnelData.map((step) => (
@@ -529,92 +568,179 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      <div className="flex items-center bg-white/10 border border-white/20 px-5 py-3 rounded-2xl w-[400px]">
-        <Search size={18} className="text-blue-200" />
-        <input
-          placeholder="Buscar cliente..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-transparent outline-none ml-3 w-full text-white"
-        />
-      </div>
+      <div className="bg-[#0f172a] border border-white/10 rounded-3xl p-6 space-y-5">
+        <div className="flex items-center gap-2 text-cyan-400 font-semibold">
+          <Filter size={18} />
+          <span>Filtros</span>
+        </div>
 
-      <div className="flex gap-3 mt-6 flex-wrap">
-        {[
-          { id: "hoje", label: "Hoje" },
-          { id: "7dias", label: "7 dias" },
-          { id: "30dias", label: "30 dias" },
-          { id: "mes", label: "Mês atual" },
-          { id: "todos", label: "Todos" },
-        ].map((p) => (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <div className="flex items-center bg-white/10 border border-white/20 px-5 py-3 rounded-2xl">
+            <Search size={18} className="text-blue-200" />
+            <input
+              placeholder="Buscar cliente, origem, telefone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-transparent outline-none ml-3 w-full text-white"
+            />
+          </div>
+
+          <div className="relative">
+            <Users
+              size={16}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none"
+            />
+            <select
+              value={myRole === "vendedor" ? myUserId || "todos" : filtroResponsavel}
+              onChange={(e) => setFiltroResponsavel(e.target.value)}
+              disabled={myRole === "vendedor"}
+              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white outline-none appearance-none"
+            >
+              {myRole !== "vendedor" && (
+                <option value="todos" style={OPTION_STYLE}>
+                  Todos os vendedores
+                </option>
+              )}
+
+              {teamMembers
+                .filter((member) => member.user_id && member.status === "accepted")
+                .map((member) => (
+                  <option
+                    key={member.user_id || member.email}
+                    value={member.user_id || ""}
+                    style={OPTION_STYLE}
+                  >
+                    {member.email}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="relative">
+            <Thermometer
+              size={16}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none"
+            />
+            <select
+              value={filtroTemperatura}
+              onChange={(e) => setFiltroTemperatura(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white outline-none appearance-none"
+            >
+              <option value="todos" style={OPTION_STYLE}>
+                Todas temperaturas
+              </option>
+              <option value="frio" style={OPTION_STYLE}>
+                Frio
+              </option>
+              <option value="morno" style={OPTION_STYLE}>
+                Morno
+              </option>
+              <option value="quente" style={OPTION_STYLE}>
+                Quente
+              </option>
+            </select>
+          </div>
+
+          <div className="relative">
+            <ClipboardList
+              size={16}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none"
+            />
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white outline-none appearance-none"
+            >
+              <option value="todos" style={OPTION_STYLE}>
+                Todos status
+              </option>
+
+              {STATUS_COLUMNS.map((status) => (
+                <option key={status} value={status} style={OPTION_STYLE}>
+                  {STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-2 flex-wrap">
+          {[
+            { id: "hoje", label: "Hoje" },
+            { id: "7dias", label: "7 dias" },
+            { id: "30dias", label: "30 dias" },
+            { id: "mes", label: "Mês atual" },
+            { id: "todos", label: "Todos" },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPeriodo(p.id as any)}
+              className={`px-4 py-2 rounded-xl text-sm transition ${
+                periodo === p.id
+                  ? "bg-cyan-500 text-black font-semibold"
+                  : "bg-white/10 hover:bg-white/20"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3 mt-1">
+          <input
+            type="date"
+            value={dataSelecionada || ""}
+            onChange={(e) => {
+              setDataSelecionada(e.target.value);
+              setPeriodo("todos");
+            }}
+            className="px-4 py-2 rounded-xl bg-white/10 border border-white/20"
+          />
+
+          {dataSelecionada && (
+            <button
+              onClick={() => setDataSelecionada(null)}
+              className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm"
+            >
+              Limpar Data
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-1 flex-wrap">
           <button
-            key={p.id}
-            onClick={() => setPeriodo(p.id as any)}
-            className={`px-4 py-2 rounded-xl text-sm transition ${
-              periodo === p.id
-                ? "bg-cyan-500 text-black font-semibold"
+            onClick={() => setFiltroAtivo("ativos")}
+            className={`px-4 py-2 rounded-xl ${
+              filtroAtivo === "ativos"
+                ? "bg-blue-600"
                 : "bg-white/10 hover:bg-white/20"
             }`}
           >
-            {p.label}
+            Ativos
           </button>
-        ))}
-      </div>
 
-      <div className="flex items-center gap-3 mt-4">
-        <input
-          type="date"
-          value={dataSelecionada || ""}
-          onChange={(e) => {
-            setDataSelecionada(e.target.value);
-            setPeriodo("todos");
-          }}
-          className="px-4 py-2 rounded-xl bg-white/10 border border-white/20"
-        />
-
-        {dataSelecionada && (
           <button
-            onClick={() => setDataSelecionada(null)}
-            className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm"
+            onClick={() => setFiltroAtivo("inativos")}
+            className={`px-4 py-2 rounded-xl ${
+              filtroAtivo === "inativos"
+                ? "bg-blue-600"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
           >
-            Limpar Data
+            Inativos
           </button>
-        )}
-      </div>
 
-      <div className="flex gap-3 mt-6 mb-4">
-        <button
-          onClick={() => setFiltroAtivo("ativos")}
-          className={`px-4 py-2 rounded-xl ${
-            filtroAtivo === "ativos"
-              ? "bg-blue-600"
-              : "bg-white/10 hover:bg-white/20"
-          }`}
-        >
-          Ativos
-        </button>
-
-        <button
-          onClick={() => setFiltroAtivo("inativos")}
-          className={`px-4 py-2 rounded-xl ${
-            filtroAtivo === "inativos"
-              ? "bg-blue-600"
-              : "bg-white/10 hover:bg-white/20"
-          }`}
-        >
-          Inativos
-        </button>
-
-        <button
-          onClick={() => setFiltroAtivo("todos")}
-          className={`px-4 py-2 rounded-xl ${
-            filtroAtivo === "todos"
-              ? "bg-blue-600"
-              : "bg-white/10 hover:bg-white/20"
-          }`}
-        >
-          Todos
-        </button>
+          <button
+            onClick={() => setFiltroAtivo("todos")}
+            className={`px-4 py-2 rounded-xl ${
+              filtroAtivo === "todos"
+                ? "bg-blue-600"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
+          >
+            Todos
+          </button>
+        </div>
       </div>
 
       <div className="rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#0f172a] to-[#111827]">
@@ -622,6 +748,8 @@ export default function LeadsPage() {
           <thead className="bg-white/5 text-blue-200 uppercase text-xs">
             <tr>
               <th className="p-4">Cliente</th>
+              <th className="p-4">Responsável</th>
+              <th className="p-4">Origem</th>
               <th className="p-4">Tipo</th>
               <th className="p-4">Documento</th>
               <th className="p-4">Serviço</th>
@@ -647,6 +775,8 @@ export default function LeadsPage() {
                 className="border-t border-white/5 cursor-pointer hover:bg-white/5"
               >
                 <td className="p-4 font-semibold">{item.cliente}</td>
+                <td className="p-4 text-cyan-400">{item.responsavel || "-"}</td>
+                <td className="p-4">{item.origem_lead || "-"}</td>
                 <td className="p-4">
                   {item.tipo_pessoa === "pf" ? "Pessoa Física" : "Pessoa Jurídica"}
                 </td>
@@ -692,9 +822,7 @@ export default function LeadsPage() {
                   <select
                     value={item.temperatura || "morno"}
                     onClick={(e) => e.stopPropagation()}
-                    onChange={(e) =>
-                      atualizarTemperatura(item.id, e.target.value)
-                    }
+                    onChange={(e) => atualizarTemperatura(item.id, e.target.value)}
                     className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
                       TEMPERATURA_COLORS[item.temperatura || "morno"]
                     }`}
@@ -711,9 +839,7 @@ export default function LeadsPage() {
                   <select
                     value={item.status}
                     onClick={(e) => e.stopPropagation()}
-                    onChange={(e) =>
-                      atualizarStatus(item.id, e.target.value)
-                    }
+                    onChange={(e) => atualizarStatus(item.id, e.target.value)}
                     className={`px-3 py-2 rounded-xl border text-sm font-semibold ${STATUS_COLORS[item.status]}`}
                   >
                     {STATUS_COLUMNS.map((col) => (
@@ -734,7 +860,7 @@ export default function LeadsPage() {
                     className={`inline-block w-3 h-3 rounded-full ${
                       item.ativo ? "bg-green-500" : "bg-red-500"
                     }`}
-                  ></span>
+                  />
                 </td>
               </tr>
             ))}
@@ -752,9 +878,7 @@ export default function LeadsPage() {
               <X />
             </button>
 
-            <h2 className="text-2xl font-bold mb-6">
-              Novo Orçamento Completo
-            </h2>
+            <h2 className="text-2xl font-bold mb-6">Novo Orçamento Completo</h2>
 
             <form onSubmit={salvarNovoLead} className="space-y-4">
               <input
@@ -791,8 +915,13 @@ export default function LeadsPage() {
 
               <input
                 placeholder="Responsável"
-                value={form.responsavel}
+                value={
+                  myRole === "vendedor"
+                    ? teamMembers.find((m) => m.user_id === myUserId)?.email || form.responsavel
+                    : form.responsavel
+                }
                 onChange={(e) => setForm({ ...form, responsavel: e.target.value })}
+                disabled={myRole === "vendedor"}
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
@@ -890,7 +1019,11 @@ export default function LeadsPage() {
               </button>
 
               <div className="text-right text-xl font-bold text-green-400">
-                Total: {totalOrcamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                Total:{" "}
+                {totalOrcamento.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
               </div>
 
               <button className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 font-bold">
@@ -1111,9 +1244,7 @@ export default function LeadsPage() {
                     className="bg-white/10 p-2 rounded-lg w-full"
                   />
                 ) : (
-                  <p className="text-gray-300">
-                    {selectedLead.descricao || "-"}
-                  </p>
+                  <p className="text-gray-300">{selectedLead.descricao || "-"}</p>
                 )}
               </div>
 
@@ -1132,9 +1263,7 @@ export default function LeadsPage() {
                     className="bg-white/10 p-2 rounded-lg w-full"
                   />
                 ) : (
-                  <p className="text-gray-300">
-                    {selectedLead.observacoes || "-"}
-                  </p>
+                  <p className="text-gray-300">{selectedLead.observacoes || "-"}</p>
                 )}
               </div>
 
@@ -1255,9 +1384,7 @@ export default function LeadsPage() {
                       load();
                     }}
                     className={`w-full py-3 rounded-xl font-bold ${
-                      selectedLead.ativo
-                        ? "bg-red-600"
-                        : "bg-green-600"
+                      selectedLead.ativo ? "bg-red-600" : "bg-green-600"
                     }`}
                   >
                     {selectedLead.ativo ? "Inativar Lead" : "Reativar Lead"}
