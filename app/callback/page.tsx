@@ -10,7 +10,6 @@ export default function AuthCallback() {
 
   useEffect(() => {
     async function handleInvite() {
-
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -20,14 +19,27 @@ export default function AuthCallback() {
         return;
       }
 
-      // procura convite pelo email
+      // 1) Se já existe vínculo pelo user_id, não tenta aceitar convite novamente
+      const { data: existingMembership } = await supabase
+        .from("company_users")
+        .select("id, role, status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (existingMembership) {
+        router.push("/dashboard");
+        return;
+      }
+
+      // 2) Procura convite pendente pelo email
       const { data: invite } = await supabase
         .from("company_users")
         .select("*")
         .eq("email", user.email)
         .eq("status", "pending")
-        .single();
+        .maybeSingle();
 
+      // 3) Se existir convite, vincula o user autenticado e aceita
       if (invite) {
         await supabase
           .from("company_users")
@@ -42,7 +54,7 @@ export default function AuthCallback() {
     }
 
     handleInvite();
-  }, []);
+  }, [router, supabase]);
 
   return (
     <div className="flex items-center justify-center h-screen text-white">
