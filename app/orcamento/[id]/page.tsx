@@ -12,11 +12,12 @@ export default async function OrcamentoPublico({
 
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from("servicos")
-    .select("*")
-    .eq("id", id)
-    .single()
+const { data, error } = await supabase
+  .from("servicos")
+  .select("*")
+  .eq("id", id)
+  .eq("ativo", true)
+  .single()
 
   if (error || !data) {
     return notFound()

@@ -37,17 +37,49 @@ export default function OrcamentosPage() {
     fetchOrcamentos();
   }, []);
 
-  async function fetchOrcamentos() {
-    setLoading(true);
+async function fetchOrcamentos() {
+  setLoading(true);
 
-    const { data, error } = await supabase
-      .from("servicos")
-      .select("*")
-      .order("created_at", { ascending: false });
+  // pega usuário
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData?.user;
 
-    if (!error) setOrcamentos(data || []);
+  if (!user) {
     setLoading(false);
+    return;
   }
+
+  // pega empresa do usuário
+  const { data: companyUser } = await supabase
+    .from("company_users")
+    .select("company_id, role")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!companyUser) {
+    setLoading(false);
+    return;
+  }
+
+  const companyId = companyUser.company_id;
+  const role = companyUser.role;
+
+  // busca serviços da empresa
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", companyId);
+
+if (role === "vendedor") {
+  query = query.eq("user_id", user.id);
+}
+
+const { data, error } = await query.order("created_at", { ascending: false });
+
+  if (!error) setOrcamentos(data || []);
+
+  setLoading(false);
+}
 
   function limparFiltros() {
     setBusca("");

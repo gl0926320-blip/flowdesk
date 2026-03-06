@@ -46,6 +46,8 @@
     const [filtro, setFiltro] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mês" | "Custom">("Hoje");
     const [dataInicio, setDataInicio] = useState<string | null>(null);
     const [dataFim, setDataFim] = useState<string | null>(null);
+    const [companyId, setCompanyId] = useState<string | null>(null);
+    const [role, setRole] = useState<string | null>(null);
 
 
 
@@ -64,14 +66,29 @@
         const { data } = await supabase.auth.getUser();
         if (!data.user) return;
 
+const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", data.user.id)
+  .single();
+
+if (!companyUser?.company_id) return;
+
+setCompanyId(companyUser.company_id);
+
         setUserId(data.user.id);
 
-        const { data: servicos } = await supabase
+let query = supabase
   .from("servicos")
   .select("*")
-  .eq("user_id", data.user.id)
-  .eq("ativo", true)
-  .order("created_at", { ascending: false });
+  .eq("company_id", companyUser.company_id)
+  .eq("ativo", true);
+
+if (companyUser.role === "vendedor") {
+  query = query.eq("user_id", data.user.id);
+}
+
+const { data: servicos } = await query.order("created_at", { ascending: false });
 
         if (servicos) setItems(servicos);
       }
@@ -92,8 +109,7 @@
     }
 
   async function salvar() {
-    if (!userId) return;
-
+    if (!userId || !companyId) return;
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("plan")
@@ -113,7 +129,7 @@
       const { data: servicos, error: erroCount } = await supabase
         .from("servicos")
         .select("id")
-        .eq("user_id", userId);
+        .eq("company_id", companyId)
 
       if (erroCount) {
         alert("Erro ao verificar limite");
@@ -128,6 +144,7 @@
 
     const novo = {
   user_id: userId,
+  company_id: companyId,
   numero_os: `OS-${Date.now()}`,
   cliente: form.cliente,
   telefone: form.telefone,
@@ -157,14 +174,18 @@
     }
   }
     async function atualizarItem(id: string, updated: any) {
-      await supabase.from("servicos").update(updated).eq("id", id);
+      await supabase.from("servicos").update(updated)
+.eq("id", id)
+.eq("company_id", companyId)
       setItems((prev) =>
         prev.map((i) => (i.id === id ? { ...i, ...updated } : i))
       );
     }
 
     async function deletar(id: string) {
-      await supabase.from("servicos").delete().eq("id", id);
+      await supabase.from("servicos").delete()
+.eq("id", id)
+.eq("company_id", companyId)
       setItems((prev) => prev.filter((i) => i.id !== id));
     }
 

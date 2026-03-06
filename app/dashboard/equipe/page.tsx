@@ -27,6 +27,7 @@ export default function EquipePage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<Servico[]>([]);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState("Hoje")
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
@@ -42,7 +43,21 @@ export default function EquipePage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
- const { data, error } = await supabase
+const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", userData.user.id)
+  .single();
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
+
+const companyId = companyUser.company_id;
+setCompanyId(companyId);
+
+let query = supabase
   .from("servicos")
   .select(`
     id,
@@ -54,9 +69,15 @@ export default function EquipePage() {
     created_at,
     ativo
   `)
-  .eq("user_id", userData.user.id)
+  .eq("company_id", companyId)
   .eq("status", "concluido")
   .eq("ativo", true);
+
+if (companyUser.role === "vendedor") {
+  query = query.eq("responsavel", userData.user.email);
+}
+
+const { data, error } = await query;
 
     if (!error) setData(data || []);
     setLoading(false);

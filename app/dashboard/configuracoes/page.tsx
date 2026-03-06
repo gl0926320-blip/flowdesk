@@ -3,6 +3,8 @@
   import { useEffect, useMemo, useState } from "react"
   import { createClient } from "@/lib/supabase-browser"
 
+  
+
   function diasDesde(data?: string | null) {
     if (!data) return 0
     const d = new Date(data)
@@ -21,28 +23,55 @@
   export default function ConfiguracoesPage() {
     const supabase = createClient()
 
-    const [servicos, setServicos] = useState<any[]>([])
+    const [companyId, setCompanyId] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
+    const [servicos, setServicos] = useState<any[]>([])
 
-    useEffect(() => {
-      async function carregar() {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
+useEffect(() => {
+  async function carregar() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-        if (!user) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
-        const { data } = await supabase
-          .from("servicos")
-          .select("*")
-          .eq("user_id", user.id)
+const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .single()
 
-        setServicos(data || [])
-        setLoading(false)
-      }
+      
 
-      carregar()
-    }, [])
+    if (!companyUser) {
+      setLoading(false)
+      return
+    }
+
+    const companyId = companyUser.company_id
+    setCompanyId(companyId)
+
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", companyId)
+  .eq("ativo", true)
+
+if (companyUser.role === "vendedor") {
+  query = query.eq("responsavel", user.email)
+}
+
+const { data } = await query
+
+setServicos(data || [])
+setLoading(false)
+  }
+
+  carregar()
+}, [])
 
    const diagnostico = useMemo(() => {
   const hoje = new Date()
@@ -193,9 +222,9 @@ const tempoMedioFechamento =
 
       // 📌 Gargalo
       const statusCount: Record<string, number> = {}
-     ativos.forEach(s => {
-  const status = s.status?.trim().toLowerCase()
-  statusCount[status] = (statusCount[status] || 0) + 1
+ativos.forEach(s => {
+const status = s.status?.trim().toLowerCase() || "sem_status"
+statusCount[status] = (statusCount[status] || 0) + 1
 })
 
       const gargalo =

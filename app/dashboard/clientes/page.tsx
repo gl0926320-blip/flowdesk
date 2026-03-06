@@ -23,6 +23,7 @@ export default function ClientesPage() {
   const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [filtroPeriodo, setFiltroPeriodo] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Personalizado">("Hoje");
   const [dataInicio, setDataInicio] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
@@ -70,28 +71,49 @@ export default function ClientesPage() {
   async function fetchClientes() {
     setLoading(true);
 
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
+const { data: userData } = await supabase.auth.getUser();
+
+if (!userData.user) {
   setLoading(false);
   return;
 }
- 
 
-const { data, error } = await supabase
+const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", userData.user.id)
+  .single();
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
+
+const companyId = companyUser.company_id;
+setCompanyId(companyId);
+
+let query = supabase
   .from("servicos")
   .select(`
-  cliente,
-  telefone,
-  email,
-  tipo_pessoa,
-  valor_orcamento,
-  custo,
-  valor_comissao,
-  created_at,
-  status
-`)
-  .eq("user_id", userData.user.id)
+    cliente,
+    telefone,
+    email,
+    tipo_pessoa,
+    valor_orcamento,
+    custo,
+    valor_comissao,
+    created_at,
+    status,
+    responsavel
+  `)
+  .eq("company_id", companyId)
   .eq("status", "concluido");
+
+if (companyUser.role === "vendedor") {
+  query = query.eq("responsavel", userData.user.email);
+}
+
+const { data, error } = await query;
 
 
     if (error) {

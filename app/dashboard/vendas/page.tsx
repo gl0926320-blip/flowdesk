@@ -39,13 +39,28 @@ export default function VendasPage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
-    const { data, error } = await supabase
-      .from("servicos")
-      .select("*")
-      .eq("user_id", userData.user.id)
-      .eq("status", "concluido")
-.eq("ativo", true)
-      .order("created_at", { ascending: false });
+    const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", userData.user.id)
+  .single();
+
+const companyId = companyUser?.company_id;
+const role = companyUser?.role;
+
+
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", companyId)
+  .eq("status", "concluido")
+  .eq("ativo", true);
+
+if (role === "vendedor") {
+  query = query.eq("user_id", userData.user.id);
+}
+
+const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
       console.error(error);

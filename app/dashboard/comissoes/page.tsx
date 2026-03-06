@@ -16,6 +16,7 @@ import {
 
 type Servico = {
   id: string;
+  company_id: string;
   responsavel: string | null;
   valor_comissao: number | null;
   percentual_comissao: number | null;
@@ -40,31 +41,65 @@ export default function ComissoesPage() {
   const [periodo, setPeriodo] = useState("Hoje");
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  async function fetchData() {
-    setLoading(true);
+async function fetchData() {
+  setLoading(true);
 
-    const { data, error } = await supabase
-      .from("servicos")
-      .select("*")
-      .eq("status", "concluido");
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (!error) setData(data || []);
+  if (!user) {
     setLoading(false);
+    return;
   }
 
-  async function marcarComoPaga(id: string) {
-    await supabase
-      .from("servicos")
-      .update({ comissao_paga: true })
-      .eq("id", id);
+const { data: companyUser } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .single();
 
-    fetchData();
+  if (!companyUser) {
+    setLoading(false);
+    return;
   }
+
+  const companyId = companyUser.company_id;
+  setCompanyId(companyId);
+
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", companyId)
+  .eq("status", "concluido");
+
+if (companyUser.role === "vendedor") {
+  query = query.eq("responsavel", user.email);
+}
+
+const { data, error } = await query;
+
+  if (!error) setData(data || []);
+  setLoading(false);
+}
+
+async function marcarComoPaga(id: string) {
+  if (!companyId) return;
+
+  await supabase
+    .from("servicos")
+    .update({ comissao_paga: true })
+    .eq("id", id)
+    .eq("company_id", companyId);
+
+  fetchData();
+}
 
   // 💰 Gera comissão automática se necessário
   const dataComComissao = useMemo(() => {

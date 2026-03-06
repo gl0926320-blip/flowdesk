@@ -35,6 +35,7 @@ export default function LeadsPage() {
   const supabase = createClient();
 
   const [items, setItems] = useState<any[]>([]);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [openModal, setOpenModal] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -91,14 +92,35 @@ export default function LeadsPage() {
   document.head.appendChild(style);
 }, []);
 
-    async function load() {
+async function load() {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return;
+
+  const userId = userData.user.id;
+
+  // 🔎 descobrir empresa e role
+  const { data: companyUser } = await supabase
+    .from("company_users")
+    .select("company_id, role")
+    .eq("user_id", userId)
+    .single();
+
+  if (!companyUser) return;
+
+  const companyId = companyUser.company_id;
+  const role = companyUser.role;
+
+  setCompanyId(companyId);
 
   let query = supabase
     .from("servicos")
     .select("*")
-    .eq("user_id", userData.user.id);
+    .eq("company_id", companyId);
+
+  // 🔒 vendedor só vê os próprios leads
+  if (role === "vendedor") {
+    query = query.eq("user_id", userId);
+  }
 
   if (filtroAtivo === "ativos") {
     query = query.eq("ativo", true);
@@ -128,7 +150,8 @@ export default function LeadsPage() {
   await supabase
     .from("servicos")
     .update(updateData)
-    .eq("id", id);
+    .eq("id", id)
+.eq("company_id", companyId)
 
   load();
 }
@@ -194,6 +217,7 @@ export default function LeadsPage() {
   // 3️⃣ Se passou na validação, salva
   const { error } = await supabase.from("servicos").insert([
     {
+      company_id: companyId,
       user_id: userId,
       titulo: form.cliente,
       descricao: form.descricao,

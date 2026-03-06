@@ -58,50 +58,68 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => {
-    async function checkUser() {
-      const { data: { user } } = await supabase.auth.getUser();
+useEffect(() => {
+  async function checkUser() {
+    const { data: { user } } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-      setUser(user);
-      setLoadingUser(false);
+    setUser(user);
+    setLoadingUser(false);
 
-      let query = supabase
-        .from("servicos")
-        .select("*")
-        .eq("user_id", user.id)
-       
+    // 🔹 buscar empresa do usuário
+    const { data: companyUser } = await supabase
+      .from("company_users")
+      .select("company_id, role")
+      .eq("user_id", user.id)
+      .single();
 
-      if (filtroPeriodo === "Personalizado" && dataInicioCustom && dataFimCustom) {
-        query = query
-          .gte("created_at", new Date(dataInicioCustom).toISOString())
-          .lte("created_at", new Date(dataFimCustom).toISOString());
-      } else {
-        const dataInicio = getDataInicio(filtroPeriodo);
-        if (dataInicio) {
-          query = query.gte("created_at", dataInicio.toISOString());
-        }
-      }
+    if (!companyUser) {
+      console.error("Usuário sem empresa vinculada");
+      return;
+    }
 
-      const { data, error } = await query.order("created_at", { ascending: false });
+    const companyId = companyUser.company_id;
+    const role = companyUser.role;
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", companyId);
 
-      if (data) {
-        setTodosServicos(data);
-        setOrcamentosRecentes(data.slice(0, 5));
+if (role === "vendedor") {
+  query = query.eq("user_id", user.id);
+}
+
+    if (filtroPeriodo === "Personalizado" && dataInicioCustom && dataFimCustom) {
+      query = query
+        .gte("created_at", new Date(dataInicioCustom).toISOString())
+        .lte("created_at", new Date(dataFimCustom).toISOString());
+    } else {
+      const dataInicio = getDataInicio(filtroPeriodo);
+      if (dataInicio) {
+        query = query.gte("created_at", dataInicio.toISOString());
       }
     }
 
-    checkUser();
-  }, [router, filtroPeriodo, dataInicioCustom, dataFimCustom]);
+    const { data, error } = await query.order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (data) {
+      setTodosServicos(data);
+      setOrcamentosRecentes(data.slice(0, 5));
+    }
+  }
+
+  checkUser();
+}, [router, filtroPeriodo, dataInicioCustom, dataFimCustom]);
 
   function formatCurrency(value: number) {
     return value.toLocaleString("pt-BR", {
