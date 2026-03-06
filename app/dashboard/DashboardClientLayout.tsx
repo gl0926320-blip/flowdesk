@@ -17,6 +17,7 @@ import {
   DollarSign,
   Percent,
   Users2,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -141,19 +142,20 @@ export default function DashboardLayout({
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  const menu = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
-    { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
-    { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
-    { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
-    { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
-    { name: "Clientes", href: "/dashboard/clientes", icon: Users },
-    { name: "Empresas", href: "/dashboard/empresas", icon: Building2 },
-    { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
-    { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
-    { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
-  ];
+const menu = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
+  { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
+  { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
+  { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
+  { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
+  { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
+  { name: "Clientes", href: "/dashboard/clientes", icon: Users },
+  { name: "Empresas", href: "/dashboard/empresas", icon: Building2 },
+  { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
+  { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
+  { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
+];
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">

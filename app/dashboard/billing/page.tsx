@@ -2,183 +2,272 @@
 
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase-browser"
-import { Crown, Rocket, Shield, BarChart3, Users, FileText } from "lucide-react"
+import { Crown, Users, Building2, BarChart3, GraduationCap } from "lucide-react"
 
-export default function BillingPage() {
-  const supabase = createClient()
+export default function BillingPage(){
 
-  const [subscription, setSubscription] = useState<any>(null)
-  const [loadingPlan, setLoadingPlan] = useState(true)
+const supabase = createClient()
 
-  useEffect(() => {
-    async function carregarPlano() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+const [plan,setPlan] = useState<string>("free")
+const [loading,setLoading] = useState(true)
 
-      const user = session?.user
-      if (!user) {
-        setLoadingPlan(false)
-        return
-      }
+useEffect(()=>{
 
-      const { data } = await supabase
-        .from("profiles")
-        .select("plan")
-        .eq("id", user.id)
-        .single()
+async function loadPlan(){
 
-      setSubscription(data)
-      setLoadingPlan(false)
-    }
+const { data:{user} } = await supabase.auth.getUser()
 
-    carregarPlano()
-  }, [])
-
-  if (loadingPlan) {
-    return (
-      <div className="flex items-center justify-center h-[60vh] text-white">
-        Carregando plano...
-      </div>
-    )
-  }
-
-  const isPro = subscription?.plan === "pro"
-
-  const whatsappLink =
-    "https://wa.me/5562994693465?text=Olá!%20👋%20Tudo%20bem?%20Estou%20conhecendo%20o%20FlowDesk%20e%20gostaria%20de%20receber%20mais%20informações%20sobre%20como%20funciona,%20valores%20e%20como%20pode%20ajudar%20minha%20empresa.%20Poderia%20me%20orientar?%20😊"
-
-  return (
-    <div className="p-10 text-white max-w-7xl mx-auto space-y-16">
-
-      {/* HEADER PREMIUM */}
-      <div>
-        <h1 className="text-4xl font-bold flex items-center gap-3">
-          <Crown className="text-yellow-400" />
-          Upgrade para o FlowDesk Pro
-        </h1>
-        <p className="text-gray-400 mt-3 max-w-2xl">
-          Desbloqueie todo o potencial do seu CRM, aumente suas vendas
-          e tenha controle total da sua operação comercial.
-        </p>
-      </div>
-
-      {/* BLOCO DE VALOR */}
-      <div className="grid md:grid-cols-3 gap-6">
-
-        <FeatureCard
-          icon={<BarChart3 />}
-          title="Métricas Avançadas"
-          desc="Dashboard completo com faturamento, comissão, ranking de vendedores e conversão."
-        />
-
-        <FeatureCard
-          icon={<Users />}
-          title="Gestão de Equipe"
-          desc="Controle total da performance individual de cada vendedor."
-        />
-
-        <FeatureCard
-          icon={<FileText />}
-          title="Orçamentos Ilimitados"
-          desc="No Free você pode criar apenas 5 serviços. No Pro é ilimitado."
-        />
-
-        <FeatureCard
-          icon={<Rocket />}
-          title="Crescimento Escalável"
-          desc="Organize leads, pipeline, vendas e comissões em um único sistema."
-        />
-
-        <FeatureCard
-          icon={<Shield />}
-          title="Suporte Prioritário"
-          desc="Atendimento direto via WhatsApp e suporte estratégico."
-        />
-
-        <FeatureCard
-          icon={<Crown />}
-          title="Exportação PDF"
-          desc="Gere relatórios profissionais para seus clientes."
-        />
-
-      </div>
-
-      {/* PLANOS */}
-      <div className="grid md:grid-cols-2 gap-10">
-
-        {/* FREE */}
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-10 rounded-3xl border border-gray-700 shadow-xl">
-          <h2 className="text-2xl font-bold mb-6">Plano Free</h2>
-
-          <p className="text-4xl font-bold mb-8">
-            R$0 <span className="text-sm text-gray-400">/mês</span>
-          </p>
-
-          <ul className="space-y-4 text-gray-400 mb-10">
-            <li>✔ Até 5 serviços</li>
-            <li>✔ Dashboard básico</li>
-            <li>✔ Pipeline simples</li>
-            <li>✖ Bloqueia após 5 serviços</li>
-            <li>✖ Sem métricas avançadas</li>
-          </ul>
-
-          <button
-            disabled
-            className="w-full bg-gray-700 py-4 rounded-xl opacity-50"
-          >
-            Plano Atual
-          </button>
-        </div>
-
-        {/* PRO */}
-        <div className="relative bg-gradient-to-br from-purple-700 to-purple-500 p-10 rounded-3xl border border-purple-400 shadow-2xl scale-105">
-
-          <div className="absolute top-5 right-5 bg-white text-purple-700 text-xs font-bold px-4 py-1 rounded-full">
-            RECOMENDADO
-          </div>
-
-          <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-            <Crown />
-            Plano Pro
-          </h2>
-
-          <p className="text-4xl font-bold mb-8">
-            Sob consulta
-          </p>
-
-          <ul className="space-y-4 text-purple-100 mb-10">
-            <li>✔ Serviços ilimitados</li>
-            <li>✔ Métricas avançadas</li>
-            <li>✔ Gestão completa de equipe</li>
-            <li>✔ Controle de comissões</li>
-            <li>✔ Exportação PDF</li>
-            <li>✔ Suporte prioritário</li>
-          </ul>
-
-          <a
-            href={whatsappLink}
-            target="_blank"
-            className="block text-center w-full bg-white text-purple-700 font-bold py-4 rounded-xl hover:scale-105 transition"
-          >
-            🚀 Virar Pro no WhatsApp
-          </a>
-
-        </div>
-
-      </div>
-    </div>
-  )
+if(!user){
+setLoading(false)
+return
 }
 
-function FeatureCard({ icon, title, desc }: any) {
-  return (
-    <div className="bg-[#111827] p-6 rounded-2xl border border-white/10 hover:border-purple-400 transition">
-      <div className="text-purple-400 mb-3">
-        {icon}
-      </div>
-      <h3 className="font-semibold mb-2">{title}</h3>
-      <p className="text-sm text-gray-400">{desc}</p>
-    </div>
-  )
+const { data } = await supabase
+.from("profiles")
+.select("plan")
+.eq("id",user.id)
+.single()
+
+if(data?.plan){
+setPlan(data.plan)
+}
+
+setLoading(false)
+
+}
+
+loadPlan()
+
+},[])
+
+function gerarWhatsapp(plano:string,preco:string){
+
+const texto = `Olá! Quero contratar o plano ${plano} do FlowDesk.
+
+Plano: ${plano}
+Valor: R$ ${preco}/mês
+
+Gostaria de ativar para minha empresa.`
+
+return `https://wa.me/5562994693465?text=${encodeURIComponent(texto)}`
+
+}
+
+if(loading){
+return(
+<div className="flex items-center justify-center h-[60vh] text-white">
+Carregando plano...
+</div>
+)
+}
+
+return (
+
+<div className="p-10 text-white max-w-7xl mx-auto space-y-16">
+
+<div>
+<h1 className="text-4xl font-bold flex gap-3">
+<Crown className="text-yellow-400"/>
+Planos FlowDesk
+</h1>
+
+<p className="text-gray-400 mt-3 max-w-2xl">
+O FlowDesk foi criado para organizar toda operação comercial
+de pequenas e médias empresas em um único sistema.
+</p>
+</div>
+
+{/* FEATURES */}
+
+<div className="grid md:grid-cols-4 gap-6">
+
+<Feature icon={<BarChart3/>}
+title="Inteligência Comercial"
+desc="Métricas de conversão, faturamento e performance da equipe."/>
+
+<Feature icon={<Users/>}
+title="Gestão de Equipe"
+desc="Controle vendedores, metas e performance."/>
+
+<Feature icon={<Building2/>}
+title="Multiempresa"
+desc="Gerencie várias empresas em um único painel."/>
+
+<Feature icon={<GraduationCap/>}
+title="FlowDesk Academy"
+desc="Treinamento estratégico para implantação do CRM."/>
+
+</div>
+
+{/* PLANOS */}
+
+<div className="grid md:grid-cols-5 gap-6">
+
+<Card
+title="Free"
+price="0"
+users="1 usuário"
+empresas="1 empresa"
+servicos="5 serviços"
+features={[
+"CRM básico",
+"Pipeline simples",
+"Dashboard básico"
+]}
+current={plan==="free"}
+link={gerarWhatsapp("Free","0")}
+/>
+
+<Card
+title="Starter"
+price="69,90"
+users="1 usuário"
+empresas="1 empresa"
+servicos="Ilimitado"
+features={[
+"CRM completo",
+"Pipeline avançado",
+"Orçamentos ilimitados",
+"Exportação PDF"
+]}
+current={plan==="starter"}
+link={gerarWhatsapp("Starter","69,90")}
+/>
+
+<Card
+title="Growth"
+price="149,90"
+users="3 usuários"
+empresas="2 empresas"
+servicos="Ilimitado"
+features={[
+"Gestão de equipe",
+"Controle de leads",
+"Métricas de vendas",
+"Comissões"
+]}
+current={plan==="growth"}
+link={gerarWhatsapp("Growth","149,90")}
+/>
+
+<Card
+title="Scale"
+price="239,90"
+users="5 usuários"
+empresas="3 empresas"
+servicos="Ilimitado"
+features={[
+"Equipe completa",
+"Ranking vendedores",
+"Dashboard avançado",
+"Suporte prioritário"
+]}
+current={plan==="scale"}
+link={gerarWhatsapp("Scale","239,90")}
+/>
+
+<Card
+title="Pro"
+price="449,90"
+users="10 usuários"
+empresas="5 empresas"
+servicos="Ilimitado"
+features={[
+"Multiempresa avançado",
+"Alertas estratégicos",
+"Analytics avançado",
+"FlowDesk Academy"
+]}
+recommended
+current={plan==="pro"}
+link={gerarWhatsapp("Pro","449,90")}
+/>
+
+</div>
+
+</div>
+
+)
+
+}
+
+function Feature({icon,title,desc}:any){
+
+return(
+
+<div className="bg-[#111827] p-6 rounded-2xl border border-white/10">
+
+<div className="text-purple-400 mb-3">
+{icon}
+</div>
+
+<h3 className="font-semibold mb-2">
+{title}
+</h3>
+
+<p className="text-sm text-gray-400">
+{desc}
+</p>
+
+</div>
+
+)
+
+}
+
+function Card({title,price,users,empresas,servicos,features,recommended,current,link}:any){
+
+return(
+
+<div className={`p-6 rounded-2xl border ${recommended ? "border-purple-500 bg-purple-900/30":"border-gray-700 bg-gray-900"}`}>
+
+{recommended && (
+<div className="text-xs bg-purple-600 px-2 py-1 rounded mb-3 w-fit">
+Recomendado
+</div>
+)}
+
+<h2 className="text-xl font-bold mb-3">
+{title}
+</h2>
+
+<p className="text-3xl font-bold mb-4">
+R$ {price}
+<span className="text-sm text-gray-400"> /mês</span>
+</p>
+
+<ul className="text-sm text-gray-400 space-y-2 mb-6">
+
+<li>👤 {users}</li>
+<li>🏢 {empresas}</li>
+<li>📄 {servicos}</li>
+
+{features.map((f:any,i:any)=>(
+<li key={i}>✔ {f}</li>
+))}
+
+</ul>
+
+{current ? (
+
+<button className="w-full bg-gray-700 py-2 rounded-lg opacity-60">
+Plano atual
+</button>
+
+) : (
+
+<a
+href={link}
+target="_blank"
+className="block text-center w-full bg-purple-600 py-2 rounded-lg hover:scale-105 transition"
+>
+Selecionar
+</a>
+
+)}
+
+</div>
+
+)
+
 }
