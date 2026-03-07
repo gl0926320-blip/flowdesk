@@ -620,17 +620,19 @@ updateData.valor_comissao = comissaoCongelada.valor_comissao;
       valor_orcamento: novoTotal,
     };
 
-    if (selectedLead.status === "concluido") {
-const comissaoCongelada = calcularComissaoCongelada({
-  valorOrcamento: novoTotal,
-  member: responsavelMember,
-});
+if (selectedLead.status === "concluido") {
+  const comissaoCongelada = calcularComissaoCongelada({
+    valorOrcamento: novoTotal,
+    member: responsavelMember,
+  });
 
-      updatePayload.data_fechamento =
-        selectedLead.data_fechamento || new Date().toISOString();
-      updatePayload.ultima_compra =
-        selectedLead.ultima_compra || new Date().toISOString();
-    }
+  updatePayload.percentual_comissao = comissaoCongelada.percentual_comissao;
+  updatePayload.valor_comissao = comissaoCongelada.valor_comissao;
+  updatePayload.data_fechamento =
+    selectedLead.data_fechamento || new Date().toISOString();
+  updatePayload.ultima_compra =
+    selectedLead.ultima_compra || new Date().toISOString();
+}
 
     await supabase
       .from("servicos")
@@ -1021,15 +1023,21 @@ const comissaoCongelada = calcularComissaoCongelada({
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-              <select
-                value={form.temperatura}
-                onChange={(e) => setForm({ ...form, temperatura: e.target.value })}
-                className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
-              >
-                <option value="frio">Lead Frio</option>
-                <option value="morno">Lead Morno</option>
-                <option value="quente">Lead Quente</option>
-              </select>
+<select
+  value={form.temperatura}
+  onChange={(e) => setForm({ ...form, temperatura: e.target.value })}
+  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+>
+  <option value="frio" style={OPTION_STYLE}>
+    Lead Frio
+  </option>
+  <option value="morno" style={OPTION_STYLE}>
+    Lead Morno
+  </option>
+  <option value="quente" style={OPTION_STYLE}>
+    Lead Quente
+  </option>
+</select>
 
               <input
                 placeholder="Telefone"
@@ -1050,14 +1058,18 @@ const comissaoCongelada = calcularComissaoCongelada({
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-              <select
-                value={form.tipo_pessoa}
-                onChange={(e) => setForm({ ...form, tipo_pessoa: e.target.value })}
-                className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
-              >
-                <option value="pf">Pessoa Física</option>
-                <option value="pj">Pessoa Jurídica</option>
-              </select>
+<select
+  value={form.tipo_pessoa}
+  onChange={(e) => setForm({ ...form, tipo_pessoa: e.target.value })}
+  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+>
+  <option value="pf" style={OPTION_STYLE}>
+    Pessoa Física
+  </option>
+  <option value="pj" style={OPTION_STYLE}>
+    Pessoa Jurídica
+  </option>
+</select>
 
               {form.tipo_pessoa === "pf" ? (
                 <input

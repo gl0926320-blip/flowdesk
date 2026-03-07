@@ -93,7 +93,7 @@ export default function Dashboard() {
         return trinta;
       }
 
-      case "Mes":
+      case "Mês":
         return new Date(agora.getFullYear(), agora.getMonth(), 1);
 
       case "Ano":
@@ -623,7 +623,7 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
-          {["Hoje", "7 Dias", "30 Dias", "Mes", "Ano", "Personalizado"].map((item) => (
+          {["Hoje", "7 Dias", "30 Dias", "Mês", "Ano", "Personalizado"].map((item) => (
             <button
               key={item}
               onClick={() => setFiltroPeriodo(item)}

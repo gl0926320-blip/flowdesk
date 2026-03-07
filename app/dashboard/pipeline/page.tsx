@@ -1128,48 +1128,60 @@ function Card({
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">Responsável</p>
-                  <p>{item.responsavel || "Não definido"}</p>
-                </div>
+<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">Responsável</p>
+    <p className="break-all text-sm leading-snug">
+      {item.responsavel || "Não definido"}
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">Telefone</p>
-                  <p>{item.telefone || "Não informado"}</p>
-                </div>
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">Telefone</p>
+    <p className="break-all text-sm leading-snug">
+      {item.telefone || "Não informado"}
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">Temperatura</p>
-                  <p>
-                    {temperatura === "frio"
-                      ? "Frio"
-                      : temperatura === "quente"
-                      ? "Quente"
-                      : "Morno"}
-                  </p>
-                </div>
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">Temperatura</p>
+    <p className="text-sm leading-snug">
+      {temperatura === "frio"
+        ? "Frio"
+        : temperatura === "quente"
+        ? "Quente"
+        : "Morno"}
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">Custo</p>
-                  <p>{formatMoney(Number(item.custo || 0))}</p>
-                </div>
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">Custo</p>
+    <p className="text-sm leading-snug">
+      {formatMoney(Number(item.custo || 0))}
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">% Comissão</p>
-                  <p>{Number(item.percentual_comissao_calculado || 0).toFixed(1)}%</p>
-                </div>
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">% Comissão</p>
+    <p className="text-sm leading-snug">
+      {Number(item.percentual_comissao_calculado || 0).toFixed(1)}%
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3">
-                  <p className="text-[11px] text-gray-400">Comissão</p>
-                  <p>{formatMoney(Number(item.valor_comissao_calculado || 0))}</p>
-                </div>
+  <div className="bg-white/5 rounded-xl p-3 min-w-0">
+    <p className="text-[11px] text-gray-400">Comissão</p>
+    <p className="text-sm leading-snug">
+      {formatMoney(Number(item.valor_comissao_calculado || 0))}
+    </p>
+  </div>
 
-                <div className="bg-white/5 rounded-xl p-3 col-span-2">
-                  <p className="text-[11px] text-gray-400">Origem do Lead</p>
-                  <p>{item.origem_lead || "Não informada"}</p>
-                </div>
-              </div>
+  <div className="bg-white/5 rounded-xl p-3 sm:col-span-2 min-w-0">
+    <p className="text-[11px] text-gray-400">Origem do Lead</p>
+    <p className="break-words text-sm leading-snug">
+      {item.origem_lead || "Não informada"}
+    </p>
+  </div>
+</div>
 
               <div className="bg-white/5 rounded-xl p-3">
                 <p className="text-[11px] text-gray-400 mb-1">Descrição</p>
