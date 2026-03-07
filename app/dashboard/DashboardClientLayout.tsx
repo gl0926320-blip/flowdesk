@@ -36,6 +36,18 @@ type MenuItem = {
   visible?: boolean;
 };
 
+type Membership = {
+  company_id: string;
+  role: string;
+  status?: string;
+  email?: string;
+  user_id?: string | null;
+  companies?: {
+    name?: string | null;
+    plan?: string | null;
+  } | null;
+};
+
 export default function DashboardLayout({
   children,
 }: {
@@ -73,7 +85,36 @@ export default function DashboardLayout({
     window.location.href = "/";
   }
 
+  async function getMembership(userId: string): Promise<Membership | null> {
+    const { data, error } = await supabase
+      .from("company_users")
+      .select("company_id, role, status, email, user_id, companies(name, plan), created_at")
+      .eq("user_id", userId)
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao buscar vínculo ativo por user_id:", error);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.error("Nenhum vínculo ativo encontrado para o user_id:", userId);
+      return null;
+    }
+
+    if (data.length > 1) {
+      console.error("Usuário com múltiplos vínculos ativos:", data);
+      alert("Este usuário possui múltiplos vínculos ativos. Corrija isso na base.");
+      return null;
+    }
+
+    return data[0] as Membership;
+  }
+
   async function carregarPlanoEMembership() {
+    setLoadedMembership(false);
+
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -85,11 +126,13 @@ export default function DashboardLayout({
       setEmpresa("");
       setCompanyId(null);
       setRole("");
+      setPlan("free");
       setLoadedMembership(true);
       return;
     }
 
-    setEmail(user.email || "");
+    const userEmail = (user.email || "").trim().toLowerCase();
+    setEmail(userEmail);
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -97,18 +140,13 @@ export default function DashboardLayout({
       .eq("id", user.id)
       .maybeSingle();
 
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id, role, status, companies(name, plan)")
-      .eq("user_id", user.id)
-      .eq("status", "ativo")
-      .maybeSingle();
+    const membership = await getMembership(user.id);
 
-    if (companyUser) {
-      setCompanyId((companyUser as any).company_id || null);
-      setRole((companyUser as any).role || "");
-      setEmpresa((companyUser as any)?.companies?.name || "");
-      setPlan((companyUser as any)?.companies?.plan || profile?.plan || "free");
+    if (membership?.company_id) {
+      setCompanyId(membership.company_id || null);
+      setRole(membership.role || "");
+      setEmpresa(membership?.companies?.name || "");
+      setPlan(membership?.companies?.plan || profile?.plan || "free");
     } else {
       setCompanyId(null);
       setRole("");
@@ -230,9 +268,7 @@ export default function DashboardLayout({
             {empresa || "FlowDesk"}
           </div>
 
-          <div className="text-xs text-white/40 mt-1">
-            CRM Comercial
-          </div>
+          <div className="text-xs text-white/40 mt-1">CRM Comercial</div>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

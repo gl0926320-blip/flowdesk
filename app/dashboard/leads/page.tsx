@@ -71,12 +71,21 @@ type TeamMember = {
   meta_receita?: number | null;
 };
 
+type Membership = {
+  company_id: string;
+  role: string;
+  status?: string;
+  email?: string;
+  user_id?: string | null;
+};
+
 export default function LeadsPage() {
   const supabase = createClient();
 
   const [items, setItems] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myEmail, setMyEmail] = useState<string>("");
   const [myRole, setMyRole] = useState<string>("");
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
@@ -157,66 +166,83 @@ export default function LeadsPage() {
     );
   }
 
-function findTeamMemberByLead(lead: any) {
-  return (
-    findTeamMemberByUserId(lead?.criado_por || lead?.user_id) ||
-    findTeamMemberByEmail(lead?.responsavel) ||
-    null
-  );
-}
+  function findTeamMemberByLead(lead: any) {
+    return (
+      findTeamMemberByUserId(lead?.user_id || lead?.criado_por) ||
+      findTeamMemberByEmail(lead?.responsavel) ||
+      null
+    );
+  }
 
   function calcularComissaoCongelada(params: {
-  valorOrcamento: number;
-  member?: TeamMember | null;
-}) {
-  const valorOrcamento = Number(params.valorOrcamento || 0);
+    valorOrcamento: number;
+    member?: TeamMember | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
 
-  const percentualDoVendedor =
-    params.member?.comissao_percentual != null
-      ? Number(params.member.comissao_percentual)
-      : null;
+    const percentualDoVendedor =
+      params.member?.comissao_percentual != null
+        ? Number(params.member.comissao_percentual)
+        : null;
 
-  if (percentualDoVendedor == null || percentualDoVendedor <= 0) {
+    if (percentualDoVendedor == null || percentualDoVendedor <= 0) {
+      return {
+        percentual_comissao: null,
+        valor_comissao: null,
+      };
+    }
+
+    const valorFinal =
+      valorOrcamento > 0 ? (valorOrcamento * percentualDoVendedor) / 100 : 0;
+
     return {
-      percentual_comissao: null,
-      valor_comissao: null,
+      percentual_comissao: percentualDoVendedor,
+      valor_comissao: valorFinal,
     };
   }
 
-  const valorFinal =
-    valorOrcamento > 0 ? (valorOrcamento * percentualDoVendedor) / 100 : 0;
+  async function getMembership(userId: string): Promise<Membership | null> {
+    const { data: membershipsByUser, error: membershipsByUserError } = await supabase
+      .from("company_users")
+      .select("company_id, role, status, email, user_id, created_at")
+      .eq("user_id", userId)
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false });
 
-  return {
-    percentual_comissao: percentualDoVendedor,
-    valor_comissao: valorFinal,
-  };
-}
+    if (membershipsByUserError) {
+      console.error("Erro ao buscar vínculos ativos por user_id:", membershipsByUserError);
+      return null;
+    }
+
+    if ((membershipsByUser?.length || 0) > 1) {
+      console.error("Usuário com múltiplos vínculos ativos:", membershipsByUser);
+      alert("Este usuário possui múltiplos vínculos ativos em empresas. Corrija isso na base antes de continuar.");
+      return null;
+    }
+
+    if (membershipsByUser?.length === 1 && membershipsByUser[0]?.company_id) {
+      return membershipsByUser[0] as Membership;
+    }
+
+    console.error("Usuário autenticado sem vínculo ativo por user_id", { userId });
+    return null;
+  }
 
   async function load() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
     const userId = userData.user.id;
+    const email = userData.user.email || "";
+
     setMyUserId(userId);
+    setMyEmail(email);
 
-const { data: companyUsers, error: companyUserError } = await supabase
-  .from("company_users")
-  .select("company_id, role")
-  .eq("user_id", userId)
-  .eq("status", "ativo");
+    const membership = await getMembership(userId);
+    if (!membership?.company_id) return;
 
-if (companyUserError) {
-  console.error("Erro ao buscar vínculo:", companyUserError);
-  return;
-}
-
-const companyUser = companyUsers?.[0];
-if (!companyUser) return;
-
-    if (!companyUser) return;
-
-    const currentCompanyId = companyUser.company_id;
-    const currentRole = companyUser.role;
+    const currentCompanyId = membership.company_id;
+    const currentRole = membership.role;
 
     setCompanyId(currentCompanyId);
     setMyRole(currentRole);
@@ -225,14 +251,18 @@ if (!companyUser) return;
       setFiltroResponsavel(userId);
     }
 
-const { data: equipe } = await supabase
-  .from("company_users")
-  .select(
-    "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
-  )
-  .eq("company_id", currentCompanyId)
-  .eq("status", "ativo")
-  .order("email", { ascending: true });
+    const { data: equipe, error: equipeError } = await supabase
+      .from("company_users")
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
+      .eq("company_id", currentCompanyId)
+      .eq("status", "ativo")
+      .order("email", { ascending: true });
+
+    if (equipeError) {
+      console.error("Erro ao buscar equipe:", equipeError);
+    }
 
     setTeamMembers((equipe as TeamMember[]) || []);
 
@@ -240,10 +270,6 @@ const { data: equipe } = await supabase
       .from("servicos")
       .select("*")
       .eq("company_id", currentCompanyId);
-
-if (currentRole === "vendedor") {
-  query = query.eq("criado_por", userId);
-}
 
     if (filtroAtivo === "ativos") {
       query = query.eq("ativo", true);
@@ -256,53 +282,63 @@ if (currentRole === "vendedor") {
     const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
-      console.error(error);
+      console.error("Erro ao carregar leads:", error);
       return;
     }
 
     setItems(data || []);
   }
 
-async function atualizarStatus(id: string, status: string) {
-  const lead = items.find((i) => i.id === id);
-  if (!lead) return;
+  async function atualizarStatus(id: string, status: string) {
+    const lead = items.find((i) => i.id === id);
+    if (!lead) return;
+    if (!companyId) return;
 
-  const updateData: any = { status };
+    const updateData: any = { status };
 
-  if (status === "concluido") {
-    const member = findTeamMemberByLead(lead);
-const comissaoCongelada = calcularComissaoCongelada({
-  valorOrcamento: Number(lead.valor_orcamento || 0),
-  member,
-});
-    updateData.ultima_compra = new Date().toISOString();
-    updateData.data_fechamento =
-      lead.data_fechamento || new Date().toISOString();
-updateData.percentual_comissao = comissaoCongelada.percentual_comissao;
-updateData.valor_comissao = comissaoCongelada.valor_comissao;
+    if (status === "concluido") {
+      const member = findTeamMemberByLead(lead);
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento: Number(lead.valor_orcamento || 0),
+        member,
+      });
+
+      updateData.ultima_compra = new Date().toISOString();
+      updateData.data_fechamento =
+        lead.data_fechamento || new Date().toISOString();
+      updateData.percentual_comissao = comissaoCongelada.percentual_comissao;
+      updateData.valor_comissao = comissaoCongelada.valor_comissao;
+    }
+
+    const { error } = await supabase
+      .from("servicos")
+      .update(updateData)
+      .eq("id", id)
+      .eq("company_id", companyId);
+
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
+      alert("Erro ao atualizar status: " + error.message);
+      return;
+    }
+
+    load();
   }
-
-  const { error } = await supabase
-    .from("servicos")
-    .update(updateData)
-    .eq("id", id)
-    .eq("company_id", companyId);
-
-  if (error) {
-    console.error("Erro ao atualizar status:", error);
-    alert("Erro ao atualizar status: " + error.message);
-    return;
-  }
-
-  load();
-}
 
   async function atualizarTemperatura(id: string, temperatura: string) {
-    await supabase
+    if (!companyId) return;
+
+    const { error } = await supabase
       .from("servicos")
       .update({ temperatura })
       .eq("id", id)
       .eq("company_id", companyId);
+
+    if (error) {
+      console.error("Erro ao atualizar temperatura:", error);
+      alert("Erro ao atualizar temperatura: " + error.message);
+      return;
+    }
 
     load();
   }
@@ -322,141 +358,141 @@ updateData.valor_comissao = comissaoCongelada.valor_comissao;
     0
   );
 
-async function salvarNovoLead(e: any) {
-  e.preventDefault();
+  async function salvarNovoLead(e: any) {
+    e.preventDefault();
 
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user) {
-    alert("Usuário não autenticado");
-    return;
-  }
-
-  const currentUser = userData.user;
-  const currentUserId = currentUser.id;
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("plan")
-    .eq("id", currentUserId)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error("Erro ao verificar plano:", profileError);
-    alert("Erro ao verificar plano");
-    return;
-  }
-
-  const { data: memberships, error: membershipError } = await supabase
-    .from("company_users")
-    .select("company_id, role, status, email")
-    .eq("user_id", currentUserId)
-    .eq("status", "ativo");
-
-  if (membershipError) {
-    console.error("Erro ao buscar vínculo da empresa:", membershipError);
-    alert("Erro ao buscar empresa do usuário");
-    return;
-  }
-
-  const membership = memberships?.[0];
-  if (!membership?.company_id) {
-    alert("Usuário sem empresa vinculada");
-    return;
-  }
-
-  const currentCompanyId = membership.company_id;
-  const currentRole = membership.role;
-  const plan = profile?.plan ?? "free";
-  const LIMITE_FREE = 5;
-
-  if (plan === "free") {
-    const { count, error: erroCount } = await supabase
-      .from("servicos")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", currentCompanyId)
-      .eq("criado_por", currentUserId)
-      .eq("ativo", true);
-
-    if (erroCount) {
-      console.error("Erro ao verificar limite:", erroCount);
-      alert("Erro ao verificar limite");
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      alert("Usuário não autenticado");
       return;
     }
 
-    if ((count ?? 0) >= LIMITE_FREE) {
-      setOpenModal(false);
-      setShowUpgrade(true);
+    if (!companyId) {
+      alert("Empresa não carregada.");
       return;
     }
-  }
 
-  const responsavelSelecionado =
-    currentRole === "vendedor"
-      ? currentUser.email || ""
-      : form.responsavel;
+    const currentUser = userData.user;
+    const currentUserId = currentUser.id;
+    const currentUserEmail = (currentUser.email || "").trim().toLowerCase();
 
-  const responsavelMembro =
-    currentRole === "vendedor"
-      ? findTeamMemberByUserId(currentUserId)
-      : findTeamMemberByEmail(responsavelSelecionado);
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("plan")
+      .eq("id", currentUserId)
+      .maybeSingle();
 
-  const responsavelUserId =
-    currentRole === "vendedor"
-      ? currentUserId
-      : responsavelMembro?.user_id || null;
+    if (profileError) {
+      console.error("Erro ao verificar plano:", profileError);
+      alert("Erro ao verificar plano");
+      return;
+    }
 
-  const payload = {
-    company_id: currentCompanyId,
-    user_id: responsavelUserId,
-    criado_por: currentUserId,
-    criado_por_email: currentUser.email || "",
-    titulo: form.cliente,
-    descricao: form.descricao,
-    status: "lead",
-    cliente: form.cliente,
-    origem_lead: form.origem_lead,
-    telefone: form.telefone,
-    responsavel: responsavelSelecionado,
-    valor_orcamento: totalOrcamento,
-    itens,
-    tipo_pessoa: form.tipo_pessoa,
-    cpf: form.cpf,
-    cnpj: form.cnpj,
-    forma_pagamento: form.forma_pagamento,
-    entrega: form.entrega,
-    tipo_servico: form.tipo_servico,
-    observacoes: form.observacoes,
-    temperatura: form.temperatura,
-    ativo: true,
-  };
+    const currentCompanyId = companyId;
+    const currentRole = myRole;
+    const plan = profile?.plan ?? "free";
+    const LIMITE_FREE = 5;
 
-  const { error } = await supabase.from("servicos").insert([payload]);
+if (plan === "free") {
+  const { count, error: erroCount } = await supabase
+    .from("servicos")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", currentCompanyId)
+    .eq("criado_por", currentUserId)
+    .eq("ativo", true);
 
-  if (error) {
-    console.error("Erro ao salvar lead:", error);
-    alert(error.message || "Erro ao salvar");
+  if (erroCount) {
+    console.error("Erro ao verificar limite:", erroCount);
+    alert("Erro ao verificar limite do plano.");
     return;
   }
 
-  setOpenModal(false);
-  setForm({
-    cliente: "",
-    origem_lead: "",
-    telefone: "",
-    responsavel: "",
-    descricao: "",
-    tipo_pessoa: "pf",
-    cpf: "",
-    cnpj: "",
-    forma_pagamento: "",
-    entrega: false,
-    tipo_servico: "",
-    observacoes: "",
-    temperatura: "morno",
-  });
-  setItens([{ nome: "", quantidade: 1, valor: 0 }]);
-  load();
+  if ((count ?? 0) >= LIMITE_FREE) {
+    setShowUpgrade(true);
+    return;
+  }
 }
+
+    const isVendedor = currentRole === "vendedor";
+
+    const responsavelSelecionado = isVendedor
+      ? currentUserEmail
+      : form.responsavel?.trim().toLowerCase();
+
+    if (!responsavelSelecionado) {
+      alert("Informe o responsável pelo lead.");
+      return;
+    }
+
+    const responsavelUserId = isVendedor
+      ? currentUserId
+      : findTeamMemberByEmail(responsavelSelecionado)?.user_id || null;
+
+    if (!responsavelUserId) {
+      alert("Não foi possível identificar o usuário responsável por este lead.");
+      return;
+    }
+
+    const payload = {
+      company_id: currentCompanyId,
+      user_id: responsavelUserId,
+      criado_por: currentUserId,
+      criado_por_email: currentUserEmail,
+      titulo: form.cliente,
+      descricao: form.descricao,
+      status: "lead",
+      cliente: form.cliente,
+      origem_lead: form.origem_lead,
+      telefone: form.telefone,
+      responsavel: responsavelSelecionado,
+      valor_orcamento: totalOrcamento,
+      itens,
+      tipo_pessoa: form.tipo_pessoa,
+      cpf: form.cpf,
+      cnpj: form.cnpj,
+      forma_pagamento: form.forma_pagamento,
+      entrega: form.entrega,
+      tipo_servico: form.tipo_servico,
+      observacoes: form.observacoes,
+      temperatura: form.temperatura,
+      ativo: true,
+    };
+
+    const { data: insertedLead, error } = await supabase
+      .from("servicos")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao salvar lead:", error);
+      alert(error.message || "Erro ao salvar");
+      return;
+    }
+
+    setItems((prev) => [insertedLead, ...prev]);
+
+    setOpenModal(false);
+    setForm({
+      cliente: "",
+      origem_lead: "",
+      telefone: "",
+      responsavel: "",
+      descricao: "",
+      tipo_pessoa: "pf",
+      cpf: "",
+      cnpj: "",
+      forma_pagamento: "",
+      entrega: false,
+      tipo_servico: "",
+      observacoes: "",
+      temperatura: "morno",
+    });
+    setItens([{ nome: "", quantidade: 1, valor: 0 }]);
+
+    load();
+  }
+
   const filtered = useMemo(() => {
     const now = new Date();
 
@@ -502,20 +538,37 @@ async function salvarNovoLead(e: any) {
 
     if (search.trim()) {
       const termo = search.toLowerCase();
-      base = base.filter((i) =>
-        i.cliente?.toLowerCase().includes(termo) ||
-        i.origem_lead?.toLowerCase().includes(termo) ||
-        i.telefone?.toLowerCase().includes(termo) ||
-        i.responsavel?.toLowerCase().includes(termo) ||
-        i.tipo_servico?.toLowerCase().includes(termo)
+      base = base.filter(
+        (i) =>
+          i.cliente?.toLowerCase().includes(termo) ||
+          i.origem_lead?.toLowerCase().includes(termo) ||
+          i.telefone?.toLowerCase().includes(termo) ||
+          i.responsavel?.toLowerCase().includes(termo) ||
+          i.tipo_servico?.toLowerCase().includes(termo)
       );
     }
 
-if (filtroResponsavel !== "todos") {
-  base = base.filter(
-    (i) => (i.criado_por || i.user_id) === filtroResponsavel
-  );
-}
+    if (filtroResponsavel !== "todos") {
+      base = base.filter(
+        (i) =>
+          i.user_id === filtroResponsavel ||
+          i.criado_por === filtroResponsavel
+      );
+    }
+
+    if (myRole === "vendedor" && myUserId) {
+      const emailNormalizado = (myEmail || "").trim().toLowerCase();
+
+      base = base.filter((i) => {
+        const responsavelNormalizado = (i.responsavel || "").trim().toLowerCase();
+
+        return (
+          i.user_id === myUserId ||
+          i.criado_por === myUserId ||
+          responsavelNormalizado === emailNormalizado
+        );
+      });
+    }
 
     if (filtroTemperatura !== "todos") {
       base = base.filter((i) => (i.temperatura || "morno") === filtroTemperatura);
@@ -526,7 +579,18 @@ if (filtroResponsavel !== "todos") {
     }
 
     return base;
-  }, [items, search, periodo, dataSelecionada, filtroResponsavel, filtroTemperatura, filtroStatus]);
+  }, [
+    items,
+    search,
+    periodo,
+    dataSelecionada,
+    filtroResponsavel,
+    filtroTemperatura,
+    filtroStatus,
+    myRole,
+    myUserId,
+    myEmail,
+  ]);
 
   function contarCompras(cliente: string) {
     return items.filter(
@@ -633,14 +697,11 @@ if (filtroResponsavel !== "todos") {
   }
 
   function adicionarItemEditado() {
-    setEditingItens([
-      ...editingItens,
-      { nome: "", quantidade: 1, valor: 0 },
-    ]);
+    setEditingItens([...editingItens, { nome: "", quantidade: 1, valor: 0 }]);
   }
 
   async function salvarLeadEditado() {
-    if (!selectedLead) return;
+    if (!selectedLead || !companyId) return;
 
     const novoTotal = editingItens.reduce(
       (acc, item) => acc + Number(item.quantidade || 0) * Number(item.valor || 0),
@@ -657,25 +718,31 @@ if (filtroResponsavel !== "todos") {
       valor_orcamento: novoTotal,
     };
 
-if (selectedLead.status === "concluido") {
-  const comissaoCongelada = calcularComissaoCongelada({
-    valorOrcamento: novoTotal,
-    member: responsavelMember,
-  });
+    if (selectedLead.status === "concluido") {
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento: novoTotal,
+        member: responsavelMember,
+      });
 
-  updatePayload.percentual_comissao = comissaoCongelada.percentual_comissao;
-  updatePayload.valor_comissao = comissaoCongelada.valor_comissao;
-  updatePayload.data_fechamento =
-    selectedLead.data_fechamento || new Date().toISOString();
-  updatePayload.ultima_compra =
-    selectedLead.ultima_compra || new Date().toISOString();
-}
+      updatePayload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      updatePayload.valor_comissao = comissaoCongelada.valor_comissao;
+      updatePayload.data_fechamento =
+        selectedLead.data_fechamento || new Date().toISOString();
+      updatePayload.ultima_compra =
+        selectedLead.ultima_compra || new Date().toISOString();
+    }
 
-    await supabase
+    const { error } = await supabase
       .from("servicos")
       .update(updatePayload)
       .eq("id", selectedLead.id)
       .eq("company_id", companyId);
+
+    if (error) {
+      console.error("Erro ao salvar edição:", error);
+      alert("Erro ao salvar edição: " + error.message);
+      return;
+    }
 
     setIsEditing(false);
     load();
@@ -1060,21 +1127,21 @@ if (selectedLead.status === "concluido") {
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-<select
-  value={form.temperatura}
-  onChange={(e) => setForm({ ...form, temperatura: e.target.value })}
-  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
->
-  <option value="frio" style={OPTION_STYLE}>
-    Lead Frio
-  </option>
-  <option value="morno" style={OPTION_STYLE}>
-    Lead Morno
-  </option>
-  <option value="quente" style={OPTION_STYLE}>
-    Lead Quente
-  </option>
-</select>
+              <select
+                value={form.temperatura}
+                onChange={(e) => setForm({ ...form, temperatura: e.target.value })}
+                className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+              >
+                <option value="frio" style={OPTION_STYLE}>
+                  Lead Frio
+                </option>
+                <option value="morno" style={OPTION_STYLE}>
+                  Lead Morno
+                </option>
+                <option value="quente" style={OPTION_STYLE}>
+                  Lead Quente
+                </option>
+              </select>
 
               <input
                 placeholder="Telefone"
@@ -1087,7 +1154,7 @@ if (selectedLead.status === "concluido") {
                 placeholder="Responsável"
                 value={
                   myRole === "vendedor"
-                    ? teamMembers.find((m) => m.user_id === myUserId)?.email || form.responsavel
+                    ? myEmail || form.responsavel
                     : form.responsavel
                 }
                 onChange={(e) => setForm({ ...form, responsavel: e.target.value })}
@@ -1095,18 +1162,18 @@ if (selectedLead.status === "concluido") {
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-<select
-  value={form.tipo_pessoa}
-  onChange={(e) => setForm({ ...form, tipo_pessoa: e.target.value })}
-  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
->
-  <option value="pf" style={OPTION_STYLE}>
-    Pessoa Física
-  </option>
-  <option value="pj" style={OPTION_STYLE}>
-    Pessoa Jurídica
-  </option>
-</select> o
+              <select
+                value={form.tipo_pessoa}
+                onChange={(e) => setForm({ ...form, tipo_pessoa: e.target.value })}
+                className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+              >
+                <option value="pf" style={OPTION_STYLE}>
+                  Pessoa Física
+                </option>
+                <option value="pj" style={OPTION_STYLE}>
+                  Pessoa Jurídica
+                </option>
+              </select>
 
               {form.tipo_pessoa === "pf" ? (
                 <input
@@ -1200,7 +1267,10 @@ if (selectedLead.status === "concluido") {
                 })}
               </div>
 
-              <button className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 font-bold">
+              <button
+                type="submit"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 font-bold"
+              >
                 Salvar Orçamento
               </button>
             </form>
@@ -1532,10 +1602,19 @@ if (selectedLead.status === "concluido") {
 
                   <button
                     onClick={async () => {
-                      await supabase
+                      if (!companyId) return;
+
+                      const { error } = await supabase
                         .from("servicos")
                         .update({ ativo: !selectedLead.ativo })
-                        .eq("id", selectedLead.id);
+                        .eq("id", selectedLead.id)
+                        .eq("company_id", companyId);
+
+                      if (error) {
+                        console.error("Erro ao alterar ativo:", error);
+                        alert("Erro ao alterar status do lead: " + error.message);
+                        return;
+                      }
 
                       setSelectedLead(null);
                       load();
