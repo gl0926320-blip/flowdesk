@@ -65,6 +65,10 @@ type TeamMember = {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+  meta_leads?: number | null;
+  meta_vendas?: number | null;
+  meta_receita?: number | null;
 };
 
 export default function LeadsPage() {
@@ -139,6 +143,55 @@ export default function LeadsPage() {
     };
   }, []);
 
+  function findTeamMemberByUserId(userId?: string | null) {
+    if (!userId) return null;
+    return teamMembers.find((m) => m.user_id === userId) || null;
+  }
+
+  function findTeamMemberByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      teamMembers.find(
+        (m) => (m.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function findTeamMemberByLead(lead: any) {
+    return (
+      findTeamMemberByUserId(lead?.user_id) ||
+      findTeamMemberByEmail(lead?.responsavel) ||
+      null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    member?: TeamMember | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualDoVendedor = Number(params.member?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualDoVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
+
   async function load() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
@@ -167,8 +220,11 @@ export default function LeadsPage() {
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
       .eq("company_id", currentCompanyId)
+      .eq("status", "accepted")
       .order("email", { ascending: true });
 
     setTeamMembers((equipe as TeamMember[]) || []);
@@ -201,10 +257,24 @@ export default function LeadsPage() {
   }
 
   async function atualizarStatus(id: string, status: string) {
+    const lead = items.find((i) => i.id === id);
+    if (!lead) return;
+
     const updateData: any = { status };
 
     if (status === "concluido") {
+      const member = findTeamMemberByLead(lead);
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento: Number(lead.valor_orcamento || 0),
+        valorComissaoAtual: lead.valor_comissao,
+        percentualComissaoAtual: lead.percentual_comissao,
+        member,
+      });
+
       updateData.ultima_compra = new Date().toISOString();
+      updateData.data_fechamento = new Date().toISOString();
+      updateData.percentual_comissao = comissaoCongelada.percentual_comissao;
+      updateData.valor_comissao = comissaoCongelada.valor_comissao;
     }
 
     await supabase
@@ -247,12 +317,13 @@ export default function LeadsPage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
-    const userId = userData.user.id;
+    const currentUser = userData.user;
+    const currentUserId = currentUser.id;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("plan")
-      .eq("id", userId)
+      .eq("id", currentUserId)
       .single();
 
     if (profileError) {
@@ -284,13 +355,23 @@ export default function LeadsPage() {
 
     const responsavelSelecionado =
       myRole === "vendedor"
-        ? userData.user.email || ""
+        ? currentUser.email || ""
         : form.responsavel;
+
+    const responsavelMembro =
+      myRole === "vendedor"
+        ? findTeamMemberByUserId(currentUserId)
+        : findTeamMemberByEmail(responsavelSelecionado);
+
+    const responsavelUserId =
+      myRole === "vendedor"
+        ? currentUserId
+        : responsavelMembro?.user_id || null;
 
     const { error } = await supabase.from("servicos").insert([
       {
         company_id: companyId,
-        user_id: userId,
+        user_id: responsavelUserId,
         titulo: form.cliente,
         descricao: form.descricao,
         status: "lead",
@@ -515,6 +596,50 @@ export default function LeadsPage() {
       ...editingItens,
       { nome: "", quantidade: 1, valor: 0 },
     ]);
+  }
+
+  async function salvarLeadEditado() {
+    if (!selectedLead) return;
+
+    const novoTotal = editingItens.reduce(
+      (acc, item) => acc + Number(item.quantidade || 0) * Number(item.valor || 0),
+      0
+    );
+
+    const responsavelMember = findTeamMemberByEmail(selectedLead.responsavel);
+    const userIdResponsavel = responsavelMember?.user_id || selectedLead.user_id || null;
+
+    const updatePayload: any = {
+      ...selectedLead,
+      user_id: userIdResponsavel,
+      itens: editingItens,
+      valor_orcamento: novoTotal,
+    };
+
+    if (selectedLead.status === "concluido") {
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento: novoTotal,
+        valorComissaoAtual: selectedLead.valor_comissao,
+        percentualComissaoAtual: selectedLead.percentual_comissao,
+        member: responsavelMember,
+      });
+
+      updatePayload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      updatePayload.valor_comissao = comissaoCongelada.valor_comissao;
+      updatePayload.data_fechamento =
+        selectedLead.data_fechamento || new Date().toISOString();
+      updatePayload.ultima_compra =
+        selectedLead.ultima_compra || new Date().toISOString();
+    }
+
+    await supabase
+      .from("servicos")
+      .update(updatePayload)
+      .eq("id", selectedLead.id)
+      .eq("company_id", companyId);
+
+    setIsEditing(false);
+    load();
   }
 
   return (
@@ -1350,24 +1475,7 @@ export default function LeadsPage() {
               {isEditing && (
                 <div className="mt-6 space-y-3 col-span-2">
                   <button
-                    onClick={async () => {
-                      const novoTotal = editingItens.reduce(
-                        (acc, item) => acc + item.quantidade * item.valor,
-                        0
-                      );
-
-                      await supabase
-                        .from("servicos")
-                        .update({
-                          ...selectedLead,
-                          itens: editingItens,
-                          valor_orcamento: novoTotal,
-                        })
-                        .eq("id", selectedLead.id);
-
-                      setIsEditing(false);
-                      load();
-                    }}
+                    onClick={salvarLeadEditado}
                     className="w-full py-3 bg-green-600 rounded-xl font-bold"
                   >
                     Salvar Alterações

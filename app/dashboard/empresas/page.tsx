@@ -17,9 +17,12 @@ import {
   Trash2,
   RefreshCcw,
   AlertTriangle,
-  LogOut,
   CheckCircle2,
   XCircle,
+  Percent,
+  Target,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react"
 
 type User = {
@@ -27,6 +30,10 @@ type User = {
   email: string
   role: string
   status: string
+  comissao_percentual?: number | null
+  meta_leads?: number | null
+  meta_vendas?: number | null
+  meta_receita?: number | null
 }
 
 type InviteData = {
@@ -40,6 +47,13 @@ type InviteData = {
   } | null
 }
 
+type SellerConfigDraft = {
+  comissao_percentual: string
+  meta_leads: string
+  meta_vendas: string
+  meta_receita: string
+}
+
 export default function EmpresaPage() {
   const supabase = createClient()
 
@@ -50,6 +64,7 @@ export default function EmpresaPage() {
   const [sendingInvite, setSendingInvite] = useState(false)
   const [processingEmail, setProcessingEmail] = useState<string | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
+  const [savingSellerConfigEmail, setSavingSellerConfigEmail] = useState<string | null>(null)
 
   const [myRole, setMyRole] = useState("")
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
@@ -58,6 +73,7 @@ export default function EmpresaPage() {
   const [inviteRole, setInviteRole] = useState("vendedor")
 
   const [receivedInvite, setReceivedInvite] = useState<InviteData | null>(null)
+  const [sellerConfigs, setSellerConfigs] = useState<Record<string, SellerConfigDraft>>({})
 
   const precisaDefinirNome =
     !companyName.trim() || companyName.trim().toLowerCase() === "minha empresa"
@@ -67,8 +83,16 @@ export default function EmpresaPage() {
     const ativos = users.filter((u) => u.status === "accepted").length
     const pendentes = users.filter((u) => u.status === "pending").length
     const inativos = users.filter((u) => u.status === "inactive").length
+    const vendedores = users.filter((u) => u.role === "vendedor").length
 
-    return { total, ativos, pendentes, inativos }
+    const comissaoMedia =
+      vendedores > 0
+        ? users
+            .filter((u) => u.role === "vendedor")
+            .reduce((acc, u) => acc + Number(u.comissao_percentual || 0), 0) / vendedores
+        : 0
+
+    return { total, ativos, pendentes, inativos, vendedores, comissaoMedia }
   }, [users])
 
   function roleLabel(role: string) {
@@ -104,6 +128,45 @@ export default function EmpresaPage() {
     return "bg-zinc-500/15 text-zinc-300 border border-zinc-500/20"
   }
 
+  function toDraft(user: User): SellerConfigDraft {
+    return {
+      comissao_percentual: String(user.comissao_percentual ?? 0),
+      meta_leads: String(user.meta_leads ?? 0),
+      meta_vendas: String(user.meta_vendas ?? 0),
+      meta_receita: String(user.meta_receita ?? 0),
+    }
+  }
+
+  function parseNumber(value: string) {
+    if (!value?.trim()) return 0
+    const normalized = value.replace(",", ".")
+    const parsed = Number(normalized)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+
+  function formatCurrency(value: number) {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value || 0)
+  }
+
+  function getSellerSummary(user: User) {
+    const comissao = Number(user.comissao_percentual || 0)
+    const metaLeads = Number(user.meta_leads || 0)
+    const metaVendas = Number(user.meta_vendas || 0)
+    const metaReceita = Number(user.meta_receita || 0)
+
+    return {
+      comissao,
+      metaLeads,
+      metaVendas,
+      metaReceita,
+    }
+  }
+
   async function loadCompany() {
     setLoading(true)
 
@@ -127,6 +190,7 @@ export default function EmpresaPage() {
       setMyCompanyId(null)
       setCompanyName("")
       setUsers([])
+      setSellerConfigs({})
       setLoading(false)
       return
     }
@@ -148,7 +212,9 @@ export default function EmpresaPage() {
 
     const { data: companyUsers } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
       .eq("company_id", me.company_id)
       .order("created_at", { ascending: true })
 
@@ -158,11 +224,22 @@ export default function EmpresaPage() {
         email: u.email,
         role: u.role,
         status: u.status,
+        comissao_percentual: u.comissao_percentual ?? 0,
+        meta_leads: u.meta_leads ?? 0,
+        meta_vendas: u.meta_vendas ?? 0,
+        meta_receita: u.meta_receita ?? 0,
       }))
 
       setUsers(usersFormatted)
+
+      const configsMap: Record<string, SellerConfigDraft> = {}
+      usersFormatted.forEach((u) => {
+        configsMap[u.email] = toDraft(u)
+      })
+      setSellerConfigs(configsMap)
     } else {
       setUsers([])
+      setSellerConfigs({})
     }
 
     setLoading(false)
@@ -258,14 +335,21 @@ export default function EmpresaPage() {
       return
     }
 
-    const { error } = await supabase
-      .from("company_users")
-      .insert({
-        company_id: myCompanyId,
-        email: emailNormalizado,
-        role: inviteRole,
-        status: "pending",
-      })
+    const payload: any = {
+      company_id: myCompanyId,
+      email: emailNormalizado,
+      role: inviteRole,
+      status: "pending",
+    }
+
+    if (inviteRole === "vendedor") {
+      payload.comissao_percentual = 0
+      payload.meta_leads = 0
+      payload.meta_vendas = 0
+      payload.meta_receita = 0
+    }
+
+    const { error } = await supabase.from("company_users").insert(payload)
 
     setSendingInvite(false)
 
@@ -286,9 +370,18 @@ export default function EmpresaPage() {
 
     setProcessingEmail(email)
 
+    const payload: any = { role }
+
+    if (role !== "vendedor") {
+      payload.comissao_percentual = 0
+      payload.meta_leads = 0
+      payload.meta_vendas = 0
+      payload.meta_receita = 0
+    }
+
     const { error } = await supabase
       .from("company_users")
-      .update({ role })
+      .update(payload)
       .eq("company_id", myCompanyId)
       .eq("email", email)
 
@@ -300,6 +393,74 @@ export default function EmpresaPage() {
     }
 
     toast.success("Perfil atualizado")
+    await loadCompany()
+  }
+
+  function updateSellerDraft(
+    email: string,
+    field: keyof SellerConfigDraft,
+    value: string
+  ) {
+    setSellerConfigs((prev) => ({
+      ...prev,
+      [email]: {
+        ...(prev[email] || {
+          comissao_percentual: "0",
+          meta_leads: "0",
+          meta_vendas: "0",
+          meta_receita: "0",
+        }),
+        [field]: value,
+      },
+    }))
+  }
+
+  async function saveSellerConfig(email: string) {
+    if (!myCompanyId) return
+
+    const draft = sellerConfigs[email]
+
+    if (!draft) {
+      toast.error("Configuração não encontrada")
+      return
+    }
+
+    const comissao = parseNumber(draft.comissao_percentual)
+    const metaLeads = parseNumber(draft.meta_leads)
+    const metaVendas = parseNumber(draft.meta_vendas)
+    const metaReceita = parseNumber(draft.meta_receita)
+
+    if (comissao < 0 || comissao > 100) {
+      toast.error("A comissão deve estar entre 0 e 100")
+      return
+    }
+
+    if (metaLeads < 0 || metaVendas < 0 || metaReceita < 0) {
+      toast.error("As metas não podem ser negativas")
+      return
+    }
+
+    setSavingSellerConfigEmail(email)
+
+    const { error } = await supabase
+      .from("company_users")
+      .update({
+        comissao_percentual: comissao,
+        meta_leads: metaLeads,
+        meta_vendas: metaVendas,
+        meta_receita: metaReceita,
+      })
+      .eq("company_id", myCompanyId)
+      .eq("email", email)
+
+    setSavingSellerConfigEmail(null)
+
+    if (error) {
+      toast.error("Erro ao salvar configuração do vendedor")
+      return
+    }
+
+    toast.success("Configuração do vendedor salva")
     await loadCompany()
   }
 
@@ -384,14 +545,12 @@ export default function EmpresaPage() {
       return
     }
 
-    // remove vínculo atual ativo do usuário
     await supabase
       .from("company_users")
       .delete()
       .eq("user_id", user.id)
       .eq("status", "accepted")
 
-    // aceita o convite novo
     const { error } = await supabase
       .from("company_users")
       .update({
@@ -436,11 +595,7 @@ export default function EmpresaPage() {
   }
 
   if (loading) {
-    return (
-      <div className="p-10 text-white">
-        Carregando...
-      </div>
-    )
+    return <div className="p-10 text-white">Carregando...</div>
   }
 
   if (myRole === "vendedor" && !receivedInvite) {
@@ -451,9 +606,7 @@ export default function EmpresaPage() {
             <Shield size={28} />
           </div>
 
-          <h1 className="text-2xl font-bold mb-2">
-            Acesso restrito
-          </h1>
+          <h1 className="text-2xl font-bold mb-2">Acesso restrito</h1>
 
           <p className="text-zinc-400 max-w-xl mx-auto">
             Apenas administradores e owners podem acessar as configurações da empresa.
@@ -476,7 +629,7 @@ export default function EmpresaPage() {
         </h1>
 
         <p className="text-zinc-400 max-w-3xl">
-          Gerencie identidade da empresa, convites, permissões da equipe e status de acesso em um único painel.
+          Gerencie identidade da empresa, convites, permissões da equipe, comissão dos vendedores e metas comerciais em um único painel.
         </p>
       </div>
 
@@ -494,7 +647,8 @@ export default function EmpresaPage() {
                 </h2>
 
                 <p className="text-sm text-cyan-100/80 mt-1">
-                  Empresa convidando: <strong>{receivedInvite.companies?.name || "Empresa não identificada"}</strong>
+                  Empresa convidando:{" "}
+                  <strong>{receivedInvite.companies?.name || "Empresa não identificada"}</strong>
                 </p>
 
                 <p className="text-sm text-cyan-100/80">
@@ -560,7 +714,7 @@ export default function EmpresaPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <MetricCard
           icon={<Building2 size={18} />}
           label="Empresa"
@@ -587,6 +741,13 @@ export default function EmpresaPage() {
           label="Convites pendentes"
           value={String(metrics.pendentes)}
           subvalue="Aguardando aceite"
+        />
+
+        <MetricCard
+          icon={<Percent size={18} />}
+          label="Comissão média"
+          value={`${metrics.comissaoMedia.toFixed(1)}%`}
+          subvalue="Entre vendedores"
         />
       </div>
 
@@ -632,9 +793,7 @@ export default function EmpresaPage() {
 
             <div>
               <h2 className="text-lg font-semibold">Seu acesso</h2>
-              <p className="text-sm text-zinc-400">
-                Perfil atual dentro da empresa.
-              </p>
+              <p className="text-sm text-zinc-400">Perfil atual dentro da empresa.</p>
             </div>
           </div>
 
@@ -706,11 +865,9 @@ export default function EmpresaPage() {
       <div className="bg-zinc-950/70 border border-zinc-800 rounded-3xl p-6 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
           <div>
-            <h2 className="text-lg font-semibold">
-              Usuários da Empresa ({users.length})
-            </h2>
+            <h2 className="text-lg font-semibold">Usuários da Empresa ({users.length})</h2>
             <p className="text-sm text-zinc-400">
-              Controle de perfis, status e acesso da equipe.
+              Controle de perfis, status, comissão e metas da equipe.
             </p>
           </div>
 
@@ -724,11 +881,15 @@ export default function EmpresaPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left">
+          <table className="w-full min-w-[1450px] text-left">
             <thead className="text-zinc-400 text-sm">
               <tr className="border-b border-zinc-800">
                 <th className="pb-4 font-medium">Usuário</th>
                 <th className="pb-4 font-medium">Perfil</th>
+                <th className="pb-4 font-medium">Comissão</th>
+                <th className="pb-4 font-medium">Meta Leads</th>
+                <th className="pb-4 font-medium">Meta Vendas</th>
+                <th className="pb-4 font-medium">Meta Receita</th>
                 <th className="pb-4 font-medium">Status</th>
                 <th className="pb-4 font-medium">Resumo</th>
                 <th className="pb-4 font-medium">Ações</th>
@@ -738,9 +899,14 @@ export default function EmpresaPage() {
             <tbody>
               {users.map((user) => {
                 const isProcessing = processingEmail === user.email
+                const isSavingSellerConfig = savingSellerConfigEmail === user.email
+                const draft = sellerConfigs[user.email] || toDraft(user)
+                const sellerSummary = getSellerSummary(user)
+                const isSeller = user.role === "vendedor"
+                const canManage = myRole === "admin" || myRole === "owner"
 
                 return (
-                  <tr key={user.email} className="border-b border-zinc-900/80">
+                  <tr key={user.email} className="border-b border-zinc-900/80 align-top">
                     <td className="py-4 pr-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 text-cyan-300 flex items-center justify-center font-semibold">
@@ -764,7 +930,7 @@ export default function EmpresaPage() {
                         </div>
 
                         <select
-                          disabled={myRole !== "admin" && myRole !== "owner"}
+                          disabled={!canManage}
                           value={user.role}
                           onChange={(e) => updateRole(user.email, e.target.value)}
                           className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl w-[150px]"
@@ -777,19 +943,157 @@ export default function EmpresaPage() {
                     </td>
 
                     <td className="py-4 pr-4">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusClass(user.status)}`}>
+                      {isSeller ? (
+                        <div className="space-y-2">
+                          <div className="relative w-[110px]">
+                            <Percent
+                              size={14}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                            />
+                            <input
+                              value={draft.comissao_percentual}
+                              onChange={(e) =>
+                                updateSellerDraft(
+                                  user.email,
+                                  "comissao_percentual",
+                                  e.target.value
+                                )
+                              }
+                              disabled={!canManage}
+                              placeholder="0"
+                              className="w-full bg-zinc-900 border border-zinc-800 p-2.5 pl-9 rounded-xl"
+                            />
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            Atual: {sellerSummary.comissao.toFixed(1)}%
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Não se aplica</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 pr-4">
+                      {isSeller ? (
+                        <div className="space-y-2">
+                          <div className="relative w-[120px]">
+                            <Target
+                              size={14}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                            />
+                            <input
+                              value={draft.meta_leads}
+                              onChange={(e) =>
+                                updateSellerDraft(user.email, "meta_leads", e.target.value)
+                              }
+                              disabled={!canManage}
+                              placeholder="0"
+                              className="w-full bg-zinc-900 border border-zinc-800 p-2.5 pl-9 rounded-xl"
+                            />
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            Atual: {sellerSummary.metaLeads}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Não se aplica</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 pr-4">
+                      {isSeller ? (
+                        <div className="space-y-2">
+                          <div className="relative w-[120px]">
+                            <TrendingUp
+                              size={14}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                            />
+                            <input
+                              value={draft.meta_vendas}
+                              onChange={(e) =>
+                                updateSellerDraft(user.email, "meta_vendas", e.target.value)
+                              }
+                              disabled={!canManage}
+                              placeholder="0"
+                              className="w-full bg-zinc-900 border border-zinc-800 p-2.5 pl-9 rounded-xl"
+                            />
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            Atual: {sellerSummary.metaVendas}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Não se aplica</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 pr-4">
+                      {isSeller ? (
+                        <div className="space-y-2">
+                          <div className="relative w-[150px]">
+                            <DollarSign
+                              size={14}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                            />
+                            <input
+                              value={draft.meta_receita}
+                              onChange={(e) =>
+                                updateSellerDraft(user.email, "meta_receita", e.target.value)
+                              }
+                              disabled={!canManage}
+                              placeholder="0"
+                              className="w-full bg-zinc-900 border border-zinc-800 p-2.5 pl-9 rounded-xl"
+                            />
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            Atual: {formatCurrency(sellerSummary.metaReceita)}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Não se aplica</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 pr-4">
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusClass(
+                          user.status
+                        )}`}
+                      >
                         {statusLabel(user.status)}
                       </span>
                     </td>
 
-                    <td className="py-4 pr-4 text-sm text-zinc-400">
-                      {user.status === "accepted" && "Usuário ativo na empresa"}
-                      {user.status === "pending" && "Convite enviado aguardando aceite"}
-                      {user.status === "inactive" && "Acesso desativado temporariamente"}
+                    <td className="py-4 pr-4 text-sm text-zinc-400 min-w-[260px]">
+                      {isSeller ? (
+                        <div className="space-y-1">
+                          <div>Comissão: {sellerSummary.comissao.toFixed(1)}%</div>
+                          <div>Meta leads: {sellerSummary.metaLeads}</div>
+                          <div>Meta vendas: {sellerSummary.metaVendas}</div>
+                          <div>Meta receita: {formatCurrency(sellerSummary.metaReceita)}</div>
+                        </div>
+                      ) : (
+                        <>
+                          {user.status === "accepted" && "Usuário ativo na empresa"}
+                          {user.status === "pending" && "Convite enviado aguardando aceite"}
+                          {user.status === "inactive" && "Acesso desativado temporariamente"}
+                        </>
+                      )}
                     </td>
 
                     <td className="py-4">
                       <div className="flex flex-wrap gap-2">
+                        {isSeller && canManage && (
+                          <button
+                            onClick={() => saveSellerConfig(user.email)}
+                            disabled={isSavingSellerConfig}
+                            className="h-10 px-4 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition text-sm font-medium flex items-center gap-2 disabled:opacity-60"
+                          >
+                            <Save size={14} />
+                            {isSavingSellerConfig ? "Salvando..." : "Salvar config"}
+                          </button>
+                        )}
+
                         {user.status !== "inactive" ? (
                           <button
                             onClick={() => deactivateUser(user.email)}

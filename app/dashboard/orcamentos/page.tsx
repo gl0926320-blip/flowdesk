@@ -17,6 +17,7 @@ import {
   Users,
   CalendarDays,
   RefreshCcw,
+  Percent,
 } from "lucide-react";
 
 interface Orcamento {
@@ -26,6 +27,8 @@ interface Orcamento {
   tipo_servico: string | null;
   valor_orcamento: number | null;
   custo: number | null;
+  valor_comissao?: number | null;
+  percentual_comissao?: number | null;
   responsavel: string | null;
   origem_lead: string | null;
   status: string | null;
@@ -38,6 +41,14 @@ interface Orcamento {
   descricao?: string | null;
   forma_pagamento?: string | null;
   telefone?: string | null;
+  data_fechamento?: string | null;
+  ultima_compra?: string | null;
+}
+
+interface OrcamentoCalculado extends Orcamento {
+  valor_comissao_calculado: number;
+  percentual_comissao_calculado: number;
+  lucro_calculado: number;
 }
 
 interface Vendedor {
@@ -45,6 +56,7 @@ interface Vendedor {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -97,6 +109,47 @@ export default function OrcamentosPage() {
     fetchOrcamentos();
   }, []);
 
+  function findVendedorByUserId(userId?: string | null) {
+    if (!userId) return null;
+    return vendedores.find((v) => v.user_id === userId) || null;
+  }
+
+  function findVendedorByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      vendedores.find(
+        (v) => (v.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    vendedor?: Vendedor | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualVendedor = Number(params.vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
+
   async function fetchOrcamentos() {
     setLoading(true);
 
@@ -131,7 +184,7 @@ export default function OrcamentosPage() {
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select("user_id, email, role, status, comissao_percentual")
       .eq("company_id", companyUser.company_id)
       .eq("status", "accepted")
       .order("email", { ascending: true });
@@ -170,8 +223,34 @@ export default function OrcamentosPage() {
     setVendedorFiltro(currentRole === "vendedor" ? currentUserId || "all" : "all");
   }
 
+  const orcamentosCalculados = useMemo<OrcamentoCalculado[]>(() => {
+    return orcamentos.map((o) => {
+      const vendedor =
+        findVendedorByUserId(o.user_id) || findVendedorByEmail(o.responsavel);
+
+      const comissao = calcularComissaoCongelada({
+        valorOrcamento: Number(o.valor_orcamento || 0),
+        valorComissaoAtual: o.valor_comissao,
+        percentualComissaoAtual: o.percentual_comissao,
+        vendedor,
+      });
+
+      const lucro =
+        Number(o.valor_orcamento || 0) -
+        Number(o.custo || 0) -
+        Number(comissao.valor_comissao || 0);
+
+      return {
+        ...o,
+        valor_comissao_calculado: Number(comissao.valor_comissao || 0),
+        percentual_comissao_calculado: Number(comissao.percentual_comissao || 0),
+        lucro_calculado: lucro,
+      };
+    });
+  }, [orcamentos, vendedores]);
+
   const filtrado = useMemo(() => {
-    return orcamentos.filter((o) => {
+    return orcamentosCalculados.filter((o) => {
       const cliente = (o.cliente || "").toLowerCase();
       const servico = (o.tipo_servico || "").toLowerCase();
       const origem = (o.origem_lead || "").toLowerCase();
@@ -259,7 +338,7 @@ export default function OrcamentosPage() {
       return true;
     });
   }, [
-    orcamentos,
+    orcamentosCalculados,
     busca,
     statusFiltro,
     valorMin,
@@ -291,6 +370,16 @@ export default function OrcamentosPage() {
       0
     );
 
+    const comissaoTotal = filtrado.reduce(
+      (acc, o) => acc + Number(o.valor_comissao_calculado || 0),
+      0
+    );
+
+    const lucroTotal = filtrado.reduce(
+      (acc, o) => acc + Number(o.lucro_calculado || 0),
+      0
+    );
+
     const valorConcluido = concluidos.reduce(
       (acc, o) => acc + Number(o.valor_orcamento || 0),
       0
@@ -308,6 +397,8 @@ export default function OrcamentosPage() {
       total,
       valorTotal,
       custoTotal,
+      comissaoTotal,
+      lucroTotal,
       valorConcluido,
       valorPotencial,
       ticketMedio,
@@ -335,6 +426,9 @@ export default function OrcamentosPage() {
       "Serviço",
       "Valor",
       "Custo",
+      "Comissão",
+      "% Comissão",
+      "Lucro",
       "Responsável",
       "Origem",
       "Status",
@@ -347,6 +441,9 @@ export default function OrcamentosPage() {
       o.tipo_servico || "",
       o.valor_orcamento || 0,
       o.custo || 0,
+      o.valor_comissao_calculado || 0,
+      o.percentual_comissao_calculado || 0,
+      o.lucro_calculado || 0,
       o.responsavel || "",
       o.origem_lead || "",
       STATUS_LABELS[o.status || ""] || o.status || "",
@@ -380,6 +477,9 @@ export default function OrcamentosPage() {
         Serviço: o.tipo_servico,
         Valor: o.valor_orcamento,
         Custo: o.custo,
+        Comissão: o.valor_comissao_calculado,
+        "% Comissão": o.percentual_comissao_calculado,
+        Lucro: o.lucro_calculado,
         Responsável: o.responsavel,
         Origem: o.origem_lead,
         Status: STATUS_LABELS[o.status || ""] || o.status,
@@ -401,6 +501,8 @@ export default function OrcamentosPage() {
       o.tipo_servico || "-",
       formatarMoeda(o.valor_orcamento || 0),
       formatarMoeda(o.custo || 0),
+      formatarMoeda(o.valor_comissao_calculado || 0),
+      formatarMoeda(o.lucro_calculado || 0),
       STATUS_LABELS[o.status || ""] || o.status || "-",
       formatarData(o.data_orcamento || o.created_at),
     ]);
@@ -410,7 +512,17 @@ export default function OrcamentosPage() {
 
     autoTable(doc, {
       startY: 28,
-      head: [["OS", "Cliente", "Serviço", "Valor", "Custo", "Status", "Data"]],
+      head: [[
+        "OS",
+        "Cliente",
+        "Serviço",
+        "Valor",
+        "Custo",
+        "Comissão",
+        "Lucro",
+        "Status",
+        "Data",
+      ]],
       body: rows,
       styles: {
         fontSize: 8,
@@ -430,7 +542,7 @@ export default function OrcamentosPage() {
         tipo_servico: "Desenvolvimento de site",
         valor_orcamento: 3500,
         custo: 1200,
-        responsavel: "João Vendedor",
+        responsavel: "joao@empresa.com",
         origem_lead: "WhatsApp",
         status: "lead",
         data_orcamento: new Date().toISOString().slice(0, 10),
@@ -467,32 +579,70 @@ export default function OrcamentosPage() {
         return;
       }
 
-      const registros = linhas.map((linha: any, index: number) => ({
-        company_id: companyId,
-        user_id: currentUserId,
-        numero_os: linha.numero_os || linha.OS || `OS-IMPORT-${Date.now()}-${index}`,
-        cliente: linha.cliente || linha.Cliente || "",
-        titulo: linha.tipo_servico || linha.Serviço || linha.servico || "",
-        tipo_servico: linha.tipo_servico || linha.Serviço || linha.servico || "",
-        valor_orcamento: Number(
-          linha.valor_orcamento || linha.Valor || linha.valor || 0
-        ),
-        custo: Number(linha.custo || linha.Custo || 0),
-        responsavel: linha.responsavel || linha.Responsável || "",
-        origem_lead: linha.origem_lead || linha.Origem || "",
-        status: (
+      const registros = linhas.map((linha: any, index: number) => {
+        const responsavel =
+          linha.responsavel || linha.Responsável || "";
+        const vendedor =
+          findVendedorByEmail(responsavel) ||
+          (currentRole === "vendedor" ? findVendedorByUserId(currentUserId) : null);
+
+        const userIdRegistro =
+          vendedor?.user_id || (currentRole === "vendedor" ? currentUserId : null);
+
+        const status = (
           linha.status ||
           linha.Status ||
           "lead"
-        ).toString().toLowerCase().trim(),
-        data_orcamento:
-          linha.data_orcamento || linha.Data || new Date().toISOString(),
-        telefone: linha.telefone || linha.Telefone || "",
-        descricao: linha.descricao || linha.Descrição || "",
-        forma_pagamento:
-          linha.forma_pagamento || linha["Forma de Pagamento"] || "",
-        ativo: true,
-      }));
+        ).toString().toLowerCase().trim();
+
+        const valorOrcamento = Number(
+          linha.valor_orcamento || linha.Valor || linha.valor || 0
+        );
+
+        const valorComissaoLinha = Number(
+          linha.valor_comissao || linha["Valor Comissão"] || 0
+        );
+
+        const percentualComissaoLinha = Number(
+          linha.percentual_comissao || linha["% Comissão"] || 0
+        );
+
+        const comissao = calcularComissaoCongelada({
+          valorOrcamento,
+          valorComissaoAtual: valorComissaoLinha,
+          percentualComissaoAtual: percentualComissaoLinha,
+          vendedor,
+        });
+
+        const isConcluido = status === "concluido";
+
+        return {
+          company_id: companyId,
+          user_id: userIdRegistro,
+          numero_os:
+            linha.numero_os || linha.OS || `OS-IMPORT-${Date.now()}-${index}`,
+          cliente: linha.cliente || linha.Cliente || "",
+          titulo: linha.tipo_servico || linha.Serviço || linha.servico || "",
+          tipo_servico:
+            linha.tipo_servico || linha.Serviço || linha.servico || "",
+          valor_orcamento: valorOrcamento,
+          custo: Number(linha.custo || linha.Custo || 0),
+          valor_comissao: isConcluido ? comissao.valor_comissao : 0,
+          percentual_comissao: isConcluido ? comissao.percentual_comissao : 0,
+          responsavel: responsavel || vendedor?.email || "",
+          origem_lead: linha.origem_lead || linha.Origem || "",
+          status,
+          data_orcamento:
+            linha.data_orcamento || linha.Data || new Date().toISOString(),
+          data_fechamento: isConcluido ? new Date().toISOString() : null,
+          ultima_compra: isConcluido ? new Date().toISOString() : null,
+          telefone: linha.telefone || linha.Telefone || "",
+          descricao: linha.descricao || linha.Descrição || "",
+          forma_pagamento:
+            linha.forma_pagamento || linha["Forma de Pagamento"] || "",
+          ativo: true,
+        };
+      });
 
       const { error } = await supabase.from("servicos").insert(registros);
 
@@ -555,7 +705,7 @@ export default function OrcamentosPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-8 gap-5">
         <MetricCard
           icon={<Receipt size={18} />}
           title="Total de Orçamentos"
@@ -591,6 +741,18 @@ export default function OrcamentosPage() {
           title="Ticket Médio"
           value={formatarMoeda(resumo.ticketMedio)}
           subtitle="Média dos concluídos"
+        />
+        <MetricCard
+          icon={<Percent size={18} />}
+          title="Comissão Total"
+          value={formatarMoeda(resumo.comissaoTotal)}
+          subtitle="Comissão calculada"
+        />
+        <MetricCard
+          icon={<TrendingUp size={18} />}
+          title="Lucro Estimado"
+          value={formatarMoeda(resumo.lucroTotal)}
+          subtitle="Valor - custo - comissão"
         />
       </div>
 
@@ -790,7 +952,7 @@ export default function OrcamentosPage() {
         </div>
 
         <div className="overflow-auto">
-          <table className="w-full text-sm text-left min-w-[1200px]">
+          <table className="w-full text-sm text-left min-w-[1450px]">
             <thead className="bg-white/5 text-blue-200 uppercase text-xs">
               <tr>
                 <th className="p-4">OS</th>
@@ -798,6 +960,9 @@ export default function OrcamentosPage() {
                 <th className="p-4">Serviço</th>
                 <th className="p-4">Valor</th>
                 <th className="p-4">Custo</th>
+                <th className="p-4">Comissão</th>
+                <th className="p-4">% Comissão</th>
+                <th className="p-4">Lucro</th>
                 <th className="p-4">Responsável</th>
                 <th className="p-4">Origem</th>
                 <th className="p-4">Status</th>
@@ -809,13 +974,13 @@ export default function OrcamentosPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-white/60">
+                  <td colSpan={13} className="p-8 text-center text-white/60">
                     Carregando...
                   </td>
                 </tr>
               ) : filtrado.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-white/40">
+                  <td colSpan={13} className="p-8 text-center text-white/40">
                     Nenhum orçamento encontrado
                   </td>
                 </tr>
@@ -845,6 +1010,18 @@ export default function OrcamentosPage() {
 
                     <td className="p-4 text-rose-400 font-medium">
                       {formatarMoeda(o.custo || 0)}
+                    </td>
+
+                    <td className="p-4 text-purple-300 font-medium">
+                      {formatarMoeda(o.valor_comissao_calculado || 0)}
+                    </td>
+
+                    <td className="p-4 text-yellow-300 font-medium">
+                      {Number(o.percentual_comissao_calculado || 0).toFixed(1)}%
+                    </td>
+
+                    <td className="p-4 text-emerald-400 font-medium">
+                      {formatarMoeda(o.lucro_calculado || 0)}
                     </td>
 
                     <td className="p-4 text-white/80">

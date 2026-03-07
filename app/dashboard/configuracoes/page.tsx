@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase-browser"
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   BarChart3,
   BellRing,
   Brain,
@@ -32,7 +30,7 @@ function formatarMoeda(valor: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(valor)
+  }).format(valor || 0)
 }
 
 type Vendedor = {
@@ -40,6 +38,16 @@ type Vendedor = {
   email: string
   role: string
   status: string
+  comissao_percentual?: number | null
+  meta_leads?: number | null
+  meta_vendas?: number | null
+  meta_receita?: number | null
+}
+
+type ServicoCalculado = {
+  [key: string]: any
+  valor_comissao_calculado: number
+  percentual_comissao_calculado: number
 }
 
 export default function ConfiguracoesPage() {
@@ -88,13 +96,13 @@ export default function ConfiguracoesPage() {
         setFiltroVendedor(user.id)
       }
 
-      const companyId = companyUser.company_id
-      setCompanyId(companyId)
+      const currentCompanyId = companyUser.company_id
+      setCompanyId(currentCompanyId)
 
       const { data: equipe } = await supabase
         .from("company_users")
-        .select("user_id, email, role, status")
-        .eq("company_id", companyId)
+        .select("user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita")
+        .eq("company_id", currentCompanyId)
         .eq("status", "accepted")
         .order("email", { ascending: true })
 
@@ -103,7 +111,7 @@ export default function ConfiguracoesPage() {
       let query = supabase
         .from("servicos")
         .select("*")
-        .eq("company_id", companyId)
+        .eq("company_id", currentCompanyId)
         .eq("ativo", true)
 
       if (companyUser.role === "vendedor") {
@@ -119,8 +127,52 @@ export default function ConfiguracoesPage() {
     carregar()
   }, [supabase])
 
+  const vendedoresMap = useMemo(() => {
+    const byUserId = new Map<string, Vendedor>()
+    const byEmail = new Map<string, Vendedor>()
+
+    vendedores.forEach((v) => {
+      if (v.user_id) byUserId.set(v.user_id, v)
+      if (v.email) byEmail.set(v.email.toLowerCase(), v)
+    })
+
+    return { byUserId, byEmail }
+  }, [vendedores])
+
+  const servicosComComissao = useMemo<ServicoCalculado[]>(() => {
+    return servicos.map((s) => {
+      const vendedorPorId =
+        s.user_id ? vendedoresMap.byUserId.get(s.user_id) : undefined
+
+      const vendedorPorEmail =
+        s.responsavel
+          ? vendedoresMap.byEmail.get(String(s.responsavel).toLowerCase())
+          : undefined
+
+      const vendedor = vendedorPorId || vendedorPorEmail
+
+      const percentualServico = Number(s.percentual_comissao || 0)
+      const percentualVendedor = Number(vendedor?.comissao_percentual || 0)
+
+      const percentualFinal =
+        percentualServico > 0 ? percentualServico : percentualVendedor
+
+      let valorFinal = Number(s.valor_comissao || 0)
+
+      if (valorFinal <= 0 && Number(s.valor_orcamento || 0) > 0 && percentualFinal > 0) {
+        valorFinal = (Number(s.valor_orcamento || 0) * percentualFinal) / 100
+      }
+
+      return {
+        ...s,
+        percentual_comissao_calculado: percentualFinal,
+        valor_comissao_calculado: valorFinal,
+      }
+    })
+  }, [servicos, vendedoresMap])
+
   const servicosFiltradosBase = useMemo(() => {
-    let lista = [...servicos]
+    let lista = [...servicosComComissao]
 
     const agora = new Date()
 
@@ -181,7 +233,7 @@ export default function ConfiguracoesPage() {
     }
 
     return lista
-  }, [servicos, periodo, dataInicio, dataFim, filtroVendedor, busca, role])
+  }, [servicosComComissao, periodo, dataInicio, dataFim, filtroVendedor, busca, role])
 
   const diagnostico = useMemo(() => {
     const hoje = new Date()
@@ -266,7 +318,7 @@ export default function ConfiguracoesPage() {
         ? concluidos.reduce((acc, s) => {
             if (!s.valor_orcamento) return acc
             const custo = Number(s.custo || 0)
-            const comissao = Number(s.valor_comissao || 0)
+            const comissao = Number(s.valor_comissao_calculado || 0)
             return (
               acc +
               ((Number(s.valor_orcamento) - custo - comissao) /
@@ -297,7 +349,7 @@ export default function ConfiguracoesPage() {
     )
 
     const comissoesPendentes = concluidos.filter(
-      (s) => !s.comissao_paga && diasDesde(s.created_at) > 7
+      (s) => !s.comissao_paga && Number(s.valor_comissao_calculado || 0) > 0 && diasDesde(s.created_at) > 7
     )
 
     const clientesInativos = ativos.filter(
@@ -312,16 +364,16 @@ export default function ConfiguracoesPage() {
       (s) => (s.temperatura || "").trim().toLowerCase() === "frio"
     )
 
-    const vendedoresMap: Record<string, number> = {}
+    const vendedoresMapRanking: Record<string, number> = {}
 
     concluidos.forEach((s) => {
       const nome = s.responsavel || "Não definido"
-      vendedoresMap[nome] =
-        (vendedoresMap[nome] || 0) + Number(s.valor_orcamento || 0)
+      vendedoresMapRanking[nome] =
+        (vendedoresMapRanking[nome] || 0) + Number(s.valor_orcamento || 0)
     })
 
     const topVendedor =
-      Object.entries(vendedoresMap).sort((a, b) => b[1] - a[1])[0] || null
+      Object.entries(vendedoresMapRanking).sort((a, b) => b[1] - a[1])[0] || null
 
     const statusCount: Record<string, number> = {}
     ativos.forEach((s) => {
@@ -383,7 +435,7 @@ export default function ConfiguracoesPage() {
         ? ((receitaMes - receitaMesAnterior) / receitaMesAnterior) * 100
         : 0
 
-    const rankingVendedores = Object.entries(vendedoresMap)
+    const rankingVendedores = Object.entries(vendedoresMapRanking)
       .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor)
 
@@ -490,7 +542,6 @@ export default function ConfiguracoesPage() {
         </p>
       </div>
 
-      {/* FILTROS */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-5 md:p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)] space-y-5">
         <div className="flex items-center gap-2 text-cyan-400 font-semibold">
           <Search size={18} />
@@ -596,7 +647,6 @@ export default function ConfiguracoesPage() {
         )}
       </div>
 
-      {/* SCORE */}
       <div className="bg-gradient-to-r from-cyan-600/10 to-blue-500/10 p-8 rounded-3xl border border-cyan-400/20">
         <div className="flex items-center gap-3 mb-4">
           <Gauge className="text-cyan-400" />
@@ -630,7 +680,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* MÉTRICAS PRINCIPAIS */}
       <div className="grid md:grid-cols-3 xl:grid-cols-6 gap-5">
         <MiniCard
           title="Receita do período"
@@ -685,7 +734,6 @@ export default function ConfiguracoesPage() {
         />
       </div>
 
-      {/* ALERTAS */}
       <div className="grid lg:grid-cols-2 gap-6">
         <AlertBox
           title="Alertas críticos"
@@ -704,7 +752,6 @@ export default function ConfiguracoesPage() {
         />
       </div>
 
-      {/* OPERAÇÃO */}
       <div className="grid lg:grid-cols-4 gap-5">
         <StatPanel
           title="Leads parados"
@@ -736,7 +783,6 @@ export default function ConfiguracoesPage() {
         />
       </div>
 
-      {/* INSIGHTS ESTRATÉGICOS */}
       <div className="bg-[#0f172a] p-6 rounded-3xl border border-white/10 space-y-4">
         <div className="flex items-center gap-3 text-yellow-400">
           <Lightbulb />
@@ -759,7 +805,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* RESUMO DO FUNIL */}
       <div className="grid md:grid-cols-4 gap-5">
         <FunilCard label="Potenciais" value={diagnostico.totalPotenciais} />
         <FunilCard label="Confirmadas" value={diagnostico.totalConfirmadas} />
@@ -767,7 +812,6 @@ export default function ConfiguracoesPage() {
         <FunilCard label="Gargalo atual" value={String(diagnostico.gargalo)} />
       </div>
 
-      {/* TOP VENDEDOR */}
       {diagnostico.topVendedor && (
         <div className="bg-gradient-to-r from-yellow-500/10 to-yellow-300/10 p-6 rounded-3xl border border-yellow-400/20">
           <div className="flex items-center gap-3 text-yellow-400 mb-2">
@@ -782,7 +826,6 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* RANKING */}
       <div className="bg-[#0f172a] p-6 rounded-3xl border border-white/10">
         <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
           <Crown className="text-yellow-400" size={18} />

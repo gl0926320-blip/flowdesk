@@ -11,6 +11,8 @@ import {
   Thermometer,
   TrendingUp,
   Users,
+  Target,
+  Percent,
 } from "lucide-react";
 
 type CompanyUser = {
@@ -18,6 +20,10 @@ type CompanyUser = {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+  meta_leads?: number | null;
+  meta_vendas?: number | null;
+  meta_receita?: number | null;
 };
 
 type Servico = {
@@ -127,14 +133,21 @@ export default function CarteiraPage() {
 
     const { data: companyUsers, error: usersError } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
       .eq("company_id", me.company_id)
       .eq("status", "accepted")
       .eq("role", "vendedor")
       .order("email", { ascending: true });
 
     if (!usersError) {
-      setVendedores((companyUsers as CompanyUser[]) || []);
+      const vendedoresData = (companyUsers as CompanyUser[]) || [];
+      setVendedores(vendedoresData);
+
+      if (me.role === "vendedor") {
+        setVendedorSelecionado(user.id);
+      }
     }
 
     let query = supabase
@@ -144,7 +157,6 @@ export default function CarteiraPage() {
       .eq("ativo", true)
       .order("created_at", { ascending: false });
 
-    // vendedor vê só a própria carteira
     if (me.role === "vendedor") {
       query = query.eq("user_id", user.id);
     }
@@ -285,8 +297,25 @@ export default function CarteiraPage() {
         .filter((i) => STATUS_CONFIRMADA.includes(i.status))
         .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
+      const realizada = lista
+        .filter((i) => STATUS_REALIZADA.includes(i.status))
+        .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+
       const concluidos = lista.filter((i) => i.status === "concluido").length;
       const conversao = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+
+      const metaLeads = Number(vendedor.meta_leads || 0);
+      const metaVendas = Number(vendedor.meta_vendas || 0);
+      const metaReceita = Number(vendedor.meta_receita || 0);
+
+      const progressoLeads =
+        metaLeads > 0 ? Math.min((total / metaLeads) * 100, 999) : 0;
+
+      const progressoVendas =
+        metaVendas > 0 ? Math.min((concluidos / metaVendas) * 100, 999) : 0;
+
+      const progressoReceita =
+        metaReceita > 0 ? Math.min((realizada / metaReceita) * 100, 999) : 0;
 
       return {
         vendedor,
@@ -296,8 +325,15 @@ export default function CarteiraPage() {
         quentes,
         potencial,
         confirmada,
+        realizada,
         concluidos,
         conversao,
+        metaLeads,
+        metaVendas,
+        metaReceita,
+        progressoLeads,
+        progressoVendas,
+        progressoReceita,
       };
     });
   }, [vendedores, servicos, companyId, myRole, myUserId]);
@@ -307,6 +343,10 @@ export default function CarteiraPage() {
       style: "currency",
       currency: "BRL",
     });
+  }
+
+  function formatPercent(value: number) {
+    return `${value.toFixed(0)}%`;
   }
 
   if (loading) {
@@ -337,50 +377,50 @@ export default function CarteiraPage() {
           />
         </div>
 
-<select
-  value={myRole === "vendedor" ? myUserId || "todos" : vendedorSelecionado}
-  onChange={(e) => setVendedorSelecionado(e.target.value)}
-  disabled={myRole === "vendedor"}
-  className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
->
-  {myRole !== "vendedor" && (
-    <option value="todos" className="bg-[#0f172a] text-white">
-      Todos os vendedores
-    </option>
-  )}
+        <select
+          value={myRole === "vendedor" ? myUserId || "todos" : vendedorSelecionado}
+          onChange={(e) => setVendedorSelecionado(e.target.value)}
+          disabled={myRole === "vendedor"}
+          className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
+        >
+          {myRole !== "vendedor" && (
+            <option value="todos" className="bg-[#0f172a] text-white">
+              Todos os vendedores
+            </option>
+          )}
 
-  {vendedores.map((vendedor) => (
-    <option
-      key={vendedor.user_id}
-      value={vendedor.user_id}
-      className="bg-[#0f172a] text-white"
-    >
-      {vendedor.email}
-    </option>
-  ))}
-</select>
+          {vendedores.map((vendedor) => (
+            <option
+              key={vendedor.user_id}
+              value={vendedor.user_id}
+              className="bg-[#0f172a] text-white"
+            >
+              {vendedor.email}
+            </option>
+          ))}
+        </select>
 
-<select
-  value={periodo}
-  onChange={(e) => setPeriodo(e.target.value as any)}
-  className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
->
-  <option value="todos" className="bg-[#0f172a] text-white">
-    Todo período
-  </option>
-  <option value="hoje" className="bg-[#0f172a] text-white">
-    Hoje
-  </option>
-  <option value="7dias" className="bg-[#0f172a] text-white">
-    Últimos 7 dias
-  </option>
-  <option value="30dias" className="bg-[#0f172a] text-white">
-    Últimos 30 dias
-  </option>
-  <option value="mes" className="bg-[#0f172a] text-white">
-    Mês atual
-  </option>
-</select>
+        <select
+          value={periodo}
+          onChange={(e) => setPeriodo(e.target.value as any)}
+          className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
+        >
+          <option value="todos" className="bg-[#0f172a] text-white">
+            Todo período
+          </option>
+          <option value="hoje" className="bg-[#0f172a] text-white">
+            Hoje
+          </option>
+          <option value="7dias" className="bg-[#0f172a] text-white">
+            Últimos 7 dias
+          </option>
+          <option value="30dias" className="bg-[#0f172a] text-white">
+            Últimos 30 dias
+          </option>
+          <option value="mes" className="bg-[#0f172a] text-white">
+            Mês atual
+          </option>
+        </select>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
@@ -403,7 +443,7 @@ export default function CarteiraPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[1100px]">
+          <table className="w-full text-left min-w-[1700px]">
             <thead className="bg-white/5 text-blue-200 uppercase text-xs">
               <tr>
                 <th className="p-4">Vendedor</th>
@@ -413,8 +453,15 @@ export default function CarteiraPage() {
                 <th className="p-4">Quentes</th>
                 <th className="p-4">Potencial</th>
                 <th className="p-4">Confirmada</th>
+                <th className="p-4">Realizada</th>
                 <th className="p-4">Concluídos</th>
                 <th className="p-4">Conversão</th>
+                <th className="p-4">Meta Leads</th>
+                <th className="p-4">% Leads</th>
+                <th className="p-4">Meta Vendas</th>
+                <th className="p-4">% Vendas</th>
+                <th className="p-4">Meta Receita</th>
+                <th className="p-4">% Receita</th>
               </tr>
             </thead>
 
@@ -431,14 +478,21 @@ export default function CarteiraPage() {
                   <td className="p-4 text-red-300 font-semibold">{row.quentes}</td>
                   <td className="p-4 text-cyan-400 font-bold">{formatMoney(row.potencial)}</td>
                   <td className="p-4 text-emerald-400 font-bold">{formatMoney(row.confirmada)}</td>
+                  <td className="p-4 text-green-400 font-bold">{formatMoney(row.realizada)}</td>
                   <td className="p-4">{row.concluidos}</td>
                   <td className="p-4">{row.conversao}%</td>
+                  <td className="p-4">{row.metaLeads}</td>
+                  <td className="p-4 text-cyan-300 font-semibold">{formatPercent(row.progressoLeads)}</td>
+                  <td className="p-4">{row.metaVendas}</td>
+                  <td className="p-4 text-purple-300 font-semibold">{formatPercent(row.progressoVendas)}</td>
+                  <td className="p-4">{formatMoney(row.metaReceita)}</td>
+                  <td className="p-4 text-green-300 font-semibold">{formatPercent(row.progressoReceita)}</td>
                 </tr>
               ))}
 
               {resumoPorVendedor.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-blue-100/60">
+                  <td colSpan={16} className="p-8 text-center text-blue-100/60">
                     Nenhum vendedor encontrado para esta empresa.
                   </td>
                 </tr>

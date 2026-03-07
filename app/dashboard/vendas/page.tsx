@@ -14,6 +14,7 @@ import {
   BadgeDollarSign,
   Eye,
   X,
+  Percent,
 } from "lucide-react";
 
 interface Venda {
@@ -22,6 +23,7 @@ interface Venda {
   status: string;
   valor_orcamento: number;
   created_at: string;
+  data_fechamento?: string | null;
   forma_pagamento: string;
   percentual_comissao: number;
   valor_comissao: number;
@@ -39,11 +41,19 @@ interface Venda {
   temperatura?: string | null;
 }
 
+interface VendaCalculada extends Venda {
+  percentual_comissao_calculado: number;
+  valor_comissao_calculado: number;
+  lucro_calculado: number;
+}
+
 interface Vendedor {
   user_id: string | null;
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+  meta_receita?: number | null;
 }
 
 export default function VendasPage() {
@@ -57,7 +67,7 @@ export default function VendasPage() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  const [selectedVenda, setSelectedVenda] = useState<Venda | null>(null);
+  const [selectedVenda, setSelectedVenda] = useState<VendaCalculada | null>(null);
 
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [role, setRole] = useState<string>("");
@@ -73,6 +83,47 @@ export default function VendasPage() {
   useEffect(() => {
     load();
   }, []);
+
+  function findVendedorByUserId(userId?: string | null) {
+    if (!userId) return null;
+    return vendedores.find((v) => v.user_id === userId) || null;
+  }
+
+  function findVendedorByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      vendedores.find(
+        (v) => (v.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    vendedor?: Vendedor | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualVendedor = Number(params.vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
 
   async function load() {
     setLoading(true);
@@ -98,20 +149,20 @@ export default function VendasPage() {
       return;
     }
 
-    const companyId = companyUser.company_id;
-    const role = companyUser.role;
+    const currentCompanyId = companyUser.company_id;
+    const currentRole = companyUser.role;
 
-    setCompanyId(companyId);
-    setRole(role);
+    setCompanyId(currentCompanyId);
+    setRole(currentRole);
 
-    if (role === "vendedor") {
+    if (currentRole === "vendedor") {
       setFiltroVendedor(user.id);
     }
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
-      .eq("company_id", companyId)
+      .select("user_id, email, role, status, comissao_percentual, meta_receita")
+      .eq("company_id", currentCompanyId)
       .eq("status", "accepted")
       .order("email", { ascending: true });
 
@@ -120,11 +171,11 @@ export default function VendasPage() {
     let query = supabase
       .from("servicos")
       .select("*")
-      .eq("company_id", companyId)
+      .eq("company_id", currentCompanyId)
       .eq("status", "concluido")
       .eq("ativo", true);
 
-    if (role === "vendedor") {
+    if (currentRole === "vendedor") {
       query = query.eq("user_id", user.id);
     }
 
@@ -179,22 +230,52 @@ export default function VendasPage() {
     return true;
   }
 
+  const vendasCalculadas = useMemo<VendaCalculada[]>(() => {
+    return vendas.map((v) => {
+      const vendedor =
+        findVendedorByUserId(v.user_id) || findVendedorByEmail(v.responsavel);
+
+      const comissao = calcularComissaoCongelada({
+        valorOrcamento: Number(v.valor_orcamento || 0),
+        valorComissaoAtual: v.valor_comissao,
+        percentualComissaoAtual: v.percentual_comissao,
+        vendedor,
+      });
+
+      const lucro =
+        Number(v.valor_orcamento || 0) -
+        Number(v.custo || 0) -
+        Number(comissao.valor_comissao || 0);
+
+      return {
+        ...v,
+        percentual_comissao_calculado: Number(comissao.percentual_comissao || 0),
+        valor_comissao_calculado: Number(comissao.valor_comissao || 0),
+        lucro_calculado: lucro,
+      };
+    });
+  }, [vendas, vendedores]);
+
   const origens = useMemo(() => {
     const lista = Array.from(
-      new Set(vendas.map((v) => (v.origem_lead || "").trim()).filter(Boolean))
+      new Set(
+        vendasCalculadas.map((v) => (v.origem_lead || "").trim()).filter(Boolean)
+      )
     );
     return lista.sort((a, b) => a.localeCompare(b));
-  }, [vendas]);
+  }, [vendasCalculadas]);
 
   const formasPagamento = useMemo(() => {
     const lista = Array.from(
-      new Set(vendas.map((v) => (v.forma_pagamento || "").trim()).filter(Boolean))
+      new Set(
+        vendasCalculadas.map((v) => (v.forma_pagamento || "").trim()).filter(Boolean)
+      )
     );
     return lista.sort((a, b) => a.localeCompare(b));
-  }, [vendas]);
+  }, [vendasCalculadas]);
 
   const vendasFiltradas = useMemo(() => {
-    return vendas.filter((v) => {
+    return vendasCalculadas.filter((v) => {
       const termo = busca.toLowerCase();
 
       const matchBusca =
@@ -207,7 +288,7 @@ export default function VendasPage() {
 
       if (!matchBusca) return false;
 
-      if (!filtrarPorPeriodo(v.created_at)) return false;
+      if (!filtrarPorPeriodo(v.data_fechamento || v.created_at)) return false;
 
       if (filtroVendedor !== "all" && v.user_id !== filtroVendedor) {
         return false;
@@ -229,7 +310,16 @@ export default function VendasPage() {
 
       return true;
     });
-  }, [vendas, busca, periodo, dataInicio, dataFim, filtroVendedor, filtroOrigem, filtroPagamento]);
+  }, [
+    vendasCalculadas,
+    busca,
+    periodo,
+    dataInicio,
+    dataFim,
+    filtroVendedor,
+    filtroOrigem,
+    filtroPagamento,
+  ]);
 
   const totalVendas = vendasFiltradas.reduce(
     (acc, v) => acc + Number(v.valor_orcamento || 0),
@@ -237,7 +327,7 @@ export default function VendasPage() {
   );
 
   const totalComissao = vendasFiltradas.reduce(
-    (acc, v) => acc + Number(v.valor_comissao || 0),
+    (acc, v) => acc + Number(v.valor_comissao_calculado || 0),
     0
   );
 
@@ -246,17 +336,15 @@ export default function VendasPage() {
     0
   );
 
-  const lucroTotal = vendasFiltradas.reduce((acc, v) => {
-    const valor = Number(v.valor_orcamento || 0);
-    const custo = Number(v.custo || 0);
-    const comissao = Number(v.valor_comissao || 0);
-    return acc + (valor - custo - comissao);
-  }, 0);
+  const lucroTotal = vendasFiltradas.reduce(
+    (acc, v) => acc + Number(v.lucro_calculado || 0),
+    0
+  );
 
   const ticketMedio =
     vendasFiltradas.length > 0 ? totalVendas / vendasFiltradas.length : 0;
 
-  const progresso = totalVendas ? (totalVendas / meta) * 100 : 0;
+  const progresso = meta > 0 ? (totalVendas / meta) * 100 : 0;
 
   const melhorOrigem = useMemo(() => {
     const mapa: Record<string, number> = {};
@@ -264,6 +352,18 @@ export default function VendasPage() {
     vendasFiltradas.forEach((v) => {
       const origem = (v.origem_lead || "Sem origem").trim();
       mapa[origem] = (mapa[origem] || 0) + Number(v.valor_orcamento || 0);
+    });
+
+    const entries = Object.entries(mapa).sort((a, b) => b[1] - a[1]);
+    return entries[0]?.[0] || "-";
+  }, [vendasFiltradas]);
+
+  const vendedorTop = useMemo(() => {
+    const mapa: Record<string, number> = {};
+
+    vendasFiltradas.forEach((v) => {
+      const nome = (v.responsavel || "Sem responsável").trim();
+      mapa[nome] = (mapa[nome] || 0) + Number(v.valor_orcamento || 0);
     });
 
     const entries = Object.entries(mapa).sort((a, b) => b[1] - a[1]);
@@ -304,8 +404,7 @@ export default function VendasPage() {
         </div>
       </div>
 
-      {/* CARDS */}
-      <div className="grid sm:grid-cols-2 xl:grid-cols-6 gap-5">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-7 gap-5">
         <Card
           titulo="Total Vendas"
           valor={formatarMoeda(totalVendas)}
@@ -348,15 +447,22 @@ export default function VendasPage() {
           icon={<Target size={18} />}
           glow="rgba(250,204,21,0.18)"
         />
+        <Card
+          titulo="Top Vendedor"
+          valor={vendedorTop}
+          subtitulo="Maior faturamento no filtro"
+          icon={<Users size={18} />}
+          glow="rgba(45,212,191,0.18)"
+        />
       </div>
 
-      {/* BARRA DE META */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)]">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
           <div>
             <h3 className="text-lg font-bold text-white">Meta comercial</h3>
             <p className="text-sm text-slate-400">
-              Melhor origem atual: <span className="text-cyan-400 font-semibold">{melhorOrigem}</span>
+              Melhor origem atual:{" "}
+              <span className="text-cyan-400 font-semibold">{melhorOrigem}</span>
             </p>
           </div>
 
@@ -379,7 +485,6 @@ export default function VendasPage() {
         </div>
       </div>
 
-      {/* FILTROS */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-5 md:p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)] space-y-5">
         <div className="flex items-center gap-2 text-cyan-400 font-semibold">
           <Search size={18} />
@@ -493,7 +598,6 @@ export default function VendasPage() {
         </div>
       </div>
 
-      {/* TABELA */}
       <div className="rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] shadow-[0_16px_42px_rgba(0,0,0,0.30)]">
         <div className="px-6 py-5 border-b border-white/10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -507,13 +611,15 @@ export default function VendasPage() {
         </div>
 
         <div className="overflow-auto">
-          <table className="w-full text-left min-w-[1200px]">
+          <table className="w-full text-left min-w-[1450px]">
             <thead className="bg-white/5 text-blue-200 uppercase text-xs">
               <tr>
                 <th className="p-4">Cliente</th>
                 <th className="p-4">Serviço</th>
                 <th className="p-4">Valor</th>
                 <th className="p-4">Custo</th>
+                <th className="p-4">Comissão</th>
+                <th className="p-4">% Comissão</th>
                 <th className="p-4">Lucro</th>
                 <th className="p-4">Pagamento</th>
                 <th className="p-4">Origem</th>
@@ -526,58 +632,56 @@ export default function VendasPage() {
             <tbody>
               {vendasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-white/40">
+                  <td colSpan={12} className="p-8 text-center text-white/40">
                     Nenhuma venda encontrada
                   </td>
                 </tr>
               ) : (
-                vendasFiltradas.map((v) => {
-                  const lucro =
-                    Number(v.valor_orcamento || 0) -
-                    Number(v.custo || 0) -
-                    Number(v.valor_comissao || 0);
-
-                  return (
-                    <tr
-                      key={v.id}
-                      className="border-t border-white/5 hover:bg-white/5 transition"
-                    >
-                      <td className="p-4 font-semibold">{v.cliente || "-"}</td>
-                      <td className="p-4 text-white/80">{v.tipo_servico || "-"}</td>
-                      <td className="p-4 text-cyan-400 font-bold">
-                        {formatarMoeda(Number(v.valor_orcamento || 0))}
-                      </td>
-                      <td className="p-4 text-rose-400">
-                        {formatarMoeda(Number(v.custo || 0))}
-                      </td>
-                      <td className="p-4 text-emerald-400 font-semibold">
-                        {formatarMoeda(lucro)}
-                      </td>
-                      <td className="p-4">{v.forma_pagamento || "-"}</td>
-                      <td className="p-4">{v.origem_lead || "-"}</td>
-                      <td className="p-4">{v.responsavel || "-"}</td>
-                      <td className="p-4">
-                        {new Date(v.created_at).toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="p-4">
-                        <button
-                          onClick={() => setSelectedVenda(v)}
-                          className="inline-flex items-center gap-2 bg-blue-600 px-3 py-2 rounded-xl hover:bg-blue-700 transition font-medium"
-                        >
-                          <Eye size={15} />
-                          Ver
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
+                vendasFiltradas.map((v) => (
+                  <tr
+                    key={v.id}
+                    className="border-t border-white/5 hover:bg-white/5 transition"
+                  >
+                    <td className="p-4 font-semibold">{v.cliente || "-"}</td>
+                    <td className="p-4 text-white/80">{v.tipo_servico || "-"}</td>
+                    <td className="p-4 text-cyan-400 font-bold">
+                      {formatarMoeda(Number(v.valor_orcamento || 0))}
+                    </td>
+                    <td className="p-4 text-rose-400">
+                      {formatarMoeda(Number(v.custo || 0))}
+                    </td>
+                    <td className="p-4 text-purple-300 font-semibold">
+                      {formatarMoeda(Number(v.valor_comissao_calculado || 0))}
+                    </td>
+                    <td className="p-4 text-yellow-300 font-semibold">
+                      {Number(v.percentual_comissao_calculado || 0).toFixed(1)}%
+                    </td>
+                    <td className="p-4 text-emerald-400 font-semibold">
+                      {formatarMoeda(Number(v.lucro_calculado || 0))}
+                    </td>
+                    <td className="p-4">{v.forma_pagamento || "-"}</td>
+                    <td className="p-4">{v.origem_lead || "-"}</td>
+                    <td className="p-4">{v.responsavel || "-"}</td>
+                    <td className="p-4">
+                      {new Date(v.data_fechamento || v.created_at).toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="p-4">
+                      <button
+                        onClick={() => setSelectedVenda(v)}
+                        className="inline-flex items-center gap-2 bg-blue-600 px-3 py-2 rounded-xl hover:bg-blue-700 transition font-medium"
+                      >
+                        <Eye size={15} />
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MODAL */}
       {selectedVenda && (
         <div
           className="fixed inset-0 backdrop-blur-sm bg-black/50 flex items-center justify-center z-50 p-4"
@@ -621,26 +725,31 @@ export default function VendasPage() {
               <Info label="Responsável" value={selectedVenda.responsavel} />
               <Info
                 label="Comissão"
-                value={formatarMoeda(Number(selectedVenda.valor_comissao || 0))}
+                value={formatarMoeda(Number(selectedVenda.valor_comissao_calculado || 0))}
               />
               <Info
                 label="Percentual Comissão"
-                value={`${Number(selectedVenda.percentual_comissao || 0)}%`}
+                value={`${Number(selectedVenda.percentual_comissao_calculado || 0).toFixed(1)}%`}
               />
               <Info
                 label="Data"
-                value={new Date(selectedVenda.created_at).toLocaleDateString("pt-BR")}
+                value={new Date(selectedVenda.data_fechamento || selectedVenda.created_at).toLocaleDateString("pt-BR")}
               />
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
+              <Info label="Número OS" value={selectedVenda.numero_os || "-"} />
+              <Info label="Temperatura" value={selectedVenda.temperatura || "-"} />
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
               <Info
-                label="Número OS"
-                value={selectedVenda.numero_os || "-"}
+                label="Lucro"
+                value={formatarMoeda(Number(selectedVenda.lucro_calculado || 0))}
               />
               <Info
-                label="Temperatura"
-                value={selectedVenda.temperatura || "-"}
+                label="Status"
+                value={selectedVenda.status || "-"}
               />
             </div>
 

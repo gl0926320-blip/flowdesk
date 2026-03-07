@@ -14,6 +14,7 @@ import {
   Search,
   Thermometer,
   MapPinned,
+  Percent,
 } from "lucide-react";
 import {
   DndContext,
@@ -37,13 +38,21 @@ const columns = [
   "proposta_validada",
   "andamento",
   "concluido",
-];
+] as const;
 
 type Vendedor = {
   user_id: string;
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+};
+
+type ServicoCalculado = {
+  [key: string]: any;
+  valor_comissao_calculado: number;
+  percentual_comissao_calculado: number;
+  lucro_calculado: number;
 };
 
 export default function Pipeline() {
@@ -82,6 +91,47 @@ export default function Pipeline() {
     load();
   }, []);
 
+  function findVendedorByUserId(id?: string | null) {
+    if (!id) return null;
+    return vendedores.find((v) => v.user_id === id) || null;
+  }
+
+  function findVendedorByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      vendedores.find(
+        (v) => (v.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    vendedor?: Vendedor | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualVendedor = Number(params.vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
+
   async function load() {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
@@ -103,12 +153,13 @@ export default function Pipeline() {
 
     const { data: vendedoresData } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select("user_id, email, role, status, comissao_percentual")
       .eq("company_id", companyUser.company_id)
       .eq("status", "accepted")
       .order("email", { ascending: true });
 
-    setVendedores((vendedoresData as Vendedor[]) || []);
+    const vendedoresLista = (vendedoresData as Vendedor[]) || [];
+    setVendedores(vendedoresLista);
 
     let query = supabase
       .from("servicos")
@@ -178,7 +229,20 @@ export default function Pipeline() {
       }
     }
 
-    const meuVinculo = vendedores.find((v) => v.user_id === userId);
+    const meuVinculo = vendedores.find((v) => v.user_id === userId) || null;
+
+    const statusInicial = form.status;
+    const valorOrcamento = Number(form.valor_orcamento || 0);
+
+    const comissaoCongelada =
+      statusInicial === "concluido"
+        ? calcularComissaoCongelada({
+            valorOrcamento,
+            vendedor: meuVinculo,
+          })
+        : { percentual_comissao: 0, valor_comissao: 0 };
+
+    const agoraIso = new Date().toISOString();
 
     const novo = {
       user_id: userId,
@@ -190,11 +254,15 @@ export default function Pipeline() {
       titulo: form.tipo_servico,
       descricao: form.descricao,
       tipo_servico: form.tipo_servico,
-      valor_orcamento: Number(form.valor_orcamento),
-      custo: Number(form.custo),
-      status: form.status,
+      valor_orcamento: valorOrcamento,
+      custo: Number(form.custo || 0),
+      status: statusInicial,
       temperatura: form.temperatura,
       responsavel: meuVinculo?.email || "",
+      percentual_comissao: comissaoCongelada.percentual_comissao,
+      valor_comissao: comissaoCongelada.valor_comissao,
+      data_fechamento: statusInicial === "concluido" ? agoraIso : null,
+      ultima_compra: statusInicial === "concluido" ? agoraIso : null,
       ativo: true,
     };
 
@@ -216,14 +284,42 @@ export default function Pipeline() {
   }
 
   async function atualizarItem(id: string, updated: any) {
+    const itemAtual = items.find((i) => i.id === id);
+    if (!itemAtual) return;
+
+    const payload = { ...updated };
+
+    if (payload.status === "concluido" && itemAtual.status !== "concluido") {
+      const vendedor =
+        findVendedorByUserId(payload.user_id || itemAtual.user_id) ||
+        findVendedorByEmail(payload.responsavel || itemAtual.responsavel);
+
+      const valorOrcamento = Number(
+        payload.valor_orcamento ?? itemAtual.valor_orcamento ?? 0
+      );
+
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento,
+        valorComissaoAtual: payload.valor_comissao ?? itemAtual.valor_comissao,
+        percentualComissaoAtual:
+          payload.percentual_comissao ?? itemAtual.percentual_comissao,
+        vendedor,
+      });
+
+      payload.data_fechamento = itemAtual.data_fechamento || new Date().toISOString();
+      payload.ultima_compra = new Date().toISOString();
+      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      payload.valor_comissao = comissaoCongelada.valor_comissao;
+    }
+
     await supabase
       .from("servicos")
-      .update(updated)
+      .update(payload)
       .eq("id", id)
       .eq("company_id", companyId);
 
     setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, ...updated } : i))
+      prev.map((i) => (i.id === id ? { ...i, ...payload } : i))
     );
   }
 
@@ -245,10 +341,36 @@ export default function Pipeline() {
     }
   }
 
+  const itensCalculados = useMemo<ServicoCalculado[]>(() => {
+    return items.map((item) => {
+      const vendedor =
+        findVendedorByUserId(item.user_id) || findVendedorByEmail(item.responsavel);
+
+      const comissao = calcularComissaoCongelada({
+        valorOrcamento: Number(item.valor_orcamento || 0),
+        valorComissaoAtual: item.valor_comissao,
+        percentualComissaoAtual: item.percentual_comissao,
+        vendedor,
+      });
+
+      const lucro =
+        Number(item.valor_orcamento || 0) -
+        Number(item.custo || 0) -
+        Number(comissao.valor_comissao || 0);
+
+      return {
+        ...item,
+        valor_comissao_calculado: Number(comissao.valor_comissao || 0),
+        percentual_comissao_calculado: Number(comissao.percentual_comissao || 0),
+        lucro_calculado: lucro,
+      };
+    });
+  }, [items, vendedores]);
+
   const itensFiltrados = useMemo(() => {
     const agora = new Date();
 
-    return items.filter((item) => {
+    return itensCalculados.filter((item) => {
       if (!item.created_at) return true;
 
       const dataItem = new Date(item.created_at);
@@ -279,7 +401,8 @@ export default function Pipeline() {
           case "Custom":
             if (!dataInicio || !dataFim) return true;
             return (
-              dataItem >= new Date(dataInicio) && dataItem <= new Date(dataFim)
+              dataItem >= new Date(dataInicio + "T00:00:00") &&
+              dataItem <= new Date(dataFim + "T23:59:59")
             );
 
           default:
@@ -313,7 +436,7 @@ export default function Pipeline() {
 
       return true;
     });
-  }, [items, filtro, dataInicio, dataFim, filtroVendedor, filtroTemperatura, busca]);
+  }, [itensCalculados, filtro, dataInicio, dataFim, filtroVendedor, filtroTemperatura, busca]);
 
   const metrics = useMemo(() => {
     const ativos = itensFiltrados.filter((i) => i.ativo === true);
@@ -330,7 +453,7 @@ export default function Pipeline() {
     );
 
     const comissao = concluidos.reduce(
-      (acc, i) => acc + Number(i.valor_comissao || 0),
+      (acc, i) => acc + Number(i.valor_comissao_calculado || 0),
       0
     );
 
@@ -341,18 +464,10 @@ export default function Pipeline() {
     return {
       total: ativos.length,
       quentes,
-      receita: receita.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      custo: custo.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      lucro: (receita - custo - comissao).toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
+      receita: formatMoney(receita),
+      custo: formatMoney(custo),
+      comissao: formatMoney(comissao),
+      lucro: formatMoney(receita - custo - comissao),
     };
   }, [itensFiltrados]);
 
@@ -444,7 +559,12 @@ export default function Pipeline() {
               )}
 
               {vendedores
-                .filter((v) => v.role === "vendedor" || v.role === "owner" || v.role === "admin")
+                .filter(
+                  (v) =>
+                    v.role === "vendedor" ||
+                    v.role === "owner" ||
+                    v.role === "admin"
+                )
                 .map((vendedor) => (
                   <option
                     key={vendedor.user_id}
@@ -477,7 +597,7 @@ export default function Pipeline() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
           <Metric icon={<Layers size={18} />} title="Total" value={metrics.total} />
           <Metric
             icon={<Thermometer size={18} />}
@@ -486,6 +606,7 @@ export default function Pipeline() {
           />
           <Metric icon={<DollarSign size={18} />} title="Receita" value={metrics.receita} />
           <Metric icon={<BarChart3 size={18} />} title="Custos" value={metrics.custo} />
+          <Metric icon={<Percent size={18} />} title="Comissão" value={metrics.comissao} />
           <Metric icon={<TrendingUp size={18} />} title="Lucro" value={metrics.lucro} />
         </div>
 
@@ -531,6 +652,7 @@ export default function Pipeline() {
                       }
                       atualizarItem={atualizarItem}
                       deletar={deletar}
+                      vendedores={vendedores}
                     />
                   ))}
                 </Column>
@@ -744,7 +866,14 @@ function Column({ id, title, children, count }: any) {
 }
 
 /* CARD */
-function Card({ item, expanded, toggleExpand, atualizarItem, deletar }: any) {
+function Card({
+  item,
+  expanded,
+  toggleExpand,
+  atualizarItem,
+  deletar,
+  vendedores,
+}: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: item.id,
@@ -759,11 +888,84 @@ function Card({ item, expanded, toggleExpand, atualizarItem, deletar }: any) {
   const [editMode, setEditMode] = useState(false);
   const [local, setLocal] = useState(item);
 
-  const lucro =
-    Number(item.valor_orcamento || 0) - Number(item.custo || 0);
+  useEffect(() => {
+    setLocal(item);
+  }, [item]);
 
-  function salvarEdicao() {
-    atualizarItem(item.id, local);
+  function findVendedorByUserId(id?: string | null) {
+    if (!id) return null;
+    return vendedores.find((v: any) => v.user_id === id) || null;
+  }
+
+  function findVendedorByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      vendedores.find(
+        (v: any) => (v.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    vendedor?: any | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualVendedor = Number(params.vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
+
+  const lucro =
+    Number(item.valor_orcamento || 0) -
+    Number(item.custo || 0) -
+    Number(item.valor_comissao_calculado || 0);
+
+  async function salvarEdicao() {
+    const vendedor =
+      findVendedorByUserId(local.user_id || item.user_id) ||
+      findVendedorByEmail(local.responsavel || item.responsavel);
+
+    const valorOrcamento = Number(local.valor_orcamento || 0);
+
+    const payload: any = {
+      ...local,
+      valor_orcamento: valorOrcamento,
+      custo: Number(local.custo || 0),
+    };
+
+    if (payload.status === "concluido") {
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento,
+        valorComissaoAtual: local.valor_comissao,
+        percentualComissaoAtual: local.percentual_comissao,
+        vendedor,
+      });
+
+      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      payload.valor_comissao = comissaoCongelada.valor_comissao;
+      payload.data_fechamento = local.data_fechamento || new Date().toISOString();
+      payload.ultima_compra = local.ultima_compra || new Date().toISOString();
+    }
+
+    await atualizarItem(item.id, payload);
     setEditMode(false);
   }
 
@@ -807,6 +1009,15 @@ function Card({ item, expanded, toggleExpand, atualizarItem, deletar }: any) {
 
           <span className="text-blue-400 font-semibold whitespace-nowrap">
             {formatMoney(Number(item.valor_orcamento || 0))}
+          </span>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <span className="text-purple-300">
+            Comissão: {formatMoney(Number(item.valor_comissao_calculado || 0))}
+          </span>
+          <span className="text-yellow-300">
+            {Number(item.percentual_comissao_calculado || 0).toFixed(1)}%
           </span>
         </div>
 
@@ -942,6 +1153,16 @@ function Card({ item, expanded, toggleExpand, atualizarItem, deletar }: any) {
                 <div className="bg-white/5 rounded-xl p-3">
                   <p className="text-[11px] text-gray-400">Custo</p>
                   <p>{formatMoney(Number(item.custo || 0))}</p>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3">
+                  <p className="text-[11px] text-gray-400">% Comissão</p>
+                  <p>{Number(item.percentual_comissao_calculado || 0).toFixed(1)}%</p>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3">
+                  <p className="text-[11px] text-gray-400">Comissão</p>
+                  <p>{formatMoney(Number(item.valor_comissao_calculado || 0))}</p>
                 </div>
 
                 <div className="bg-white/5 rounded-xl p-3 col-span-2">

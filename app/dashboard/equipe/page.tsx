@@ -10,8 +10,9 @@ import {
   Target,
   Search,
   BadgeDollarSign,
-  BarChart3,
   Medal,
+  Percent,
+  BarChart3,
 } from "lucide-react";
 
 type Servico = {
@@ -35,13 +36,22 @@ type Vendedor = {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+  meta_leads?: number | null;
+  meta_vendas?: number | null;
+  meta_receita?: number | null;
+};
+
+type ServicoCalculado = Servico & {
+  valor_comissao_calculado: number;
+  percentual_comissao_calculado: number;
 };
 
 const formatBRL = (value: number) => {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(value);
+  }).format(value || 0);
 };
 
 export default function EquipePage() {
@@ -88,8 +98,8 @@ export default function EquipePage() {
       return;
     }
 
-    const companyId = companyUser.company_id;
-    setCompanyId(companyId);
+    const currentCompanyId = companyUser.company_id;
+    setCompanyId(currentCompanyId);
     setRole(companyUser.role);
 
     if (companyUser.role === "vendedor") {
@@ -98,8 +108,10 @@ export default function EquipePage() {
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
-      .eq("company_id", companyId)
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
+      .eq("company_id", currentCompanyId)
       .eq("status", "accepted")
       .order("email", { ascending: true });
 
@@ -122,7 +134,7 @@ export default function EquipePage() {
         tipo_servico,
         custo
       `)
-      .eq("company_id", companyId)
+      .eq("company_id", currentCompanyId)
       .eq("status", "concluido")
       .eq("ativo", true);
 
@@ -136,10 +148,59 @@ export default function EquipePage() {
     setLoading(false);
   }
 
+  const vendedorMap = useMemo(() => {
+    const byUserId = new Map<string, Vendedor>();
+    const byEmail = new Map<string, Vendedor>();
+
+    vendedores.forEach((v) => {
+      if (v.user_id) byUserId.set(v.user_id, v);
+      if (v.email) byEmail.set(v.email.toLowerCase(), v);
+    });
+
+    return { byUserId, byEmail };
+  }, [vendedores]);
+
+  const dataCalculada = useMemo<ServicoCalculado[]>(() => {
+    return data.map((item) => {
+      const vendedorPorId =
+        item.user_id ? vendedorMap.byUserId.get(item.user_id) : undefined;
+
+      const vendedorPorEmail =
+        item.responsavel
+          ? vendedorMap.byEmail.get(item.responsavel.toLowerCase())
+          : undefined;
+
+      const vendedor = vendedorPorId || vendedorPorEmail;
+
+      const percentualServico = Number(item.percentual_comissao || 0);
+      const percentualVendedor = Number(vendedor?.comissao_percentual || 0);
+
+      const percentualFinal =
+        percentualServico > 0 ? percentualServico : percentualVendedor;
+
+      let valorComissaoFinal = Number(item.valor_comissao || 0);
+
+      if (
+        valorComissaoFinal <= 0 &&
+        Number(item.valor_orcamento || 0) > 0 &&
+        percentualFinal > 0
+      ) {
+        valorComissaoFinal =
+          (Number(item.valor_orcamento || 0) * percentualFinal) / 100;
+      }
+
+      return {
+        ...item,
+        valor_comissao_calculado: valorComissaoFinal,
+        percentual_comissao_calculado: percentualFinal,
+      };
+    });
+  }, [data, vendedorMap]);
+
   const filtered = useMemo(() => {
     const now = new Date();
 
-    return data.filter((item) => {
+    return dataCalculada.filter((item) => {
       const d = new Date(item.created_at);
 
       if (periodo === "Hoje") {
@@ -194,7 +255,7 @@ export default function EquipePage() {
 
       return true;
     });
-  }, [data, periodo, dataInicio, dataFim, filtroVendedor, busca, role]);
+  }, [dataCalculada, periodo, dataInicio, dataFim, filtroVendedor, busca, role]);
 
   const equipeStats = useMemo(() => {
     const map: Record<
@@ -204,6 +265,7 @@ export default function EquipePage() {
         faturamento: number;
         comissao: number;
         custo: number;
+        user_id: string | null;
       }
     > = {};
 
@@ -216,33 +278,51 @@ export default function EquipePage() {
           faturamento: 0,
           comissao: 0,
           custo: 0,
+          user_id: item.user_id || null,
         };
       }
 
       map[nome].vendas++;
       map[nome].faturamento += Number(item.valor_orcamento) || 0;
       map[nome].custo += Number(item.custo) || 0;
-
-      let valorComissao = item.valor_comissao;
-
-      if (!valorComissao && item.valor_orcamento && item.percentual_comissao) {
-        valorComissao =
-          (item.valor_orcamento * item.percentual_comissao) / 100;
-      }
-
-      map[nome].comissao += Number(valorComissao || 0);
+      map[nome].comissao += Number(item.valor_comissao_calculado || 0);
     });
 
     return Object.entries(map)
-      .map(([nome, stats]) => ({
-        nome,
-        ...stats,
-        ticketMedio: stats.vendas > 0 ? stats.faturamento / stats.vendas : 0,
-        lucro:
-          stats.faturamento - stats.custo - stats.comissao,
-      }))
+      .map(([nome, stats]) => {
+        const vendedor =
+          (stats.user_id && vendedorMap.byUserId.get(stats.user_id)) ||
+          vendedorMap.byEmail.get(nome.toLowerCase());
+
+        const metaLeads = Number(vendedor?.meta_leads || 0);
+        const metaVendas = Number(vendedor?.meta_vendas || 0);
+        const metaReceita = Number(vendedor?.meta_receita || 0);
+
+        const progressoLeads =
+          metaLeads > 0 ? (stats.vendas / metaLeads) * 100 : 0;
+
+        const progressoVendas =
+          metaVendas > 0 ? (stats.vendas / metaVendas) * 100 : 0;
+
+        const progressoReceita =
+          metaReceita > 0 ? (stats.faturamento / metaReceita) * 100 : 0;
+
+        return {
+          nome,
+          ...stats,
+          ticketMedio: stats.vendas > 0 ? stats.faturamento / stats.vendas : 0,
+          lucro: stats.faturamento - stats.custo - stats.comissao,
+          metaLeads,
+          metaVendas,
+          metaReceita,
+          progressoLeads,
+          progressoVendas,
+          progressoReceita,
+          comissaoPercentualPadrao: Number(vendedor?.comissao_percentual || 0),
+        };
+      })
       .sort((a, b) => b.faturamento - a.faturamento);
-  }, [filtered]);
+  }, [filtered, vendedorMap]);
 
   const totalFaturamento = equipeStats.reduce(
     (acc, item) => acc + item.faturamento,
@@ -280,7 +360,6 @@ export default function EquipePage() {
         </p>
       </div>
 
-      {/* FILTROS */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-5 md:p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)] space-y-5">
         <div className="flex items-center gap-2 text-cyan-400 font-semibold">
           <Search size={18} />
@@ -393,7 +472,6 @@ export default function EquipePage() {
         )}
       </div>
 
-      {/* RESUMO */}
       <div className="grid md:grid-cols-4 gap-6">
         <StatCard
           icon={<DollarSign />}
@@ -428,7 +506,6 @@ export default function EquipePage() {
         />
       </div>
 
-      {/* DESTAQUE */}
       {melhor && (
         <div className="bg-gradient-to-r from-yellow-500/10 to-cyan-500/10 border border-yellow-400/20 p-6 rounded-3xl">
           <div className="flex items-center gap-3 text-yellow-400">
@@ -448,7 +525,6 @@ export default function EquipePage() {
         </div>
       )}
 
-      {/* RANKING */}
       <div className="space-y-4">
         {equipeStats.length === 0 ? (
           <div className="bg-[#0f172a] p-6 rounded-2xl border border-white/10 text-white/50">
@@ -491,6 +567,52 @@ export default function EquipePage() {
                   <span>Lucro: {formatBRL(item.lucro)}</span>
                   <span>{porcentagem.toFixed(1)}% participação</span>
                 </div>
+
+                <div className="grid md:grid-cols-4 gap-3 mt-4">
+                  <MiniMetaCard
+                    icon={<BarChart3 size={15} />}
+                    label="Meta Leads"
+                    value={String(item.metaLeads || 0)}
+                    extra={
+                      item.metaLeads > 0
+                        ? `${item.progressoLeads.toFixed(0)}% atingido`
+                        : "Sem meta"
+                    }
+                    color="text-cyan-300"
+                  />
+
+                  <MiniMetaCard
+                    icon={<Target size={15} />}
+                    label="Meta Vendas"
+                    value={String(item.metaVendas || 0)}
+                    extra={
+                      item.metaVendas > 0
+                        ? `${item.progressoVendas.toFixed(0)}% atingido`
+                        : "Sem meta"
+                    }
+                    color="text-purple-300"
+                  />
+
+                  <MiniMetaCard
+                    icon={<DollarSign size={15} />}
+                    label="Meta Receita"
+                    value={formatBRL(item.metaReceita || 0)}
+                    extra={
+                      item.metaReceita > 0
+                        ? `${item.progressoReceita.toFixed(0)}% atingido`
+                        : "Sem meta"
+                    }
+                    color="text-green-300"
+                  />
+
+                  <MiniMetaCard
+                    icon={<Percent size={15} />}
+                    label="Comissão Padrão"
+                    value={`${Number(item.comissaoPercentualPadrao || 0).toFixed(1)}%`}
+                    extra="Configuração do vendedor"
+                    color="text-yellow-300"
+                  />
+                </div>
               </div>
             );
           })
@@ -522,6 +644,32 @@ function StatCard({
 
       <div className={`text-3xl font-bold mt-3 ${color}`}>{value}</div>
       <div className="text-xs text-white/40 mt-2">{subtitle}</div>
+    </div>
+  );
+}
+
+function MiniMetaCard({
+  icon,
+  label,
+  value,
+  extra,
+  color,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  extra: string;
+  color: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex items-center justify-between text-white/50 text-xs">
+        <span>{label}</span>
+        <span className={color}>{icon}</span>
+      </div>
+
+      <div className={`mt-2 text-lg font-bold ${color}`}>{value}</div>
+      <div className="mt-1 text-xs text-white/40">{extra}</div>
     </div>
   );
 }

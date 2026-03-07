@@ -42,6 +42,14 @@ type Vendedor = {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+};
+
+type ServicoCalculado = {
+  [key: string]: any;
+  valor_comissao_calculado: number;
+  percentual_comissao_calculado: number;
+  lucro_calculado: number;
 };
 
 export default function Dashboard() {
@@ -96,6 +104,47 @@ export default function Dashboard() {
     }
   }
 
+  function findVendedorByUserId(userId?: string | null) {
+    if (!userId) return null;
+    return vendedores.find((v) => v.user_id === userId) || null;
+  }
+
+  function findVendedorByEmail(email?: string | null) {
+    if (!email) return null;
+    return (
+      vendedores.find(
+        (v) => (v.email || "").toLowerCase() === email.toLowerCase()
+      ) || null
+    );
+  }
+
+  function calcularComissaoCongelada(params: {
+    valorOrcamento: number;
+    valorComissaoAtual?: number | null;
+    percentualComissaoAtual?: number | null;
+    vendedor?: Vendedor | null;
+  }) {
+    const valorOrcamento = Number(params.valorOrcamento || 0);
+    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
+    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
+    const percentualVendedor = Number(params.vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualVendedor;
+
+    const valorFinal =
+      valorComissaoAtual > 0
+        ? valorComissaoAtual
+        : percentualFinal > 0 && valorOrcamento > 0
+        ? (valorOrcamento * percentualFinal) / 100
+        : 0;
+
+    return {
+      percentual_comissao: percentualFinal,
+      valor_comissao: valorFinal,
+    };
+  }
+
   async function carregarDashboard() {
     const {
       data: { user },
@@ -132,7 +181,7 @@ export default function Dashboard() {
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
+      .select("user_id, email, role, status, comissao_percentual")
       .eq("company_id", typedCompanyUser.company_id)
       .eq("status", "accepted")
       .order("email", { ascending: true });
@@ -154,7 +203,7 @@ export default function Dashboard() {
       dataFimCustom
     ) {
       query = query
-        .gte("created_at", new Date(dataInicioCustom).toISOString())
+        .gte("created_at", new Date(dataInicioCustom + "T00:00:00").toISOString())
         .lte("created_at", new Date(dataFimCustom + "T23:59:59").toISOString());
     } else {
       const dataInicio = getDataInicio(filtroPeriodo);
@@ -189,8 +238,34 @@ export default function Dashboard() {
     });
   }
 
+  const servicosCalculados = useMemo<ServicoCalculado[]>(() => {
+    return todosServicos.map((item) => {
+      const vendedor =
+        findVendedorByUserId(item.user_id) || findVendedorByEmail(item.responsavel);
+
+      const comissao = calcularComissaoCongelada({
+        valorOrcamento: Number(item.valor_orcamento || 0),
+        valorComissaoAtual: item.valor_comissao,
+        percentualComissaoAtual: item.percentual_comissao,
+        vendedor,
+      });
+
+      const lucro =
+        Number(item.valor_orcamento || 0) -
+        Number(item.custo || 0) -
+        Number(comissao.valor_comissao || 0);
+
+      return {
+        ...item,
+        valor_comissao_calculado: Number(comissao.valor_comissao || 0),
+        percentual_comissao_calculado: Number(comissao.percentual_comissao || 0),
+        lucro_calculado: lucro,
+      };
+    });
+  }, [todosServicos, vendedores]);
+
   const servicosFiltradosView = useMemo(() => {
-    let base = [...todosServicos];
+    let base = [...servicosCalculados];
 
     if (filtroVendedor !== "todos") {
       base = base.filter((item) => item.user_id === filtroVendedor);
@@ -216,7 +291,7 @@ export default function Dashboard() {
     }
 
     return base;
-  }, [todosServicos, filtroVendedor, filtroTemperatura, busca]);
+  }, [servicosCalculados, filtroVendedor, filtroTemperatura, busca]);
 
   if (loadingUser) {
     return <div style={{ padding: 40, color: "white" }}>Carregando...</div>;
@@ -276,16 +351,14 @@ export default function Dashboard() {
   );
 
   const comissaoTotal = realizadosList.reduce(
-    (acc, item) => acc + Number(item.valor_comissao || 0),
+    (acc, item) => acc + Number(item.valor_comissao_calculado || 0),
     0
   );
 
-  const lucroTotal = realizadosList.reduce((acc, item) => {
-    const receita = Number(item.valor_orcamento || 0);
-    const custo = Number(item.custo || 0);
-    const comissao = Number(item.valor_comissao || 0);
-    return acc + (receita - custo - comissao);
-  }, 0);
+  const lucroTotal = realizadosList.reduce(
+    (acc, item) => acc + Number(item.lucro_calculado || 0),
+    0
+  );
 
   const ticketMedio =
     realizadosList.length > 0 ? receitaTotal / realizadosList.length : 0;
@@ -325,11 +398,10 @@ export default function Dashboard() {
 
     if (item.status === "concluido") {
       const receita = Number(item.valor_orcamento || 0);
-      const custo = Number(item.custo || 0);
-      const comissao = Number(item.valor_comissao || 0);
+      const lucro = Number(item.lucro_calculado || 0);
 
       receitaPorMes[mes] = (receitaPorMes[mes] || 0) + receita;
-      lucroPorMes[mes] = (lucroPorMes[mes] || 0) + (receita - custo - comissao);
+      lucroPorMes[mes] = (lucroPorMes[mes] || 0) + lucro;
       aprovadosPorMes[mes] = (aprovadosPorMes[mes] || 0) + 1;
     }
   });
@@ -380,29 +452,53 @@ export default function Dashboard() {
     .sort((a: any, b: any) => b.total - a.total)
     .slice(0, 6);
 
-  const orcamentosRecentesFiltrados = orcamentosRecentes.filter((item) => {
-    if (filtroVendedor !== "todos" && item.user_id !== filtroVendedor) return false;
+  const orcamentosRecentesFiltrados = orcamentosRecentes
+    .map((item) => {
+      const vendedor =
+        findVendedorByUserId(item.user_id) || findVendedorByEmail(item.responsavel);
 
-    if (
-      filtroTemperatura !== "todos" &&
-      (item.temperatura || "morno") !== filtroTemperatura
-    ) {
-      return false;
-    }
+      const comissao = calcularComissaoCongelada({
+        valorOrcamento: Number(item.valor_orcamento || 0),
+        valorComissaoAtual: item.valor_comissao,
+        percentualComissaoAtual: item.percentual_comissao,
+        vendedor,
+      });
 
-    if (busca.trim()) {
-      const termo = busca.toLowerCase();
-      const bate =
-        item.cliente?.toLowerCase().includes(termo) ||
-        item.tipo_servico?.toLowerCase().includes(termo) ||
-        item.origem_lead?.toLowerCase().includes(termo) ||
-        item.responsavel?.toLowerCase().includes(termo);
+      const lucro =
+        Number(item.valor_orcamento || 0) -
+        Number(item.custo || 0) -
+        Number(comissao.valor_comissao || 0);
 
-      if (!bate) return false;
-    }
+      return {
+        ...item,
+        valor_comissao_calculado: comissao.valor_comissao,
+        percentual_comissao_calculado: comissao.percentual_comissao,
+        lucro_calculado: lucro,
+      };
+    })
+    .filter((item) => {
+      if (filtroVendedor !== "todos" && item.user_id !== filtroVendedor) return false;
 
-    return true;
-  });
+      if (
+        filtroTemperatura !== "todos" &&
+        (item.temperatura || "morno") !== filtroTemperatura
+      ) {
+        return false;
+      }
+
+      if (busca.trim()) {
+        const termo = busca.toLowerCase();
+        const bate =
+          item.cliente?.toLowerCase().includes(termo) ||
+          item.tipo_servico?.toLowerCase().includes(termo) ||
+          item.origem_lead?.toLowerCase().includes(termo) ||
+          item.responsavel?.toLowerCase().includes(termo);
+
+        if (!bate) return false;
+      }
+
+      return true;
+    });
 
   return (
     <>

@@ -36,6 +36,24 @@ interface Vendedor {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+}
+
+interface Servico {
+  cliente: string | null;
+  telefone: string | null;
+  email: string | null;
+  tipo_pessoa: string | null;
+  valor_orcamento: number | null;
+  custo: number | null;
+  valor_comissao: number | null;
+  percentual_comissao: number | null;
+  created_at: string | null;
+  status: string;
+  responsavel: string | null;
+  ativo: boolean | null;
+  user_id: string | null;
+  company_id: string;
 }
 
 export default function ClientesPage() {
@@ -106,6 +124,40 @@ export default function ClientesPage() {
     };
   }
 
+  function calcularComissaoServico(
+    servico: Servico,
+    vendedoresLista: Vendedor[]
+  ) {
+    const valorComissaoServico = Number(servico.valor_comissao || 0);
+    if (valorComissaoServico > 0) return valorComissaoServico;
+
+    const percentualServico = Number(servico.percentual_comissao || 0);
+
+    const vendedorPorId = vendedoresLista.find(
+      (v) => v.user_id && servico.user_id && v.user_id === servico.user_id
+    );
+
+    const vendedorPorEmail = vendedoresLista.find(
+      (v) =>
+        v.email &&
+        servico.responsavel &&
+        v.email.toLowerCase() === servico.responsavel.toLowerCase()
+    );
+
+    const vendedor = vendedorPorId || vendedorPorEmail;
+
+    const percentualVendedor = Number(vendedor?.comissao_percentual || 0);
+
+    const percentualFinal =
+      percentualServico > 0 ? percentualServico : percentualVendedor;
+
+    const valorOrcamento = Number(servico.valor_orcamento || 0);
+
+    if (percentualFinal <= 0 || valorOrcamento <= 0) return 0;
+
+    return (valorOrcamento * percentualFinal) / 100;
+  }
+
   async function fetchClientes() {
     setLoading(true);
 
@@ -131,24 +183,25 @@ export default function ClientesPage() {
       return;
     }
 
-    const companyId = companyUser.company_id;
-    const role = companyUser.role;
+    const currentCompanyId = companyUser.company_id;
+    const currentRole = companyUser.role;
 
-    setCompanyId(companyId);
-    setRole(role);
+    setCompanyId(currentCompanyId);
+    setRole(currentRole);
 
-    if (role === "vendedor") {
+    if (currentRole === "vendedor") {
       setFiltroVendedor(user.id);
     }
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
-      .eq("company_id", companyId)
+      .select("user_id, email, role, status, comissao_percentual")
+      .eq("company_id", currentCompanyId)
       .eq("status", "accepted")
       .order("email", { ascending: true });
 
-    setVendedores((equipe as Vendedor[]) || []);
+    const vendedoresLista = (equipe as Vendedor[]) || [];
+    setVendedores(vendedoresLista);
 
     let query = supabase
       .from("servicos")
@@ -160,6 +213,7 @@ export default function ClientesPage() {
         valor_orcamento,
         custo,
         valor_comissao,
+        percentual_comissao,
         created_at,
         status,
         responsavel,
@@ -167,10 +221,10 @@ export default function ClientesPage() {
         user_id,
         company_id
       `)
-      .eq("company_id", companyId)
+      .eq("company_id", currentCompanyId)
       .eq("status", "concluido");
 
-    if (role === "vendedor") {
+    if (currentRole === "vendedor") {
       query = query.eq("user_id", user.id);
     }
 
@@ -185,7 +239,7 @@ export default function ClientesPage() {
     const { inicio, fim } = calcularPeriodo();
 
     let dataFiltrada =
-      data?.filter((servico: any) => {
+      (data as Servico[] | null)?.filter((servico) => {
         if (!servico.created_at) return false;
 
         const d = new Date(servico.created_at);
@@ -195,15 +249,15 @@ export default function ClientesPage() {
         return d >= dataInicioObj && d <= dataFimObj;
       }) || [];
 
-    if (role !== "vendedor" && filtroVendedor !== "todos") {
+    if (currentRole !== "vendedor" && filtroVendedor !== "todos") {
       dataFiltrada = dataFiltrada.filter(
-        (servico: any) => servico.user_id === filtroVendedor
+        (servico) => servico.user_id === filtroVendedor
       );
     }
 
     const agrupado: { [key: string]: Cliente } = {};
 
-    dataFiltrada.forEach((servico: any) => {
+    dataFiltrada.forEach((servico) => {
       const nomeCliente = (servico.cliente || "Sem nome").trim().toLowerCase();
 
       if (!agrupado[nomeCliente]) {
@@ -227,7 +281,7 @@ export default function ClientesPage() {
 
       const valor = Number(servico.valor_orcamento) || 0;
       const custo = Number(servico.custo) || 0;
-      const comissao = Number(servico.valor_comissao) || 0;
+      const comissao = calcularComissaoServico(servico, vendedoresLista);
 
       agrupado[nomeCliente].total_servicos += 1;
       agrupado[nomeCliente].total_orcado += valor;
@@ -326,7 +380,6 @@ export default function ClientesPage() {
         </p>
       </div>
 
-      {/* RESUMO LIMPO */}
       <div className="grid md:grid-cols-3 gap-4">
         <ResumoItem
           label="Total Clientes"
@@ -345,7 +398,6 @@ export default function ClientesPage() {
         />
       </div>
 
-      {/* FILTROS */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-5 md:p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)] space-y-5">
         <div className="flex items-center gap-2 text-cyan-400 font-semibold">
           <Search size={18} />
@@ -472,7 +524,6 @@ export default function ClientesPage() {
         )}
       </div>
 
-      {/* TABELA */}
       <div className="rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] shadow-[0_16px_42px_rgba(0,0,0,0.30)]">
         <div className="px-6 py-5 border-b border-white/10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -572,7 +623,6 @@ export default function ClientesPage() {
         </div>
       </div>
 
-      {/* MODAL */}
       {selectedCliente && (
         <div
           className="fixed inset-0 backdrop-blur-sm bg-black/50 flex items-center justify-center z-50 p-4"

@@ -6,7 +6,6 @@ import {
   DollarSign,
   Trophy,
   TrendingUp,
-  Clock,
   Calendar,
   Medal,
   Target,
@@ -31,6 +30,7 @@ type Servico = {
   user_id?: string | null;
   cliente?: string | null;
   tipo_servico?: string | null;
+  ativo?: boolean | null;
 };
 
 type Vendedor = {
@@ -38,13 +38,22 @@ type Vendedor = {
   email: string;
   role: string;
   status: string;
+  comissao_percentual?: number | null;
+  meta_leads?: number | null;
+  meta_vendas?: number | null;
+  meta_receita?: number | null;
+};
+
+type ServicoCalculado = Servico & {
+  percentual_comissao_calculado: number;
+  valor_comissao_calculado: number;
 };
 
 const formatBRL = (value: number) => {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(value);
+  }).format(value || 0);
 };
 
 export default function ComissoesPage() {
@@ -94,8 +103,8 @@ export default function ComissoesPage() {
       return;
     }
 
-    const companyId = companyUser.company_id;
-    setCompanyId(companyId);
+    const currentCompanyId = companyUser.company_id;
+    setCompanyId(currentCompanyId);
     setRole(companyUser.role);
 
     if (companyUser.role === "vendedor") {
@@ -104,8 +113,10 @@ export default function ComissoesPage() {
 
     const { data: equipe } = await supabase
       .from("company_users")
-      .select("user_id, email, role, status")
-      .eq("company_id", companyId)
+      .select(
+        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+      )
+      .eq("company_id", currentCompanyId)
       .eq("status", "accepted")
       .order("email", { ascending: true });
 
@@ -114,7 +125,7 @@ export default function ComissoesPage() {
     let query = supabase
       .from("servicos")
       .select("*")
-      .eq("company_id", companyId)
+      .eq("company_id", currentCompanyId)
       .eq("status", "concluido")
       .eq("ativo", true);
 
@@ -154,21 +165,49 @@ export default function ComissoesPage() {
     fetchData();
   }
 
-  const dataComComissao = useMemo(() => {
-    return data.map((item) => {
-      let valor = item.valor_comissao;
+  const vendedorMap = useMemo(() => {
+    const byUserId = new Map<string, Vendedor>();
+    const byEmail = new Map<string, Vendedor>();
 
-      if (!valor && item.valor_orcamento && item.percentual_comissao) {
-        valor = (item.valor_orcamento * item.percentual_comissao) / 100;
+    vendedores.forEach((v) => {
+      if (v.user_id) byUserId.set(v.user_id, v);
+      if (v.email) byEmail.set(v.email.toLowerCase(), v);
+    });
+
+    return { byUserId, byEmail };
+  }, [vendedores]);
+
+  const dataComComissao = useMemo<ServicoCalculado[]>(() => {
+    return data.map((item) => {
+      const vendedorPorId =
+        item.user_id ? vendedorMap.byUserId.get(item.user_id) : undefined;
+
+      const vendedorPorEmail =
+        item.responsavel
+          ? vendedorMap.byEmail.get(item.responsavel.toLowerCase())
+          : undefined;
+
+      const vendedor = vendedorPorId || vendedorPorEmail;
+
+      const percentualDoServico = Number(item.percentual_comissao || 0);
+      const percentualDoVendedor = Number(vendedor?.comissao_percentual || 0);
+
+      const percentualFinal =
+        percentualDoServico > 0 ? percentualDoServico : percentualDoVendedor;
+
+      let valorFinal = Number(item.valor_comissao || 0);
+
+      if (valorFinal <= 0 && item.valor_orcamento && percentualFinal > 0) {
+        valorFinal = (Number(item.valor_orcamento) * percentualFinal) / 100;
       }
 
       return {
         ...item,
-        valor_comissao: valor || 0,
-        percentual_comissao: item.percentual_comissao || 0,
+        percentual_comissao_calculado: percentualFinal,
+        valor_comissao_calculado: valorFinal,
       };
     });
-  }, [data]);
+  }, [data, vendedorMap]);
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -241,13 +280,13 @@ export default function ComissoesPage() {
   ]);
 
   const totalComissao = filtered.reduce(
-    (acc, item) => acc + Number(item.valor_comissao || 0),
+    (acc, item) => acc + Number(item.valor_comissao_calculado || 0),
     0
   );
 
   const totalPaga = filtered
     .filter((i) => i.comissao_paga)
-    .reduce((acc, item) => acc + Number(item.valor_comissao || 0), 0);
+    .reduce((acc, item) => acc + Number(item.valor_comissao_calculado || 0), 0);
 
   const totalPendente = totalComissao - totalPaga;
 
@@ -257,7 +296,7 @@ export default function ComissoesPage() {
   const percentualMedio =
     filtered.length > 0
       ? filtered.reduce(
-          (acc, item) => acc + Number(item.percentual_comissao || 0),
+          (acc, item) => acc + Number(item.percentual_comissao_calculado || 0),
           0
         ) / filtered.length
       : 0;
@@ -282,13 +321,13 @@ export default function ComissoesPage() {
         map[nome] = { total: 0, quantidade: 0, pagas: 0, pendentes: 0 };
       }
 
-      map[nome].total += Number(item.valor_comissao || 0);
+      map[nome].total += Number(item.valor_comissao_calculado || 0);
       map[nome].quantidade += 1;
 
       if (item.comissao_paga) {
-        map[nome].pagas += Number(item.valor_comissao || 0);
+        map[nome].pagas += Number(item.valor_comissao_calculado || 0);
       } else {
-        map[nome].pendentes += Number(item.valor_comissao || 0);
+        map[nome].pendentes += Number(item.valor_comissao_calculado || 0);
       }
     });
 
@@ -329,7 +368,6 @@ export default function ComissoesPage() {
         </p>
       </div>
 
-      {/* FILTROS */}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111827] to-[#0f172a] p-5 md:p-6 shadow-[0_16px_42px_rgba(0,0,0,0.30)] space-y-5">
         <div className="flex items-center gap-2 text-cyan-400 font-semibold">
           <Search size={18} />
@@ -429,7 +467,6 @@ export default function ComissoesPage() {
         </div>
       </div>
 
-      {/* RESUMO */}
       <div className="grid md:grid-cols-3 xl:grid-cols-5 gap-6">
         <MegaCard
           title="Total Comissão"
@@ -468,7 +505,6 @@ export default function ComissoesPage() {
         />
       </div>
 
-      {/* CARDS SECUNDÁRIOS */}
       <div className="grid md:grid-cols-3 gap-6">
         <MiniCard
           title="Vendas comissionadas"
@@ -491,7 +527,6 @@ export default function ComissoesPage() {
         />
       </div>
 
-      {/* TOP SELLER */}
       {topSeller && (
         <div className="bg-gradient-to-r from-yellow-500/10 to-cyan-500/10 border border-yellow-400/20 p-6 rounded-3xl">
           <div className="flex items-center gap-3 text-yellow-400">
@@ -512,7 +547,6 @@ export default function ComissoesPage() {
         </div>
       )}
 
-      {/* RANKING */}
       <div className="bg-[#0f172a] p-6 rounded-3xl border border-white/10">
         <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
           <Trophy className="text-yellow-400" size={18} />
@@ -563,7 +597,6 @@ export default function ComissoesPage() {
         </div>
       </div>
 
-      {/* LISTA DETALHADA */}
       <div className="bg-[#0f172a] p-6 rounded-3xl border border-white/10">
         <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
           <BarChart3 size={18} />
@@ -594,14 +627,14 @@ export default function ComissoesPage() {
                   </div>
 
                   <div className="text-xs text-white/60">
-                    {item.percentual_comissao}% de comissão sobre{" "}
+                    {item.percentual_comissao_calculado}% de comissão sobre{" "}
                     {formatBRL(item.valor_orcamento || 0)}
                   </div>
                 </div>
 
                 <div className="flex flex-col lg:items-end gap-2">
                   <div className="text-lg font-bold text-cyan-400">
-                    {formatBRL(item.valor_comissao || 0)}
+                    {formatBRL(item.valor_comissao_calculado || 0)}
                   </div>
 
                   {item.comissao_paga ? (

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   LayoutDashboard,
@@ -19,8 +19,20 @@ import {
   Users2,
   BriefcaseBusiness,
   Megaphone,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
+
+type MenuItem = {
+  name: string;
+  href?: string;
+  icon: any;
+  children?: {
+    name: string;
+    href: string;
+  }[];
+};
 
 export default function DashboardLayout({
   children,
@@ -36,6 +48,9 @@ export default function DashboardLayout({
   const [role, setRole] = useState<string>("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [email, setEmail] = useState<string>("");
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
+    Campanhas: pathname.startsWith("/dashboard/campanhas"),
+  });
 
   const inicial = email ? email.charAt(0).toUpperCase() : "";
 
@@ -143,21 +158,47 @@ export default function DashboardLayout({
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  const menu = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
-    { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
-    { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
-    { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
-    { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
-    { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
-    { name: "Campanhas", href: "/dashboard/campanhas", icon: Megaphone },
-    { name: "Clientes", href: "/dashboard/clientes", icon: Users },
-    { name: "Empresas", href: "/dashboard/empresas", icon: Building2 },
-    { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
-    { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
-    { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
-  ];
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/campanhas")) {
+      setOpenMenus((prev) => ({
+        ...prev,
+        Campanhas: true,
+      }));
+    }
+  }, [pathname]);
+
+  function toggleMenu(menuName: string) {
+    setOpenMenus((prev) => ({
+      ...prev,
+      [menuName]: !prev[menuName],
+    }));
+  }
+
+  const menu: MenuItem[] = useMemo(
+    () => [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
+      { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
+      { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
+      { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
+      { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
+      { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
+      {
+        name: "Campanhas",
+        icon: Megaphone,
+        children: [
+          { name: "Campanhas", href: "/dashboard/campanhas" },
+          { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
+        ],
+      },
+      { name: "Clientes", href: "/dashboard/clientes", icon: Users },
+      { name: "Empresas", href: "/dashboard/empresas", icon: Building2 },
+      { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
+      { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
+      { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
+    ],
+    []
+  );
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">
@@ -170,15 +211,66 @@ export default function DashboardLayout({
           FlowDesk
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menu.map((item) => {
             const Icon = item.icon;
+
+            if (item.children) {
+              const isOpen = openMenus[item.name];
+              const parentActive = item.children.some(
+                (child) => pathname === child.href || pathname.startsWith(child.href + "/")
+              );
+
+              return (
+                <div key={item.name} className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleMenu(item.name)}
+                    className={`w-full flex items-center justify-between p-3 rounded-lg transition ${
+                      parentActive
+                        ? "bg-blue-600 text-white"
+                        : "text-gray-400 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon size={18} />
+                      <span>{item.name}</span>
+                    </div>
+
+                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </button>
+
+                  {isOpen && (
+                    <div className="ml-4 pl-3 border-l border-white/10 space-y-1">
+                      {item.children.map((child) => {
+                        const childActive = pathname === child.href;
+
+                        return (
+                          <Link
+                            key={child.name}
+                            href={child.href}
+                            className={`flex items-center gap-3 p-2.5 rounded-lg text-sm transition ${
+                              childActive
+                                ? "bg-cyan-600/20 text-cyan-300 border border-cyan-500/20"
+                                : "text-gray-400 hover:bg-white/5 hover:text-white"
+                            }`}
+                          >
+                            <span>{child.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const active = pathname === item.href;
 
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={item.href!}
                 className={`flex items-center gap-3 p-3 rounded-lg transition ${
                   active
                     ? "bg-blue-600 text-white"
