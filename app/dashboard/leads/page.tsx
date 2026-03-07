@@ -166,31 +166,31 @@ export default function LeadsPage() {
   }
 
   function calcularComissaoCongelada(params: {
-    valorOrcamento: number;
-    valorComissaoAtual?: number | null;
-    percentualComissaoAtual?: number | null;
-    member?: TeamMember | null;
-  }) {
-    const valorOrcamento = Number(params.valorOrcamento || 0);
-    const valorComissaoAtual = Number(params.valorComissaoAtual || 0);
-    const percentualComissaoAtual = Number(params.percentualComissaoAtual || 0);
-    const percentualDoVendedor = Number(params.member?.comissao_percentual || 0);
+  valorOrcamento: number;
+  member?: TeamMember | null;
+}) {
+  const valorOrcamento = Number(params.valorOrcamento || 0);
 
-    const percentualFinal =
-      percentualComissaoAtual > 0 ? percentualComissaoAtual : percentualDoVendedor;
+  const percentualDoVendedor =
+    params.member?.comissao_percentual != null
+      ? Number(params.member.comissao_percentual)
+      : null;
 
-    const valorFinal =
-      valorComissaoAtual > 0
-        ? valorComissaoAtual
-        : percentualFinal > 0 && valorOrcamento > 0
-        ? (valorOrcamento * percentualFinal) / 100
-        : 0;
-
+  if (percentualDoVendedor == null || percentualDoVendedor <= 0) {
     return {
-      percentual_comissao: percentualFinal,
-      valor_comissao: valorFinal,
+      percentual_comissao: null,
+      valor_comissao: null,
     };
   }
+
+  const valorFinal =
+    valorOrcamento > 0 ? (valorOrcamento * percentualDoVendedor) / 100 : 0;
+
+  return {
+    percentual_comissao: percentualDoVendedor,
+    valor_comissao: valorFinal,
+  };
+}
 
   async function load() {
     const { data: userData } = await supabase.auth.getUser();
@@ -264,22 +264,15 @@ async function atualizarStatus(id: string, status: string) {
 
   if (status === "concluido") {
     const member = findTeamMemberByLead(lead);
-    const comissaoCongelada = calcularComissaoCongelada({
-      valorOrcamento: Number(lead.valor_orcamento || 0),
-      valorComissaoAtual: lead.valor_comissao,
-      percentualComissaoAtual: lead.percentual_comissao,
-      member,
-    });
-
+const comissaoCongelada = calcularComissaoCongelada({
+  valorOrcamento: Number(lead.valor_orcamento || 0),
+  member,
+});
     updateData.ultima_compra = new Date().toISOString();
     updateData.data_fechamento =
       lead.data_fechamento || new Date().toISOString();
-    updateData.percentual_comissao = Number(
-      comissaoCongelada.percentual_comissao || 0
-    );
-    updateData.valor_comissao = Number(
-      comissaoCongelada.valor_comissao || 0
-    );
+updateData.percentual_comissao = comissaoCongelada.percentual_comissao;
+updateData.valor_comissao = comissaoCongelada.valor_comissao;
   }
 
   const { error } = await supabase
@@ -628,15 +621,11 @@ async function atualizarStatus(id: string, status: string) {
     };
 
     if (selectedLead.status === "concluido") {
-      const comissaoCongelada = calcularComissaoCongelada({
-        valorOrcamento: novoTotal,
-        valorComissaoAtual: selectedLead.valor_comissao,
-        percentualComissaoAtual: selectedLead.percentual_comissao,
-        member: responsavelMember,
-      });
+const comissaoCongelada = calcularComissaoCongelada({
+  valorOrcamento: novoTotal,
+  member: responsavelMember,
+});
 
-      updatePayload.percentual_comissao = comissaoCongelada.percentual_comissao;
-      updatePayload.valor_comissao = comissaoCongelada.valor_comissao;
       updatePayload.data_fechamento =
         selectedLead.data_fechamento || new Date().toISOString();
       updatePayload.ultima_compra =
