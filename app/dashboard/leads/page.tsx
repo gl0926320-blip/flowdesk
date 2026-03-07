@@ -272,6 +272,8 @@ async function atualizarStatus(id: string, status: string) {
     });
 
     updateData.ultima_compra = new Date().toISOString();
+    updateData.data_fechamento =
+      lead.data_fechamento || new Date().toISOString();
     updateData.percentual_comissao = Number(
       comissaoCongelada.percentual_comissao || 0
     );
