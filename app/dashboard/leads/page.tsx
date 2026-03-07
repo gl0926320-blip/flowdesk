@@ -256,35 +256,44 @@ export default function LeadsPage() {
     setItems(data || []);
   }
 
-  async function atualizarStatus(id: string, status: string) {
-    const lead = items.find((i) => i.id === id);
-    if (!lead) return;
+async function atualizarStatus(id: string, status: string) {
+  const lead = items.find((i) => i.id === id);
+  if (!lead) return;
 
-    const updateData: any = { status };
+  const updateData: any = { status };
 
-    if (status === "concluido") {
-      const member = findTeamMemberByLead(lead);
-      const comissaoCongelada = calcularComissaoCongelada({
-        valorOrcamento: Number(lead.valor_orcamento || 0),
-        valorComissaoAtual: lead.valor_comissao,
-        percentualComissaoAtual: lead.percentual_comissao,
-        member,
-      });
+  if (status === "concluido") {
+    const member = findTeamMemberByLead(lead);
+    const comissaoCongelada = calcularComissaoCongelada({
+      valorOrcamento: Number(lead.valor_orcamento || 0),
+      valorComissaoAtual: lead.valor_comissao,
+      percentualComissaoAtual: lead.percentual_comissao,
+      member,
+    });
 
-      updateData.ultima_compra = new Date().toISOString();
-      updateData.data_fechamento = new Date().toISOString();
-      updateData.percentual_comissao = comissaoCongelada.percentual_comissao;
-      updateData.valor_comissao = comissaoCongelada.valor_comissao;
-    }
-
-    await supabase
-      .from("servicos")
-      .update(updateData)
-      .eq("id", id)
-      .eq("company_id", companyId);
-
-    load();
+    updateData.ultima_compra = new Date().toISOString();
+    updateData.percentual_comissao = Number(
+      comissaoCongelada.percentual_comissao || 0
+    );
+    updateData.valor_comissao = Number(
+      comissaoCongelada.valor_comissao || 0
+    );
   }
+
+  const { error } = await supabase
+    .from("servicos")
+    .update(updateData)
+    .eq("id", id)
+    .eq("company_id", companyId);
+
+  if (error) {
+    console.error("Erro ao atualizar status:", error);
+    alert("Erro ao atualizar status: " + error.message);
+    return;
+  }
+
+  load();
+}
 
   async function atualizarTemperatura(id: string, temperatura: string) {
     await supabase
