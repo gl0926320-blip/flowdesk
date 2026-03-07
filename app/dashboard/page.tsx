@@ -162,7 +162,7 @@ export default function Dashboard() {
       .from("company_users")
       .select("company_id, role")
       .eq("user_id", user.id)
-      .eq("status", "accepted")
+      .eq("status", "ativo")
       .maybeSingle();
 
     if (companyUserError || !companyUser) {
@@ -183,7 +183,7 @@ export default function Dashboard() {
       .from("company_users")
       .select("user_id, email, role, status, comissao_percentual")
       .eq("company_id", typedCompanyUser.company_id)
-      .eq("status", "accepted")
+      .eq("status", "ativo")
       .order("email", { ascending: true });
 
     setVendedores((equipe as Vendedor[]) || []);

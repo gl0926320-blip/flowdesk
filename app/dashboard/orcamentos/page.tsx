@@ -35,6 +35,8 @@ interface Orcamento {
   data_orcamento: string | null;
   created_at: string;
   user_id?: string | null;
+  criado_por?: string | null;
+  criado_por_email?: string | null;
   company_id?: string | null;
   ativo?: boolean | null;
   temperatura?: string | null;
@@ -163,17 +165,24 @@ export default function OrcamentosPage() {
 
     setCurrentUserId(user.id);
 
-    const { data: companyUser, error: companyUserError } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .maybeSingle();
+const { data: memberships, error: companyUserError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .eq("status", "ativo");
 
-    if (companyUserError || !companyUser) {
-      setLoading(false);
-      return;
-    }
+if (companyUserError) {
+  console.error("Erro ao buscar vínculo:", companyUserError);
+  setLoading(false);
+  return;
+}
+
+const companyUser = memberships?.[0];
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
 
     setCompanyId(companyUser.company_id);
     setCurrentRole(companyUser.role);
@@ -182,12 +191,12 @@ export default function OrcamentosPage() {
       setVendedorFiltro(user.id);
     }
 
-    const { data: equipe } = await supabase
-      .from("company_users")
-      .select("user_id, email, role, status, comissao_percentual")
-      .eq("company_id", companyUser.company_id)
-      .eq("status", "accepted")
-      .order("email", { ascending: true });
+const { data: equipe } = await supabase
+  .from("company_users")
+  .select("user_id, email, role, status, comissao_percentual")
+  .eq("company_id", companyUser.company_id)
+  .eq("status", "ativo")
+  .order("email", { ascending: true });
 
     setVendedores((equipe as Vendedor[]) || []);
 
@@ -196,9 +205,9 @@ export default function OrcamentosPage() {
       .select("*")
       .eq("company_id", companyUser.company_id);
 
-    if (companyUser.role === "vendedor") {
-      query = query.eq("user_id", user.id);
-    }
+if (companyUser.role === "vendedor") {
+  query = query.eq("criado_por", user.id);
+}
 
     const { data, error } = await query.order("created_at", {
       ascending: false,
@@ -225,8 +234,9 @@ export default function OrcamentosPage() {
 
   const orcamentosCalculados = useMemo<OrcamentoCalculado[]>(() => {
     return orcamentos.map((o) => {
-      const vendedor =
-        findVendedorByUserId(o.user_id) || findVendedorByEmail(o.responsavel);
+const vendedor =
+  findVendedorByUserId(o.criado_por || o.user_id) ||
+  findVendedorByEmail(o.responsavel);
 
       const comissao = calcularComissaoCongelada({
         valorOrcamento: Number(o.valor_orcamento || 0),
@@ -273,9 +283,12 @@ export default function OrcamentosPage() {
         return false;
       }
 
-      if (vendedorFiltro !== "all" && o.user_id !== vendedorFiltro) {
-        return false;
-      }
+if (
+  vendedorFiltro !== "all" &&
+  (o.criado_por || o.user_id) !== vendedorFiltro
+) {
+  return false;
+}
 
       if (ativoFiltro === "ativos" && o.ativo === false) {
         return false;
@@ -563,6 +576,8 @@ export default function OrcamentosPage() {
   ) {
     const arquivo = event.target.files?.[0];
     if (!arquivo || !companyId || !currentUserId) return;
+    const { data: authData } = await supabase.auth.getUser();
+    const user = authData?.user;
 
     setImportando(true);
 
@@ -616,32 +631,34 @@ export default function OrcamentosPage() {
 
         const isConcluido = status === "concluido";
 
-        return {
-          company_id: companyId,
-          user_id: userIdRegistro,
-          numero_os:
-            linha.numero_os || linha.OS || `OS-IMPORT-${Date.now()}-${index}`,
-          cliente: linha.cliente || linha.Cliente || "",
-          titulo: linha.tipo_servico || linha.Serviço || linha.servico || "",
-          tipo_servico:
-            linha.tipo_servico || linha.Serviço || linha.servico || "",
-          valor_orcamento: valorOrcamento,
-          custo: Number(linha.custo || linha.Custo || 0),
-          valor_comissao: isConcluido ? comissao.valor_comissao : 0,
-          percentual_comissao: isConcluido ? comissao.percentual_comissao : 0,
-          responsavel: responsavel || vendedor?.email || "",
-          origem_lead: linha.origem_lead || linha.Origem || "",
-          status,
-          data_orcamento:
-            linha.data_orcamento || linha.Data || new Date().toISOString(),
-          data_fechamento: isConcluido ? new Date().toISOString() : null,
-          ultima_compra: isConcluido ? new Date().toISOString() : null,
-          telefone: linha.telefone || linha.Telefone || "",
-          descricao: linha.descricao || linha.Descrição || "",
-          forma_pagamento:
-            linha.forma_pagamento || linha["Forma de Pagamento"] || "",
-          ativo: true,
-        };
+return {
+  company_id: companyId,
+  user_id: userIdRegistro,
+  criado_por: currentUserId,
+  criado_por_email: user?.email || "",
+  numero_os:
+    linha.numero_os || linha.OS || `OS-IMPORT-${Date.now()}-${index}`,
+  cliente: linha.cliente || linha.Cliente || "",
+  titulo: linha.tipo_servico || linha.Serviço || linha.servico || "",
+  tipo_servico:
+    linha.tipo_servico || linha.Serviço || linha.servico || "",
+  valor_orcamento: valorOrcamento,
+  custo: Number(linha.custo || linha.Custo || 0),
+  valor_comissao: isConcluido ? comissao.valor_comissao : 0,
+  percentual_comissao: isConcluido ? comissao.percentual_comissao : 0,
+  responsavel: responsavel || vendedor?.email || "",
+  origem_lead: linha.origem_lead || linha.Origem || "",
+  status,
+  data_orcamento:
+    linha.data_orcamento || linha.Data || new Date().toISOString(),
+  data_fechamento: isConcluido ? new Date().toISOString() : null,
+  ultima_compra: isConcluido ? new Date().toISOString() : null,
+  telefone: linha.telefone || linha.Telefone || "",
+  descricao: linha.descricao || linha.Descrição || "",
+  forma_pagamento:
+    linha.forma_pagamento || linha["Forma de Pagamento"] || "",
+  ativo: true,
+};
       });
 
       const { error } = await supabase.from("servicos").insert(registros);

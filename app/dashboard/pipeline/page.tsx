@@ -139,12 +139,19 @@ export default function Pipeline() {
     const currentUserId = data.user.id;
     setUserId(currentUserId);
 
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", currentUserId)
-      .eq("status", "accepted")
-      .maybeSingle();
+const { data: companyUsers, error: companyUserError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", currentUserId)
+  .eq("status", "ativo");
+
+if (companyUserError) {
+  console.error("Erro ao buscar vínculo:", companyUserError);
+  return;
+}
+
+const companyUser = companyUsers?.[0];
+if (!companyUser?.company_id) return;
 
     if (!companyUser?.company_id) return;
 
@@ -155,7 +162,7 @@ export default function Pipeline() {
       .from("company_users")
       .select("user_id, email, role, status, comissao_percentual")
       .eq("company_id", companyUser.company_id)
-      .eq("status", "accepted")
+      .eq("status", "ativo")
       .order("email", { ascending: true });
 
     const vendedoresLista = (vendedoresData as Vendedor[]) || [];
@@ -167,10 +174,10 @@ export default function Pipeline() {
       .eq("company_id", companyUser.company_id)
       .eq("ativo", true);
 
-    if (companyUser.role === "vendedor") {
-      query = query.eq("user_id", currentUserId);
-      setFiltroVendedor(currentUserId);
-    }
+if (companyUser.role === "vendedor") {
+  query = query.eq("criado_por", currentUserId);
+  setFiltroVendedor(currentUserId);
+}
 
     const { data: servicos } = await query.order("created_at", {
       ascending: false,
@@ -193,95 +200,116 @@ export default function Pipeline() {
     });
   }
 
-  async function salvar() {
-    if (!userId || !companyId) return;
+async function salvar() {
+  if (!userId) return;
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("plan")
-      .eq("id", userId)
-      .maybeSingle();
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", userId)
+    .maybeSingle();
 
-    if (profileError) {
-      console.error("Erro ao verificar plano:", profileError);
-      alert("Erro ao verificar plano");
-      return;
-    }
+  if (profileError) {
+    console.error("Erro ao verificar plano:", profileError);
+    alert("Erro ao verificar plano");
+    return;
+  }
 
-    const plan = profile?.plan ?? "free";
-    const LIMITE_FREE = 5;
+  const { data: memberships, error: membershipError } = await supabase
+    .from("company_users")
+    .select("company_id, role, status, email")
+    .eq("user_id", userId)
+    .eq("status", "ativo");
 
-    if (plan === "free") {
-      const { data: servicos, error: erroCount } = await supabase
-        .from("servicos")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("ativo", true);
+  if (membershipError) {
+    console.error("Erro ao buscar vínculo:", membershipError);
+    alert("Erro ao buscar empresa do usuário");
+    return;
+  }
 
-      if (erroCount) {
-        alert("Erro ao verificar limite");
-        return;
-      }
+  const membership = memberships?.[0];
+  if (!membership?.company_id) {
+    alert("Usuário sem empresa vinculada");
+    return;
+  }
 
-      if (servicos && servicos.length >= LIMITE_FREE) {
-        setShowUpgrade(true);
-        return;
-      }
-    }
+  const plan = profile?.plan ?? "free";
+  const LIMITE_FREE = 5;
 
-    const meuVinculo = vendedores.find((v) => v.user_id === userId) || null;
-
-    const statusInicial = form.status;
-    const valorOrcamento = Number(form.valor_orcamento || 0);
-
-    const comissaoCongelada =
-      statusInicial === "concluido"
-        ? calcularComissaoCongelada({
-            valorOrcamento,
-            vendedor: meuVinculo,
-          })
-        : { percentual_comissao: 0, valor_comissao: 0 };
-
-    const agoraIso = new Date().toISOString();
-
-    const novo = {
-      user_id: userId,
-      company_id: companyId,
-      numero_os: `OS-${Date.now()}`,
-      cliente: form.cliente,
-      origem_lead: form.origem_lead,
-      telefone: form.telefone,
-      titulo: form.tipo_servico,
-      descricao: form.descricao,
-      tipo_servico: form.tipo_servico,
-      valor_orcamento: valorOrcamento,
-      custo: Number(form.custo || 0),
-      status: statusInicial,
-      temperatura: form.temperatura,
-      responsavel: meuVinculo?.email || "",
-      percentual_comissao: comissaoCongelada.percentual_comissao,
-      valor_comissao: comissaoCongelada.valor_comissao,
-      data_fechamento: statusInicial === "concluido" ? agoraIso : null,
-      ultima_compra: statusInicial === "concluido" ? agoraIso : null,
-      ativo: true,
-    };
-
-    const { data, error } = await supabase
+  if (plan === "free") {
+    const { count, error: erroCount } = await supabase
       .from("servicos")
-      .insert([novo])
-      .select();
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", membership.company_id)
+      .eq("criado_por", userId)
+      .eq("ativo", true);
 
-    if (error) {
-      alert(error.message);
+    if (erroCount) {
+      console.error("Erro ao verificar limite:", erroCount);
+      alert("Erro ao verificar limite");
       return;
     }
 
-    if (data) {
-      setItems((prev) => [data[0], ...prev]);
-      setOpenModal(false);
-      resetForm();
+    if ((count ?? 0) >= LIMITE_FREE) {
+      setShowUpgrade(true);
+      return;
     }
   }
+
+  const meuVinculo = vendedores.find((v) => v.user_id === userId) || null;
+  const statusInicial = form.status;
+  const valorOrcamento = Number(form.valor_orcamento || 0);
+  const agoraIso = new Date().toISOString();
+
+  const comissaoCongelada =
+    statusInicial === "concluido"
+      ? calcularComissaoCongelada({
+          valorOrcamento,
+          vendedor: meuVinculo,
+        })
+      : { percentual_comissao: 0, valor_comissao: 0 };
+
+  const novo = {
+    user_id: userId,
+    criado_por: userId,
+    criado_por_email: meuVinculo?.email || "",
+    company_id: membership.company_id,
+    numero_os: `OS-${Date.now()}`,
+    cliente: form.cliente,
+    origem_lead: form.origem_lead,
+    telefone: form.telefone,
+    titulo: form.tipo_servico,
+    descricao: form.descricao,
+    tipo_servico: form.tipo_servico,
+    valor_orcamento: valorOrcamento,
+    custo: Number(form.custo || 0),
+    status: statusInicial,
+    temperatura: form.temperatura,
+    responsavel: meuVinculo?.email || "",
+    percentual_comissao: comissaoCongelada.percentual_comissao,
+    valor_comissao: comissaoCongelada.valor_comissao,
+    data_fechamento: statusInicial === "concluido" ? agoraIso : null,
+    ultima_compra: statusInicial === "concluido" ? agoraIso : null,
+    ativo: true,
+  };
+
+  const { data, error } = await supabase
+    .from("servicos")
+    .insert([novo])
+    .select();
+
+  if (error) {
+    console.error("Erro ao salvar no pipeline:", error);
+    alert(error.message || "Erro ao salvar");
+    return;
+  }
+
+  if (data) {
+    setItems((prev) => [data[0], ...prev]);
+    setOpenModal(false);
+    resetForm();
+  }
+}
 
   async function atualizarItem(id: string, updated: any) {
     const itemAtual = items.find((i) => i.id === id);
@@ -344,7 +372,7 @@ export default function Pipeline() {
   const itensCalculados = useMemo<ServicoCalculado[]>(() => {
     return items.map((item) => {
       const vendedor =
-        findVendedorByUserId(item.user_id) || findVendedorByEmail(item.responsavel);
+        findVendedorByUserId(item.criado_por || item.user_id) || findVendedorByEmail(item.responsavel);
 
       const comissao = calcularComissaoCongelada({
         valorOrcamento: Number(item.valor_orcamento || 0),
@@ -412,9 +440,12 @@ export default function Pipeline() {
 
       if (!passouPeriodo) return false;
 
-      if (filtroVendedor !== "todos" && item.user_id !== filtroVendedor) {
-        return false;
-      }
+if (
+  filtroVendedor !== "todos" &&
+  (item.criado_por || item.user_id) !== filtroVendedor
+) {
+  return false;
+}
 
       if (
         filtroTemperatura !== "todos" &&

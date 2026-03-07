@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { createClient } from "@/lib/supabase-browser"
-import { toast } from "sonner"
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase-browser";
+import { toast } from "sonner";
 import {
   Building2,
   Save,
@@ -23,109 +23,114 @@ import {
   Target,
   DollarSign,
   TrendingUp,
-} from "lucide-react"
+} from "lucide-react";
 
 type User = {
-  id: string | null
-  email: string
-  role: string
-  status: string
-  comissao_percentual?: number | null
-  meta_leads?: number | null
-  meta_vendas?: number | null
-  meta_receita?: number | null
-}
+  id: string | null;
+  email: string;
+  role: string;
+  status: string;
+  comissao_percentual?: number | null;
+  meta_leads?: number | null;
+  meta_vendas?: number | null;
+  meta_receita?: number | null;
+};
 
 type InviteData = {
-  id: string
-  company_id: string
-  email: string
-  role: string
-  status: string
+  id: string;
+  company_id: string;
+  email: string;
+  role: string;
+  status: string;
   companies?: {
-    name: string
-  } | null
-}
+    name: string;
+  } | null;
+};
 
 type SellerConfigDraft = {
-  comissao_percentual: string
-  meta_leads: string
-  meta_vendas: string
-  meta_receita: string
-}
+  comissao_percentual: string;
+  meta_leads: string;
+  meta_vendas: string;
+  meta_receita: string;
+};
 
 export default function EmpresaPage() {
-  const supabase = createClient()
+  const supabase = createClient();
 
-  const [companyName, setCompanyName] = useState("")
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
-  const [savingName, setSavingName] = useState(false)
-  const [sendingInvite, setSendingInvite] = useState(false)
-  const [processingEmail, setProcessingEmail] = useState<string | null>(null)
-  const [inviteLoading, setInviteLoading] = useState(false)
-  const [savingSellerConfigEmail, setSavingSellerConfigEmail] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState("");
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingName, setSavingName] = useState(false);
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [processingEmail, setProcessingEmail] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [savingSellerConfigEmail, setSavingSellerConfigEmail] = useState<string | null>(null);
 
-  const [myRole, setMyRole] = useState("")
-  const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
+  const [myRole, setMyRole] = useState("");
+  const [myCompanyId, setMyCompanyId] = useState<string | null>(null);
+  const [maxVendedores, setMaxVendedores] = useState<number>(0);
 
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState("vendedor")
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("vendedor");
 
-  const [receivedInvite, setReceivedInvite] = useState<InviteData | null>(null)
-  const [sellerConfigs, setSellerConfigs] = useState<Record<string, SellerConfigDraft>>({})
+  const [receivedInvite, setReceivedInvite] = useState<InviteData | null>(null);
+  const [sellerConfigs, setSellerConfigs] = useState<Record<string, SellerConfigDraft>>({});
 
   const precisaDefinirNome =
-    !companyName.trim() || companyName.trim().toLowerCase() === "minha empresa"
+    !companyName.trim() || companyName.trim().toLowerCase() === "minha empresa";
 
   const metrics = useMemo(() => {
-    const total = users.length
-    const ativos = users.filter((u) => u.status === "accepted").length
-    const pendentes = users.filter((u) => u.status === "pending").length
-    const inativos = users.filter((u) => u.status === "inactive").length
-    const vendedores = users.filter((u) => u.role === "vendedor").length
+    const total = users.length;
+    const ativos = users.filter((u) => u.status === "ativo").length;
+    const pendentes = users.filter((u) => u.status === "pending").length;
+    const inativos = users.filter((u) => u.status === "inativo").length;
+    const vendedores = users.filter((u) => u.role === "vendedor").length;
 
     const comissaoMedia =
       vendedores > 0
         ? users
             .filter((u) => u.role === "vendedor")
             .reduce((acc, u) => acc + Number(u.comissao_percentual || 0), 0) / vendedores
-        : 0
+        : 0;
 
-    return { total, ativos, pendentes, inativos, vendedores, comissaoMedia }
-  }, [users])
+    return { total, ativos, pendentes, inativos, vendedores, comissaoMedia };
+  }, [users]);
 
   function roleLabel(role: string) {
-    if (role === "owner") return "Owner"
-    if (role === "admin") return "Admin"
-    if (role === "vendedor") return "Vendedor"
-    return role
+    if (role === "owner") return "Owner";
+    if (role === "admin") return "Admin";
+    if (role === "vendedor") return "Vendedor";
+    return role;
   }
 
   function roleIcon(role: string) {
-    if (role === "owner") return <Crown size={14} />
-    if (role === "admin") return <UserCog size={14} />
-    return <Briefcase size={14} />
+    if (role === "owner") return <Crown size={14} />;
+    if (role === "admin") return <UserCog size={14} />;
+    return <Briefcase size={14} />;
   }
 
   function statusLabel(status: string) {
-    if (status === "accepted") return "Ativo"
-    if (status === "pending") return "Pendente"
-    if (status === "inactive") return "Inativo"
-    return status
+    if (status === "ativo") return "Ativo";
+    if (status === "pending") return "Pendente";
+    if (status === "inativo") return "Inativo";
+    if (status === "bloqueado") return "Bloqueado";
+    return status;
   }
 
   function statusClass(status: string) {
-    if (status === "accepted") {
-      return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+    if (status === "ativo") {
+      return "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
     }
     if (status === "pending") {
-      return "bg-amber-500/15 text-amber-400 border border-amber-500/20"
+      return "bg-amber-500/15 text-amber-400 border border-amber-500/20";
     }
-    if (status === "inactive") {
-      return "bg-red-500/15 text-red-400 border border-red-500/20"
+    if (status === "inativo") {
+      return "bg-red-500/15 text-red-400 border border-red-500/20";
     }
-    return "bg-zinc-500/15 text-zinc-300 border border-zinc-500/20"
+    if (status === "bloqueado") {
+      return "bg-zinc-500/15 text-zinc-300 border border-zinc-500/20";
+    }
+    return "bg-zinc-500/15 text-zinc-300 border border-zinc-500/20";
   }
 
   function toDraft(user: User): SellerConfigDraft {
@@ -134,14 +139,14 @@ export default function EmpresaPage() {
       meta_leads: String(user.meta_leads ?? 0),
       meta_vendas: String(user.meta_vendas ?? 0),
       meta_receita: String(user.meta_receita ?? 0),
-    }
+    };
   }
 
   function parseNumber(value: string) {
-    if (!value?.trim()) return 0
-    const normalized = value.replace(",", ".")
-    const parsed = Number(normalized)
-    return Number.isNaN(parsed) ? 0 : parsed
+    if (!value?.trim()) return 0;
+    const normalized = value.replace(",", ".");
+    const parsed = Number(normalized);
+    return Number.isNaN(parsed) ? 0 : parsed;
   }
 
   function formatCurrency(value: number) {
@@ -150,65 +155,87 @@ export default function EmpresaPage() {
       currency: "BRL",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(value || 0)
+    }).format(value || 0);
   }
 
   function getSellerSummary(user: User) {
-    const comissao = Number(user.comissao_percentual || 0)
-    const metaLeads = Number(user.meta_leads || 0)
-    const metaVendas = Number(user.meta_vendas || 0)
-    const metaReceita = Number(user.meta_receita || 0)
+    const comissao = Number(user.comissao_percentual || 0);
+    const metaLeads = Number(user.meta_leads || 0);
+    const metaVendas = Number(user.meta_vendas || 0);
+    const metaReceita = Number(user.meta_receita || 0);
 
     return {
       comissao,
       metaLeads,
       metaVendas,
       metaReceita,
+    };
+  }
+
+  async function canReserveSellerSpot(ignoreEmail?: string) {
+    if (!myCompanyId || maxVendedores <= 0) return true;
+
+    let query = supabase
+      .from("company_users")
+      .select("email", { count: "exact", head: true })
+      .eq("company_id", myCompanyId)
+      .eq("role", "vendedor")
+      .in("status", ["ativo", "pending"]);
+
+    if (ignoreEmail) {
+      query = query.neq("email", ignoreEmail.toLowerCase());
     }
+
+    const { count, error } = await query;
+
+    if (error) {
+      toast.error("Erro ao validar limite de vendedores");
+      return false;
+    }
+
+    return (count || 0) < maxVendedores;
   }
 
   async function loadCompany() {
-    setLoading(true)
+    setLoading(true);
 
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
 
     if (!user) {
-      setLoading(false)
-      return
+      setLoading(false);
+      return;
     }
 
     const { data: me } = await supabase
       .from("company_users")
       .select("company_id, role, status")
       .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .maybeSingle()
+      .eq("status", "ativo")
+      .maybeSingle();
 
     if (!me?.company_id) {
-      setMyRole("")
-      setMyCompanyId(null)
-      setCompanyName("")
-      setUsers([])
-      setSellerConfigs({})
-      setLoading(false)
-      return
+      setMyRole("");
+      setMyCompanyId(null);
+      setCompanyName("");
+      setMaxVendedores(0);
+      setUsers([]);
+      setSellerConfigs({});
+      setLoading(false);
+      return;
     }
 
-    setMyRole(me.role)
-    setMyCompanyId(me.company_id)
+    setMyRole(me.role);
+    setMyCompanyId(me.company_id);
 
     const { data: company } = await supabase
       .from("companies")
-      .select("name")
+      .select("name, max_vendedores")
       .eq("id", me.company_id)
-      .maybeSingle()
+      .maybeSingle();
 
-    if (company?.name) {
-      setCompanyName(company.name)
-    } else {
-      setCompanyName("")
-    }
+    setCompanyName(company?.name || "");
+    setMaxVendedores(Number(company?.max_vendedores || 0));
 
     const { data: companyUsers } = await supabase
       .from("company_users")
@@ -216,7 +243,7 @@ export default function EmpresaPage() {
         "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
       )
       .eq("company_id", me.company_id)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: true });
 
     if (companyUsers) {
       const usersFormatted = companyUsers.map((u: any) => ({
@@ -228,29 +255,30 @@ export default function EmpresaPage() {
         meta_leads: u.meta_leads ?? 0,
         meta_vendas: u.meta_vendas ?? 0,
         meta_receita: u.meta_receita ?? 0,
-      }))
+      }));
 
-      setUsers(usersFormatted)
+      setUsers(usersFormatted);
 
-      const configsMap: Record<string, SellerConfigDraft> = {}
+      const configsMap: Record<string, SellerConfigDraft> = {};
       usersFormatted.forEach((u) => {
-        configsMap[u.email] = toDraft(u)
-      })
-      setSellerConfigs(configsMap)
+        configsMap[u.email] = toDraft(u);
+      });
+      setSellerConfigs(configsMap);
     } else {
-      setUsers([])
-      setSellerConfigs({})
+      setUsers([]);
+      setSellerConfigs({});
     }
 
-    setLoading(false)
+    setLoading(false);
   }
 
   async function loadReceivedInvite() {
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+
     if (!user?.email) {
-      setReceivedInvite(null)
-      return
+      setReceivedInvite(null);
+      return;
     }
 
     const { data: invite } = await supabase
@@ -258,81 +286,100 @@ export default function EmpresaPage() {
       .select("id, company_id, email, role, status, companies(name)")
       .eq("email", user.email)
       .eq("status", "pending")
-      .maybeSingle()
+      .maybeSingle();
 
     if (invite) {
-      setReceivedInvite(invite as any)
+      setReceivedInvite(invite as any);
     } else {
-      setReceivedInvite(null)
+      setReceivedInvite(null);
     }
   }
 
   useEffect(() => {
     async function init() {
-      await loadCompany()
-      await loadReceivedInvite()
+      await loadCompany();
+      await loadReceivedInvite();
     }
 
-    init()
-  }, [])
+    init();
+  }, []);
 
   async function updateCompanyName() {
     if (!myCompanyId) {
-      toast.error("Empresa não encontrada")
-      return
+      toast.error("Empresa não encontrada");
+      return;
     }
 
-    const nomeLimpo = companyName.trim()
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode alterar o nome da empresa");
+      return;
+    }
+
+    const nomeLimpo = companyName.trim();
 
     if (!nomeLimpo) {
-      toast.error("Informe o nome da empresa")
-      return
+      toast.error("Informe o nome da empresa");
+      return;
     }
 
-    setSavingName(true)
+    setSavingName(true);
 
     const { error } = await supabase
       .from("companies")
       .update({ name: nomeLimpo })
-      .eq("id", myCompanyId)
+      .eq("id", myCompanyId);
 
-    setSavingName(false)
+    setSavingName(false);
 
     if (error) {
-      toast.error("Erro ao atualizar empresa")
-      return
+      toast.error("Erro ao atualizar empresa");
+      return;
     }
 
-    toast.success("Empresa atualizada com sucesso")
-    await loadCompany()
+    toast.success("Empresa atualizada com sucesso");
+    await loadCompany();
   }
 
   async function inviteUser() {
     if (!myCompanyId) {
-      toast.error("Empresa não encontrada")
-      return
+      toast.error("Empresa não encontrada");
+      return;
+    }
+
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode convidar usuários");
+      return;
     }
 
     if (!inviteEmail.trim()) {
-      toast.error("Informe um email")
-      return
+      toast.error("Informe um email");
+      return;
     }
 
-    const emailNormalizado = inviteEmail.trim().toLowerCase()
+    const emailNormalizado = inviteEmail.trim().toLowerCase();
 
-    setSendingInvite(true)
+    setSendingInvite(true);
 
     const { data: existingInvite } = await supabase
       .from("company_users")
       .select("id, email, status")
       .eq("company_id", myCompanyId)
       .eq("email", emailNormalizado)
-      .maybeSingle()
+      .maybeSingle();
 
     if (existingInvite) {
-      setSendingInvite(false)
-      toast.error("Esse usuário já está vinculado ou convidado para esta empresa")
-      return
+      setSendingInvite(false);
+      toast.error("Esse usuário já está vinculado ou convidado para esta empresa");
+      return;
+    }
+
+    if (inviteRole === "vendedor") {
+      const allowed = await canReserveSellerSpot();
+      if (!allowed) {
+        setSendingInvite(false);
+        toast.error(`Limite de ${maxVendedores} vendedores atingido para esta empresa`);
+        return;
+      }
     }
 
     const payload: any = {
@@ -340,60 +387,79 @@ export default function EmpresaPage() {
       email: emailNormalizado,
       role: inviteRole,
       status: "pending",
-    }
+    };
 
     if (inviteRole === "vendedor") {
-      payload.comissao_percentual = 0
-      payload.meta_leads = 0
-      payload.meta_vendas = 0
-      payload.meta_receita = 0
+      payload.comissao_percentual = 0;
+      payload.meta_leads = 0;
+      payload.meta_vendas = 0;
+      payload.meta_receita = 0;
     }
 
-    const { error } = await supabase.from("company_users").insert(payload)
+    const { error } = await supabase.from("company_users").insert(payload);
 
-    setSendingInvite(false)
+    setSendingInvite(false);
 
     if (error) {
-      toast.error("Erro ao enviar convite")
-      return
+      toast.error("Erro ao enviar convite");
+      return;
     }
 
-    toast.success("Convite enviado com sucesso")
-    setInviteEmail("")
-    setInviteRole("vendedor")
-    await loadCompany()
-    await loadReceivedInvite()
+    toast.success("Convite enviado com sucesso");
+    setInviteEmail("");
+    setInviteRole("vendedor");
+    await loadCompany();
+    await loadReceivedInvite();
   }
 
   async function updateRole(email: string, role: string) {
-    if (!myCompanyId) return
+    if (!myCompanyId) return;
 
-    setProcessingEmail(email)
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode alterar perfil");
+      return;
+    }
 
-    const payload: any = { role }
+    const currentUser = users.find((u) => u.email === email);
+
+    if (!currentUser) return;
+
+    if (role === "vendedor" && currentUser.role !== "vendedor") {
+      const allowed = await canReserveSellerSpot(email);
+      if (!allowed) {
+        toast.error(`Limite de ${maxVendedores} vendedores atingido para esta empresa`);
+        return;
+      }
+    }
+
+    setProcessingEmail(email);
+
+    const payload: any = { role };
 
     if (role !== "vendedor") {
-      payload.comissao_percentual = 0
-      payload.meta_leads = 0
-      payload.meta_vendas = 0
-      payload.meta_receita = 0
+      payload.comissao_percentual = 0;
+      payload.meta_leads = 0;
+      payload.meta_vendas = 0;
+      payload.meta_receita = 0;
     }
 
     const { error } = await supabase
       .from("company_users")
       .update(payload)
       .eq("company_id", myCompanyId)
-      .eq("email", email)
+      .eq("email", email);
 
-    setProcessingEmail(null)
+    setProcessingEmail(email);
 
     if (error) {
-      toast.error("Erro ao atualizar perfil")
-      return
+      toast.error("Erro ao atualizar perfil");
+      setProcessingEmail(null);
+      return;
     }
 
-    toast.success("Perfil atualizado")
-    await loadCompany()
+    setProcessingEmail(null);
+    toast.success("Perfil atualizado");
+    await loadCompany();
   }
 
   function updateSellerDraft(
@@ -412,35 +478,35 @@ export default function EmpresaPage() {
         }),
         [field]: value,
       },
-    }))
+    }));
   }
 
   async function saveSellerConfig(email: string) {
-    if (!myCompanyId) return
+    if (!myCompanyId) return;
 
-    const draft = sellerConfigs[email]
+    const draft = sellerConfigs[email];
 
     if (!draft) {
-      toast.error("Configuração não encontrada")
-      return
+      toast.error("Configuração não encontrada");
+      return;
     }
 
-    const comissao = parseNumber(draft.comissao_percentual)
-    const metaLeads = parseNumber(draft.meta_leads)
-    const metaVendas = parseNumber(draft.meta_vendas)
-    const metaReceita = parseNumber(draft.meta_receita)
+    const comissao = parseNumber(draft.comissao_percentual);
+    const metaLeads = parseNumber(draft.meta_leads);
+    const metaVendas = parseNumber(draft.meta_vendas);
+    const metaReceita = parseNumber(draft.meta_receita);
 
     if (comissao < 0 || comissao > 100) {
-      toast.error("A comissão deve estar entre 0 e 100")
-      return
+      toast.error("A comissão deve estar entre 0 e 100");
+      return;
     }
 
     if (metaLeads < 0 || metaVendas < 0 || metaReceita < 0) {
-      toast.error("As metas não podem ser negativas")
-      return
+      toast.error("As metas não podem ser negativas");
+      return;
     }
 
-    setSavingSellerConfigEmail(email)
+    setSavingSellerConfigEmail(email);
 
     const { error } = await supabase
       .from("company_users")
@@ -451,154 +517,180 @@ export default function EmpresaPage() {
         meta_receita: metaReceita,
       })
       .eq("company_id", myCompanyId)
-      .eq("email", email)
+      .eq("email", email);
 
-    setSavingSellerConfigEmail(null)
+    setSavingSellerConfigEmail(null);
 
     if (error) {
-      toast.error("Erro ao salvar configuração do vendedor")
-      return
+      toast.error("Erro ao salvar configuração do vendedor");
+      return;
     }
 
-    toast.success("Configuração do vendedor salva")
-    await loadCompany()
+    toast.success("Configuração do vendedor salva");
+    await loadCompany();
   }
 
   async function deactivateUser(email: string) {
-    if (!myCompanyId) return
+    if (!myCompanyId) return;
 
-    setProcessingEmail(email)
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode desativar usuários");
+      return;
+    }
+
+    setProcessingEmail(email);
 
     const { error } = await supabase
       .from("company_users")
-      .update({ status: "inactive" })
+      .update({ status: "inativo" })
       .eq("company_id", myCompanyId)
-      .eq("email", email)
+      .eq("email", email);
 
-    setProcessingEmail(null)
+    setProcessingEmail(null);
 
     if (error) {
-      toast.error("Erro ao desativar usuário")
-      return
+      toast.error("Erro ao desativar usuário");
+      return;
     }
 
-    toast.success("Usuário desativado")
-    await loadCompany()
+    toast.success("Usuário desativado");
+    await loadCompany();
   }
 
   async function reactivateUser(email: string) {
-    if (!myCompanyId) return
+    if (!myCompanyId) return;
 
-    setProcessingEmail(email)
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode reativar usuários");
+      return;
+    }
+
+    const currentUser = users.find((u) => u.email === email);
+
+    if (currentUser?.role === "vendedor") {
+      const allowed = await canReserveSellerSpot(email);
+      if (!allowed) {
+        toast.error(`Limite de ${maxVendedores} vendedores atingido para esta empresa`);
+        return;
+      }
+    }
+
+    setProcessingEmail(email);
 
     const { error } = await supabase
       .from("company_users")
-      .update({ status: "accepted" })
+      .update({ status: "ativo" })
       .eq("company_id", myCompanyId)
-      .eq("email", email)
+      .eq("email", email);
 
-    setProcessingEmail(null)
+    setProcessingEmail(null);
 
     if (error) {
-      toast.error("Erro ao reativar usuário")
-      return
+      toast.error("Erro ao reativar usuário");
+      return;
     }
 
-    toast.success("Usuário reativado")
-    await loadCompany()
+    toast.success("Usuário reativado");
+    await loadCompany();
   }
 
   async function removeUser(email: string) {
-    if (!myCompanyId) return
-    if (!confirm("Tem certeza que deseja remover este usuário da empresa?")) return
+    if (!myCompanyId) return;
 
-    setProcessingEmail(email)
+    if (myRole !== "owner") {
+      toast.error("Apenas o owner pode remover usuários");
+      return;
+    }
+
+    if (!confirm("Tem certeza que deseja remover este usuário da empresa?")) return;
+
+    setProcessingEmail(email);
 
     const { error } = await supabase
       .from("company_users")
       .delete()
       .eq("company_id", myCompanyId)
-      .eq("email", email)
+      .eq("email", email);
 
-    setProcessingEmail(null)
+    setProcessingEmail(null);
 
     if (error) {
-      toast.error("Erro ao remover usuário")
-      return
+      toast.error("Erro ao remover usuário");
+      return;
     }
 
-    toast.success("Usuário removido")
-    await loadCompany()
+    toast.success("Usuário removido");
+    await loadCompany();
   }
 
   async function aceitarConviteRecebido() {
-    if (!receivedInvite) return
+    if (!receivedInvite) return;
 
-    setInviteLoading(true)
+    setInviteLoading(true);
 
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData.user
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
 
     if (!user) {
-      setInviteLoading(false)
-      toast.error("Usuário não autenticado")
-      return
+      setInviteLoading(false);
+      toast.error("Usuário não autenticado");
+      return;
     }
 
     await supabase
       .from("company_users")
-      .delete()
+      .update({ status: "inativo" })
       .eq("user_id", user.id)
-      .eq("status", "accepted")
+      .eq("status", "ativo");
 
     const { error } = await supabase
       .from("company_users")
       .update({
         user_id: user.id,
-        status: "accepted",
+        status: "ativo",
       })
-      .eq("id", receivedInvite.id)
+      .eq("id", receivedInvite.id);
 
-    setInviteLoading(false)
+    setInviteLoading(false);
 
     if (error) {
-      toast.error("Erro ao aceitar convite")
-      return
+      toast.error("Erro ao aceitar convite");
+      return;
     }
 
-    toast.success("Você agora faz parte da nova empresa")
-    setReceivedInvite(null)
-    await loadCompany()
-    await loadReceivedInvite()
+    toast.success("Você agora faz parte da nova empresa");
+    setReceivedInvite(null);
+    await loadCompany();
+    await loadReceivedInvite();
   }
 
   async function recusarConviteRecebido() {
-    if (!receivedInvite) return
+    if (!receivedInvite) return;
 
-    setInviteLoading(true)
+    setInviteLoading(true);
 
     const { error } = await supabase
       .from("company_users")
       .delete()
-      .eq("id", receivedInvite.id)
+      .eq("id", receivedInvite.id);
 
-    setInviteLoading(false)
+    setInviteLoading(false);
 
     if (error) {
-      toast.error("Erro ao recusar convite")
-      return
+      toast.error("Erro ao recusar convite");
+      return;
     }
 
-    toast.success("Convite recusado")
-    setReceivedInvite(null)
-    await loadReceivedInvite()
+    toast.success("Convite recusado");
+    setReceivedInvite(null);
+    await loadReceivedInvite();
   }
 
   if (loading) {
-    return <div className="p-10 text-white">Carregando...</div>
+    return <div className="p-10 text-white">Carregando...</div>;
   }
 
-  if (myRole === "vendedor" && !receivedInvite) {
+  if (myRole && myRole !== "owner" && !receivedInvite) {
     return (
       <div className="p-6 md:p-10 text-white max-w-4xl mx-auto">
         <div className="bg-zinc-900/90 border border-zinc-800 p-10 rounded-3xl text-center shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
@@ -609,11 +701,11 @@ export default function EmpresaPage() {
           <h1 className="text-2xl font-bold mb-2">Acesso restrito</h1>
 
           <p className="text-zinc-400 max-w-xl mx-auto">
-            Apenas administradores e owners podem acessar as configurações da empresa.
+            Apenas o owner pode acessar as configurações da empresa.
           </p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -733,7 +825,7 @@ export default function EmpresaPage() {
           icon={<UserCheck size={18} />}
           label="Usuários ativos"
           value={String(metrics.ativos)}
-          subvalue="Status accepted"
+          subvalue="Status ativo"
         />
 
         <MetricCard
@@ -799,22 +891,13 @@ export default function EmpresaPage() {
 
           <div className="space-y-4">
             <InfoRow label="Perfil" value={roleLabel(myRole)} />
-            <InfoRow
-              label="Permissão"
-              value={
-                myRole === "owner"
-                  ? "Controle total da empresa"
-                  : myRole === "admin"
-                  ? "Gerenciamento operacional"
-                  : "Acesso comercial restrito"
-              }
-            />
+            <InfoRow label="Permissão" value="Controle total da empresa" />
             <InfoRow label="Empresa atual" value={companyName || "Não definida"} />
           </div>
         </div>
       </div>
 
-      {(myRole === "admin" || myRole === "owner") && (
+      {myRole === "owner" && (
         <div className="bg-zinc-950/70 border border-zinc-800 rounded-3xl p-6 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
@@ -857,7 +940,7 @@ export default function EmpresaPage() {
           </div>
 
           <div className="mt-4 text-xs text-zinc-500">
-            O convite será salvo como pendente até que o usuário entre na plataforma e aceite o vínculo.
+            Convite de vendedor consome vaga do limite enquanto estiver <strong>pendente</strong> ou <strong>ativo</strong>.
           </div>
         </div>
       )}
@@ -898,12 +981,12 @@ export default function EmpresaPage() {
 
             <tbody>
               {users.map((user) => {
-                const isProcessing = processingEmail === user.email
-                const isSavingSellerConfig = savingSellerConfigEmail === user.email
-                const draft = sellerConfigs[user.email] || toDraft(user)
-                const sellerSummary = getSellerSummary(user)
-                const isSeller = user.role === "vendedor"
-                const canManage = myRole === "admin" || myRole === "owner"
+                const isProcessing = processingEmail === user.email;
+                const isSavingSellerConfig = savingSellerConfigEmail === user.email;
+                const draft = sellerConfigs[user.email] || toDraft(user);
+                const sellerSummary = getSellerSummary(user);
+                const isSeller = user.role === "vendedor";
+                const canManage = myRole === "owner";
 
                 return (
                   <tr key={user.email} className="border-b border-zinc-900/80 align-top">
@@ -1074,9 +1157,9 @@ export default function EmpresaPage() {
                         </div>
                       ) : (
                         <>
-                          {user.status === "accepted" && "Usuário ativo na empresa"}
+                          {user.status === "ativo" && "Usuário ativo na empresa"}
                           {user.status === "pending" && "Convite enviado aguardando aceite"}
-                          {user.status === "inactive" && "Acesso desativado temporariamente"}
+                          {user.status === "inativo" && "Acesso desativado temporariamente"}
                         </>
                       )}
                     </td>
@@ -1094,7 +1177,7 @@ export default function EmpresaPage() {
                           </button>
                         )}
 
-                        {user.status !== "inactive" ? (
+                        {user.status !== "inativo" ? (
                           <button
                             onClick={() => deactivateUser(user.email)}
                             disabled={isProcessing}
@@ -1125,14 +1208,14 @@ export default function EmpresaPage() {
                       </div>
                     </td>
                   </tr>
-                )
+                );
               })}
             </tbody>
           </table>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function MetricCard({
@@ -1141,10 +1224,10 @@ function MetricCard({
   value,
   subvalue,
 }: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  subvalue: string
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  subvalue: string;
 }) {
   return (
     <div className="rounded-3xl border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.22)]">
@@ -1156,7 +1239,7 @@ function MetricCard({
       <div className="text-2xl font-bold text-white truncate">{value}</div>
       <div className="text-xs text-zinc-500 mt-1">{subvalue}</div>
     </div>
-  )
+  );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -1165,5 +1248,5 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-zinc-400">{label}</span>
       <span className="text-sm text-white text-right max-w-[220px]">{value}</span>
     </div>
-  )
+  );
 }

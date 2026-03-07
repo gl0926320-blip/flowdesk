@@ -33,6 +33,32 @@ function formatarMoeda(valor: number) {
   }).format(valor || 0)
 }
 
+type ServicoBase = {
+  id: string
+  company_id?: string | null
+  user_id?: string | null
+  criado_por?: string | null
+  criado_por_email?: string | null
+  cliente?: string | null
+  tipo_servico?: string | null
+  origem_lead?: string | null
+  responsavel?: string | null
+  status?: string | null
+  created_at?: string | null
+  data_fechamento?: string | null
+  data_orcamento?: string | null
+  data_entrada?: string | null
+  ultimo_contato?: string | null
+  ultima_compra?: string | null
+  ativo?: boolean | null
+  temperatura?: string | null
+  valor_orcamento?: number | null
+  custo?: number | null
+  valor_comissao?: number | null
+  percentual_comissao?: number | null
+  comissao_paga?: boolean | null
+}
+
 type Vendedor = {
   user_id: string | null
   email: string
@@ -44,8 +70,7 @@ type Vendedor = {
   meta_receita?: number | null
 }
 
-type ServicoCalculado = {
-  [key: string]: any
+type ServicoCalculado = ServicoBase & {
   valor_comissao_calculado: number
   percentual_comissao_calculado: number
 }
@@ -55,18 +80,22 @@ export default function ConfiguracoesPage() {
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [servicos, setServicos] = useState<any[]>([])
+  const [servicos, setServicos] = useState<ServicoBase[]>([])
   const [role, setRole] = useState("")
   const [userId, setUserId] = useState<string | null>(null)
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
   const [filtroVendedor, setFiltroVendedor] = useState("todos")
   const [busca, setBusca] = useState("")
-  const [periodo, setPeriodo] = useState<"Hoje" | "7 Dias" | "30 Dias" | "Mês" | "Personalizado">("Hoje")
+  const [periodo, setPeriodo] = useState<
+    "Hoje" | "7 Dias" | "30 Dias" | "Mês" | "Personalizado"
+  >("Hoje")
   const [dataInicio, setDataInicio] = useState("")
   const [dataFim, setDataFim] = useState("")
 
   useEffect(() => {
     async function carregar() {
+      setLoading(true)
+
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -78,12 +107,19 @@ export default function ConfiguracoesPage() {
 
       setUserId(user.id)
 
-      const { data: companyUser } = await supabase
+      const { data: memberships, error: companyUserError } = await supabase
         .from("company_users")
         .select("company_id, role")
         .eq("user_id", user.id)
-        .eq("status", "accepted")
-        .single()
+        .eq("status", "ativo")
+
+      if (companyUserError) {
+        console.error("Erro ao buscar vínculo:", companyUserError)
+        setLoading(false)
+        return
+      }
+
+      const companyUser = memberships?.[0]
 
       if (!companyUser) {
         setLoading(false)
@@ -99,12 +135,18 @@ export default function ConfiguracoesPage() {
       const currentCompanyId = companyUser.company_id
       setCompanyId(currentCompanyId)
 
-      const { data: equipe } = await supabase
+      const { data: equipe, error: equipeError } = await supabase
         .from("company_users")
-        .select("user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita")
+        .select(
+          "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+        )
         .eq("company_id", currentCompanyId)
-        .eq("status", "accepted")
+        .eq("status", "ativo")
         .order("email", { ascending: true })
+
+      if (equipeError) {
+        console.error("Erro ao buscar equipe:", equipeError)
+      }
 
       setVendedores((equipe as Vendedor[]) || [])
 
@@ -115,12 +157,16 @@ export default function ConfiguracoesPage() {
         .eq("ativo", true)
 
       if (companyUser.role === "vendedor") {
-        query = query.eq("user_id", user.id)
+        query = query.eq("criado_por", user.id)
       }
 
-      const { data } = await query
+      const { data, error } = await query
 
-      setServicos(data || [])
+      if (error) {
+        console.error("Erro ao buscar serviços:", error)
+      }
+
+      setServicos((data as ServicoBase[]) || [])
       setLoading(false)
     }
 
@@ -142,12 +188,13 @@ export default function ConfiguracoesPage() {
   const servicosComComissao = useMemo<ServicoCalculado[]>(() => {
     return servicos.map((s) => {
       const vendedorPorId =
-        s.user_id ? vendedoresMap.byUserId.get(s.user_id) : undefined
-
-      const vendedorPorEmail =
-        s.responsavel
-          ? vendedoresMap.byEmail.get(String(s.responsavel).toLowerCase())
+        s.criado_por || s.user_id
+          ? vendedoresMap.byUserId.get((s.criado_por || s.user_id) as string)
           : undefined
+
+      const vendedorPorEmail = s.responsavel
+        ? vendedoresMap.byEmail.get(String(s.responsavel).toLowerCase())
+        : undefined
 
       const vendedor = vendedorPorId || vendedorPorEmail
 
@@ -159,7 +206,11 @@ export default function ConfiguracoesPage() {
 
       let valorFinal = Number(s.valor_comissao || 0)
 
-      if (valorFinal <= 0 && Number(s.valor_orcamento || 0) > 0 && percentualFinal > 0) {
+      if (
+        valorFinal <= 0 &&
+        Number(s.valor_orcamento || 0) > 0 &&
+        percentualFinal > 0
+      ) {
         valorFinal = (Number(s.valor_orcamento || 0) * percentualFinal) / 100
       }
 
@@ -173,11 +224,14 @@ export default function ConfiguracoesPage() {
 
   const servicosFiltradosBase = useMemo(() => {
     let lista = [...servicosComComissao]
-
     const agora = new Date()
 
     lista = lista.filter((s) => {
-      const dataRef = new Date(s.created_at)
+      if (!s.created_at) return false
+
+      const dataRef = new Date(s.created_at ?? "")
+
+      if (Number.isNaN(dataRef.getTime())) return false
 
       if (periodo === "Hoje") {
         return (
@@ -216,7 +270,7 @@ export default function ConfiguracoesPage() {
     })
 
     if (role !== "vendedor" && filtroVendedor !== "todos") {
-      lista = lista.filter((s) => s.user_id === filtroVendedor)
+      lista = lista.filter((s) => (s.criado_por || s.user_id) === filtroVendedor)
     }
 
     if (busca.trim()) {
@@ -255,7 +309,7 @@ export default function ConfiguracoesPage() {
 
     const perdidos = ativos.filter((s) =>
       ["recusado", "cancelado", "perdido"].includes(
-        s.status?.trim().toLowerCase()
+        s.status?.trim().toLowerCase() || ""
       )
     )
 
@@ -275,15 +329,15 @@ export default function ConfiguracoesPage() {
     ]
 
     const potencialList = ativos.filter((o) =>
-      STATUS_POTENCIAL.includes(o.status?.trim().toLowerCase())
+      STATUS_POTENCIAL.includes(o.status?.trim().toLowerCase() || "")
     )
 
     const confirmadaList = ativos.filter((o) =>
-      STATUS_CONFIRMADA.includes(o.status?.trim().toLowerCase())
+      STATUS_CONFIRMADA.includes(o.status?.trim().toLowerCase() || "")
     )
 
     const realizadosList = ativos.filter((o) =>
-      STATUS_REALIZADA.includes(o.status?.trim().toLowerCase())
+      STATUS_REALIZADA.includes(o.status?.trim().toLowerCase() || "")
     )
 
     const baseConversao =
@@ -296,7 +350,9 @@ export default function ConfiguracoesPage() {
 
     const receitaMes = realizadosList
       .filter((s) => {
-        const data = new Date(s.data_fechamento || s.created_at)
+        const data = new Date(s.data_fechamento ?? s.created_at ?? "")
+        if (Number.isNaN(data.getTime())) return false
+
         return (
           data.getMonth() === hoje.getMonth() &&
           data.getFullYear() === hoje.getFullYear()
@@ -319,6 +375,7 @@ export default function ConfiguracoesPage() {
             if (!s.valor_orcamento) return acc
             const custo = Number(s.custo || 0)
             const comissao = Number(s.valor_comissao_calculado || 0)
+
             return (
               acc +
               ((Number(s.valor_orcamento) - custo - comissao) /
@@ -328,13 +385,20 @@ export default function ConfiguracoesPage() {
           }, 0) / concluidos.length
         : 0
 
-    const fechadosComData = concluidos.filter((s) => s.data_fechamento)
+    const fechadosComData = concluidos.filter(
+      (s) => Boolean(s.created_at) && Boolean(s.data_fechamento)
+    )
 
     const tempoMedioFechamento =
       fechadosComData.length > 0
         ? fechadosComData.reduce((acc, s) => {
-            const inicio = new Date(s.created_at)
-            const fim = new Date(s.data_fechamento)
+            const inicio = new Date(s.created_at ?? "")
+            const fim = new Date(s.data_fechamento ?? "")
+
+            if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+              return acc
+            }
+
             const diff = (fim.getTime() - inicio.getTime()) / 86400000
             return acc + diff
           }, 0) / fechadosComData.length
@@ -349,7 +413,10 @@ export default function ConfiguracoesPage() {
     )
 
     const comissoesPendentes = concluidos.filter(
-      (s) => !s.comissao_paga && Number(s.valor_comissao_calculado || 0) > 0 && diasDesde(s.created_at) > 7
+      (s) =>
+        !s.comissao_paga &&
+        Number(s.valor_comissao_calculado || 0) > 0 &&
+        diasDesde(s.created_at) > 7
     )
 
     const clientesInativos = ativos.filter(
@@ -422,7 +489,9 @@ export default function ConfiguracoesPage() {
 
     const receitaMesAnterior = realizadosList
       .filter((s) => {
-        const data = new Date(s.data_fechamento || s.created_at)
+        const data = new Date(s.data_fechamento ?? s.created_at ?? "")
+        if (Number.isNaN(data.getTime())) return false
+
         return (
           data.getMonth() === mesAnterior.getMonth() &&
           data.getFullYear() === mesAnterior.getFullYear()
@@ -603,7 +672,7 @@ export default function ConfiguracoesPage() {
             <button
               key={p}
               onClick={() => {
-                setPeriodo(p as any)
+                setPeriodo(p as "Hoje" | "7 Dias" | "30 Dias" | "Mês")
                 setDataInicio("")
                 setDataFim("")
               }}
@@ -662,8 +731,11 @@ export default function ConfiguracoesPage() {
 
         <div className="mt-3 text-sm text-white/60">
           {diagnostico.score > 80 && "Funil saudável, previsível e com boa tração. 🚀"}
-          {diagnostico.score <= 80 && diagnostico.score > 50 && "Existem pontos de atenção que já impactam a operação. ⚠️"}
-          {diagnostico.score <= 50 && "A operação está em risco e precisa de correção rápida. 🔴"}
+          {diagnostico.score <= 80 &&
+            diagnostico.score > 50 &&
+            "Existem pontos de atenção que já impactam a operação. ⚠️"}
+          {diagnostico.score <= 50 &&
+            "A operação está em risco e precisa de correção rápida. 🔴"}
         </div>
 
         <div className="w-full h-4 rounded-full bg-slate-800 overflow-hidden mt-5">
@@ -672,8 +744,8 @@ export default function ConfiguracoesPage() {
               diagnostico.score > 80
                 ? "bg-gradient-to-r from-green-400 to-cyan-400"
                 : diagnostico.score > 50
-                ? "bg-gradient-to-r from-yellow-400 to-orange-400"
-                : "bg-gradient-to-r from-red-500 to-rose-500"
+                  ? "bg-gradient-to-r from-yellow-400 to-orange-400"
+                  : "bg-gradient-to-r from-red-500 to-rose-500"
             }`}
             style={{ width: `${diagnostico.score}%` }}
           />
@@ -836,43 +908,45 @@ export default function ConfiguracoesPage() {
           {diagnostico.rankingVendedores.length === 0 ? (
             <div className="text-white/50">Nenhum vendedor com resultado no período.</div>
           ) : (
-            diagnostico.rankingVendedores.map((item: any, index: number) => {
-              const percentual =
-                diagnostico.receitaMes > 0
-                  ? (item.valor / diagnostico.receitaMes) * 100
-                  : 0
+            diagnostico.rankingVendedores.map(
+              (item: { nome: string; valor: number }, index: number) => {
+                const percentual =
+                  diagnostico.receitaMes > 0
+                    ? (item.valor / diagnostico.receitaMes) * 100
+                    : 0
 
-              return (
-                <div
-                  key={item.nome}
-                  className="bg-white/5 rounded-2xl p-5 border border-white/5"
-                >
-                  <div className="flex justify-between items-center gap-4">
-                    <div className="font-semibold text-lg">
-                      {index === 0 && "🥇 "}
-                      {index === 1 && "🥈 "}
-                      {index === 2 && "🥉 "}
-                      {item.nome}
+                return (
+                  <div
+                    key={item.nome}
+                    className="bg-white/5 rounded-2xl p-5 border border-white/5"
+                  >
+                    <div className="flex justify-between items-center gap-4">
+                      <div className="font-semibold text-lg">
+                        {index === 0 && "🥇 "}
+                        {index === 1 && "🥈 "}
+                        {index === 2 && "🥉 "}
+                        {item.nome}
+                      </div>
+
+                      <div className="text-cyan-400 font-bold">
+                        {formatarMoeda(item.valor)}
+                      </div>
                     </div>
 
-                    <div className="text-cyan-400 font-bold">
-                      {formatarMoeda(item.valor)}
+                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mt-4">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-cyan-400"
+                        style={{ width: `${percentual}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-3 text-xs text-white/50">
+                      Participação no faturamento: {percentual.toFixed(1)}%
                     </div>
                   </div>
-
-                  <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mt-4">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-cyan-400"
-                      style={{ width: `${percentual}%` }}
-                    />
-                  </div>
-
-                  <div className="mt-3 text-xs text-white/50">
-                    Participação no faturamento: {percentual.toFixed(1)}%
-                  </div>
-                </div>
-              )
-            })
+                )
+              }
+            )
           )}
         </div>
       </div>

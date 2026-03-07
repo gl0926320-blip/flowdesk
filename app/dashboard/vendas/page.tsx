@@ -34,6 +34,8 @@ interface Venda {
   origem_lead?: string | null;
   responsavel?: string | null;
   user_id?: string | null;
+  criado_por?: string | null;
+  criado_por_email?: string | null;
   company_id?: string | null;
   custo?: number | null;
   descricao?: string | null;
@@ -137,17 +139,24 @@ export default function VendasPage() {
     const user = userData.user;
     setCurrentUserId(user.id);
 
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .single();
+const { data: memberships, error: companyUserError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .eq("status", "ativo");
 
-    if (!companyUser) {
-      setLoading(false);
-      return;
-    }
+if (companyUserError) {
+  console.error("Erro ao buscar vínculo:", companyUserError);
+  setLoading(false);
+  return;
+}
+
+const companyUser = memberships?.[0];
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
 
     const currentCompanyId = companyUser.company_id;
     const currentRole = companyUser.role;
@@ -159,12 +168,12 @@ export default function VendasPage() {
       setFiltroVendedor(user.id);
     }
 
-    const { data: equipe } = await supabase
-      .from("company_users")
-      .select("user_id, email, role, status, comissao_percentual, meta_receita")
-      .eq("company_id", currentCompanyId)
-      .eq("status", "accepted")
-      .order("email", { ascending: true });
+const { data: equipe } = await supabase
+  .from("company_users")
+  .select("user_id, email, role, status, comissao_percentual, meta_receita")
+  .eq("company_id", currentCompanyId)
+  .eq("status", "ativo")
+  .order("email", { ascending: true });
 
     setVendedores((equipe as Vendedor[]) || []);
 
@@ -175,9 +184,9 @@ export default function VendasPage() {
       .eq("status", "concluido")
       .eq("ativo", true);
 
-    if (currentRole === "vendedor") {
-      query = query.eq("user_id", user.id);
-    }
+if (currentRole === "vendedor") {
+  query = query.eq("criado_por", user.id);
+}
 
     const { data, error } = await query.order("created_at", {
       ascending: false,
@@ -232,8 +241,9 @@ export default function VendasPage() {
 
   const vendasCalculadas = useMemo<VendaCalculada[]>(() => {
     return vendas.map((v) => {
-      const vendedor =
-        findVendedorByUserId(v.user_id) || findVendedorByEmail(v.responsavel);
+const vendedor =
+  findVendedorByUserId(v.criado_por || v.user_id) ||
+  findVendedorByEmail(v.responsavel);
 
       const comissao = calcularComissaoCongelada({
         valorOrcamento: Number(v.valor_orcamento || 0),
@@ -290,9 +300,12 @@ export default function VendasPage() {
 
       if (!filtrarPorPeriodo(v.data_fechamento || v.created_at)) return false;
 
-      if (filtroVendedor !== "all" && v.user_id !== filtroVendedor) {
-        return false;
-      }
+if (
+  filtroVendedor !== "all" &&
+  (v.criado_por || v.user_id) !== filtroVendedor
+) {
+  return false;
+}
 
       if (
         filtroOrigem !== "all" &&
@@ -779,22 +792,32 @@ function Card({
   icon: React.ReactNode;
   glow: string;
 }) {
+  const isEmailLongo = valor.includes("@") || valor.length > 18;
+
   return (
     <div
-      className="p-5 rounded-2xl border border-[#22314a] hover:scale-[1.02] transition-all duration-200"
+      className="p-5 rounded-2xl border border-[#22314a] hover:scale-[1.02] transition-all duration-200 min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(17,24,39,0.92), rgba(15,23,42,0.96))",
         boxShadow: `0 12px 32px ${glow}`,
       }}
     >
-      <div className="flex justify-between text-gray-400 text-sm">
-        <span>{titulo}</span>
-        <span className="text-blue-400">{icon}</span>
+      <div className="flex justify-between gap-3 text-gray-400 text-sm">
+        <span className="truncate">{titulo}</span>
+        <span className="text-blue-400 shrink-0">{icon}</span>
       </div>
 
-      <div className="mt-4 text-3xl font-bold text-cyan-400">{valor}</div>
-      <div className="mt-2 text-xs text-slate-400">{subtitulo}</div>
+      <div
+        className={`mt-4 font-bold text-cyan-400 min-w-0 ${
+          isEmailLongo ? "text-lg break-all leading-tight" : "text-3xl"
+        }`}
+        title={valor}
+      >
+        {valor}
+      </div>
+
+      <div className="mt-2 text-xs text-slate-400 line-clamp-2">{subtitulo}</div>
     </div>
   );
 }

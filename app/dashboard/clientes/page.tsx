@@ -53,6 +53,8 @@ interface Servico {
   responsavel: string | null;
   ativo: boolean | null;
   user_id: string | null;
+  criado_por?: string | null;
+  criado_por_email?: string | null;
   company_id: string;
 }
 
@@ -133,9 +135,12 @@ export default function ClientesPage() {
 
     const percentualServico = Number(servico.percentual_comissao || 0);
 
-    const vendedorPorId = vendedoresLista.find(
-      (v) => v.user_id && servico.user_id && v.user_id === servico.user_id
-    );
+const vendedorPorId = vendedoresLista.find(
+  (v) =>
+    v.user_id &&
+    (servico.criado_por || servico.user_id) &&
+    v.user_id === (servico.criado_por || servico.user_id)
+);
 
     const vendedorPorEmail = vendedoresLista.find(
       (v) =>
@@ -171,17 +176,24 @@ export default function ClientesPage() {
     const user = userData.user;
     setCurrentUserId(user.id);
 
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .single();
+const { data: memberships, error: companyUserError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .eq("status", "ativo");
 
-    if (!companyUser) {
-      setLoading(false);
-      return;
-    }
+if (companyUserError) {
+  console.error("Erro ao buscar vínculo:", companyUserError);
+  setLoading(false);
+  return;
+}
+
+const companyUser = memberships?.[0];
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
 
     const currentCompanyId = companyUser.company_id;
     const currentRole = companyUser.role;
@@ -193,40 +205,42 @@ export default function ClientesPage() {
       setFiltroVendedor(user.id);
     }
 
-    const { data: equipe } = await supabase
-      .from("company_users")
-      .select("user_id, email, role, status, comissao_percentual")
-      .eq("company_id", currentCompanyId)
-      .eq("status", "accepted")
-      .order("email", { ascending: true });
+const { data: equipe } = await supabase
+  .from("company_users")
+  .select("user_id, email, role, status, comissao_percentual")
+  .eq("company_id", currentCompanyId)
+  .eq("status", "ativo")
+  .order("email", { ascending: true });
 
     const vendedoresLista = (equipe as Vendedor[]) || [];
     setVendedores(vendedoresLista);
 
     let query = supabase
       .from("servicos")
-      .select(`
-        cliente,
-        telefone,
-        email,
-        tipo_pessoa,
-        valor_orcamento,
-        custo,
-        valor_comissao,
-        percentual_comissao,
-        created_at,
-        status,
-        responsavel,
-        ativo,
-        user_id,
-        company_id
-      `)
+.select(`
+  cliente,
+  telefone,
+  email,
+  tipo_pessoa,
+  valor_orcamento,
+  custo,
+  valor_comissao,
+  percentual_comissao,
+  created_at,
+  status,
+  responsavel,
+  ativo,
+  user_id,
+  criado_por,
+  criado_por_email,
+  company_id
+`)
       .eq("company_id", currentCompanyId)
       .eq("status", "concluido");
 
-    if (currentRole === "vendedor") {
-      query = query.eq("user_id", user.id);
-    }
+if (currentRole === "vendedor") {
+  query = query.eq("criado_por", user.id);
+}
 
     const { data, error } = await query;
 
@@ -249,11 +263,11 @@ export default function ClientesPage() {
         return d >= dataInicioObj && d <= dataFimObj;
       }) || [];
 
-    if (currentRole !== "vendedor" && filtroVendedor !== "todos") {
-      dataFiltrada = dataFiltrada.filter(
-        (servico) => servico.user_id === filtroVendedor
-      );
-    }
+if (currentRole !== "vendedor" && filtroVendedor !== "todos") {
+  dataFiltrada = dataFiltrada.filter(
+    (servico) => (servico.criado_por || servico.user_id) === filtroVendedor
+  );
+}
 
     const agrupado: { [key: string]: Cliente } = {};
 

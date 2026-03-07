@@ -28,6 +28,8 @@ type Servico = {
   comissao_paga: boolean | null;
   status: string;
   user_id?: string | null;
+  criado_por?: string | null;
+  criado_por_email?: string | null;
   cliente?: string | null;
   tipo_servico?: string | null;
   ativo?: boolean | null;
@@ -91,17 +93,24 @@ export default function ComissoesPage() {
 
     setUserId(user.id);
 
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .single();
+const { data: memberships, error: companyUserError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .eq("status", "ativo");
 
-    if (!companyUser) {
-      setLoading(false);
-      return;
-    }
+if (companyUserError) {
+  console.error("Erro ao buscar vínculo:", companyUserError);
+  setLoading(false);
+  return;
+}
+
+const companyUser = memberships?.[0];
+
+if (!companyUser) {
+  setLoading(false);
+  return;
+}
 
     const currentCompanyId = companyUser.company_id;
     setCompanyId(currentCompanyId);
@@ -111,14 +120,14 @@ export default function ComissoesPage() {
       setFiltroVendedor(user.id);
     }
 
-    const { data: equipe } = await supabase
-      .from("company_users")
-      .select(
-        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
-      )
-      .eq("company_id", currentCompanyId)
-      .eq("status", "accepted")
-      .order("email", { ascending: true });
+const { data: equipe } = await supabase
+  .from("company_users")
+  .select(
+    "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+  )
+  .eq("company_id", currentCompanyId)
+  .eq("status", "ativo")
+  .order("email", { ascending: true });
 
     setVendedores((equipe as Vendedor[]) || []);
 
@@ -129,9 +138,9 @@ export default function ComissoesPage() {
       .eq("status", "concluido")
       .eq("ativo", true);
 
-    if (companyUser.role === "vendedor") {
-      query = query.eq("user_id", user.id);
-    }
+if (companyUser.role === "vendedor") {
+  query = query.eq("criado_por", user.id);
+}
 
     const { data, error } = await query.order("created_at", {
       ascending: false,
@@ -179,8 +188,10 @@ export default function ComissoesPage() {
 
   const dataComComissao = useMemo<ServicoCalculado[]>(() => {
     return data.map((item) => {
-      const vendedorPorId =
-        item.user_id ? vendedorMap.byUserId.get(item.user_id) : undefined;
+const vendedorPorId =
+  item.criado_por || item.user_id
+    ? vendedorMap.byUserId.get((item.criado_por || item.user_id) as string)
+    : undefined;
 
       const vendedorPorEmail =
         item.responsavel
@@ -250,9 +261,9 @@ export default function ComissoesPage() {
         }
       }
 
-      if (role !== "vendedor" && filtroVendedor !== "todos") {
-        if (item.user_id !== filtroVendedor) return false;
-      }
+if (role !== "vendedor" && filtroVendedor !== "todos") {
+  if ((item.criado_por || item.user_id) !== filtroVendedor) return false;
+}
 
       if (filtroPagamento === "pagas" && !item.comissao_paga) return false;
       if (filtroPagamento === "pendentes" && item.comissao_paga) return false;

@@ -29,6 +29,8 @@ type CompanyUser = {
 type Servico = {
   id: string;
   user_id: string | null;
+  criado_por?: string | null;
+  responsavel?: string | null;
   company_id: string;
   cliente: string;
   status: string;
@@ -116,30 +118,37 @@ export default function CarteiraPage() {
 
     setMyUserId(user.id);
 
-    const { data: me, error: meError } = await supabase
-      .from("company_users")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .maybeSingle();
+const { data: memberships, error: meError } = await supabase
+  .from("company_users")
+  .select("company_id, role")
+  .eq("user_id", user.id)
+  .eq("status", "ativo");
 
-    if (meError || !me?.company_id) {
-      setLoading(false);
-      return;
-    }
+if (meError) {
+  console.error("Erro ao buscar vínculo do usuário:", meError);
+  setLoading(false);
+  return;
+}
+
+const me = memberships?.[0];
+
+if (!me?.company_id) {
+  setLoading(false);
+  return;
+}
 
     setCompanyId(me.company_id);
     setMyRole(me.role);
 
-    const { data: companyUsers, error: usersError } = await supabase
-      .from("company_users")
-      .select(
-        "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
-      )
-      .eq("company_id", me.company_id)
-      .eq("status", "accepted")
-      .eq("role", "vendedor")
-      .order("email", { ascending: true });
+const { data: companyUsers, error: usersError } = await supabase
+  .from("company_users")
+  .select(
+    "user_id, email, role, status, comissao_percentual, meta_leads, meta_vendas, meta_receita"
+  )
+  .eq("company_id", me.company_id)
+  .eq("status", "ativo")
+  .in("role", ["vendedor", "owner", "admin"])
+  .order("email", { ascending: true });
 
     if (!usersError) {
       const vendedoresData = (companyUsers as CompanyUser[]) || [];
@@ -150,16 +159,16 @@ export default function CarteiraPage() {
       }
     }
 
-    let query = supabase
-      .from("servicos")
-      .select("*")
-      .eq("company_id", me.company_id)
-      .eq("ativo", true)
-      .order("created_at", { ascending: false });
+let query = supabase
+  .from("servicos")
+  .select("*")
+  .eq("company_id", me.company_id)
+  .eq("ativo", true)
+  .order("created_at", { ascending: false });
 
-    if (me.role === "vendedor") {
-      query = query.eq("user_id", user.id);
-    }
+if (me.role === "vendedor") {
+  query = query.eq("criado_por", user.id);
+}
 
     const { data: servicosData, error: servicosError } = await query;
 
@@ -175,9 +184,11 @@ export default function CarteiraPage() {
 
     let lista = [...servicos];
 
-    if (myRole !== "vendedor" && vendedorSelecionado !== "todos") {
-      lista = lista.filter((item) => item.user_id === vendedorSelecionado);
-    }
+if (myRole !== "vendedor" && vendedorSelecionado !== "todos") {
+  lista = lista.filter(
+    (item) => (item.criado_por || item.user_id) === vendedorSelecionado
+  );
+}
 
     if (periodo !== "todos") {
       lista = lista.filter((item) => {
@@ -277,12 +288,12 @@ export default function CarteiraPage() {
         : vendedores;
 
     return baseUsuarios.map((vendedor) => {
-      const lista = servicos.filter(
-        (item) =>
-          item.user_id === vendedor.user_id &&
-          item.ativo === true &&
-          item.company_id === companyId
-      );
+const lista = servicos.filter(
+  (item) =>
+    (item.criado_por || item.user_id) === vendedor.user_id &&
+    item.ativo === true &&
+    item.company_id === companyId
+);
 
       const total = lista.length;
       const frios = lista.filter((i) => (i.temperatura || "morno") === "frio").length;
@@ -526,7 +537,9 @@ export default function CarteiraPage() {
 
             <tbody>
               {servicosFiltrados.map((item) => {
-                const vendedor = vendedores.find((v) => v.user_id === item.user_id);
+                const vendedor = vendedores.find(
+  (v) => v.user_id === (item.criado_por || item.user_id)
+);
 
                 return (
                   <tr

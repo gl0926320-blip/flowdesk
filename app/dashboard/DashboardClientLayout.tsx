@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Building2,
@@ -21,17 +21,19 @@ import {
   Megaphone,
   ChevronDown,
   ChevronRight,
+  type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
 type MenuItem = {
   name: string;
   href?: string;
-  icon: any;
+  icon: LucideIcon;
   children?: {
     name: string;
     href: string;
   }[];
+  visible?: boolean;
 };
 
 export default function DashboardLayout({
@@ -40,14 +42,17 @@ export default function DashboardLayout({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const isMasterPage = pathname.startsWith("/dashboard/master");
   const supabase = createClient();
 
-  const [empresa, setEmpresa] = useState<string>("");
+  const [empresa, setEmpresa] = useState("");
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [plan, setPlan] = useState<string>("free");
-  const [role, setRole] = useState<string>("");
+  const [plan, setPlan] = useState("free");
+  const [role, setRole] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [email, setEmail] = useState<string>("");
+  const [email, setEmail] = useState("");
+  const [loadedMembership, setLoadedMembership] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
     Campanhas: pathname.startsWith("/dashboard/campanhas"),
   });
@@ -68,46 +73,21 @@ export default function DashboardLayout({
     window.location.href = "/";
   }
 
-  async function aceitarConvite() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user?.email) return;
-
-    const { data: vinculoExistente } = await supabase
-      .from("company_users")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (vinculoExistente) return;
-
-    const { data: convite } = await supabase
-      .from("company_users")
-      .select("*")
-      .eq("email", user.email)
-      .eq("status", "pending")
-      .maybeSingle();
-
-    if (!convite) return;
-
-    await supabase
-      .from("company_users")
-      .update({
-        user_id: user.id,
-        status: "accepted",
-      })
-      .eq("id", convite.id);
-  }
-
-  async function carregarPlano() {
+  async function carregarPlanoEMembership() {
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
     const user = session?.user;
-    if (!user) return;
+
+    if (!user) {
+      setEmail("");
+      setEmpresa("");
+      setCompanyId(null);
+      setRole("");
+      setLoadedMembership(true);
+      return;
+    }
 
     setEmail(user.email || "");
 
@@ -115,57 +95,66 @@ export default function DashboardLayout({
       .from("profiles")
       .select("plan")
       .eq("id", user.id)
-      .single();
-
-    if (profile?.plan) {
-      setPlan(profile.plan);
-    }
+      .maybeSingle();
 
     const { data: companyUser } = await supabase
       .from("company_users")
-      .select("company_id, role, companies(name)")
+      .select("company_id, role, status, companies(name, plan)")
       .eq("user_id", user.id)
-      .eq("status", "accepted")
+      .eq("status", "ativo")
       .maybeSingle();
 
     if (companyUser) {
-      setCompanyId((companyUser as any).company_id);
+      setCompanyId((companyUser as any).company_id || null);
       setRole((companyUser as any).role || "");
       setEmpresa((companyUser as any)?.companies?.name || "");
+      setPlan((companyUser as any)?.companies?.plan || profile?.plan || "free");
     } else {
       setCompanyId(null);
       setRole("");
       setEmpresa("");
+      setPlan(profile?.plan || "free");
     }
+
+    setLoadedMembership(true);
   }
 
   useEffect(() => {
-    async function init() {
-      await aceitarConvite();
-      await carregarPlano();
-    }
+    carregarPlanoEMembership();
 
-    init();
-
-    const onFocus = () => carregarPlano();
+    const onFocus = () => carregarPlanoEMembership();
     window.addEventListener("focus", onFocus);
-
-    if (window.location.search.includes("success=true")) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      carregarPlano();
-    }
 
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   useEffect(() => {
-    if (pathname.startsWith("/dashboard/campanhas")) {
+    if (pathname.startsWith("/dashboard/campanhas") && role !== "vendedor") {
       setOpenMenus((prev) => ({
         ...prev,
         Campanhas: true,
       }));
     }
-  }, [pathname]);
+  }, [pathname, role]);
+
+  useEffect(() => {
+    if (!loadedMembership) return;
+
+    if (pathname.startsWith("/dashboard/empresas") && role !== "owner") {
+      router.replace("/dashboard");
+      return;
+    }
+
+    if (pathname.startsWith("/dashboard/campanhas") && role === "vendedor") {
+      router.replace("/dashboard");
+      return;
+    }
+
+    if (pathname.startsWith("/dashboard/billing") && role === "vendedor") {
+      router.replace("/dashboard");
+      return;
+    }
+  }, [pathname, role, loadedMembership, router]);
 
   function toggleMenu(menuName: string) {
     setOpenMenus((prev) => ({
@@ -175,30 +164,51 @@ export default function DashboardLayout({
   }
 
   const menu: MenuItem[] = useMemo(
-    () => [
-      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
-      { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
-      { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
-      { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
-      { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
-      { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
-      {
-        name: "Campanhas",
-        icon: Megaphone,
-        children: [
-          { name: "Campanhas", href: "/dashboard/campanhas" },
-          { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
-        ],
-      },
-      { name: "Clientes", href: "/dashboard/clientes", icon: Users },
-      { name: "Empresas", href: "/dashboard/empresas", icon: Building2 },
-      { name: "Equipe", href: "/dashboard/equipe", icon: Users2 },
-      { name: "Assinatura", href: "/dashboard/billing", icon: CreditCard },
-      { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
-    ],
-    []
+    () =>
+      [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
+        { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
+        { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
+        { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
+        { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
+        { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
+        {
+          name: "Campanhas",
+          icon: Megaphone,
+          visible: role !== "vendedor",
+          children: [
+            { name: "Campanhas", href: "/dashboard/campanhas" },
+            { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
+          ],
+        },
+        { name: "Clientes", href: "/dashboard/clientes", icon: Users },
+        {
+          name: "Empresas",
+          href: "/dashboard/empresas",
+          icon: Building2,
+          visible: role === "owner",
+        },
+        {
+          name: "Equipe",
+          href: "/dashboard/equipe",
+          icon: Users2,
+          visible: role === "owner" || role === "admin",
+        },
+        {
+          name: "Assinatura",
+          href: "/dashboard/billing",
+          icon: CreditCard,
+          visible: role !== "vendedor",
+        },
+        { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
+      ].filter((item) => item.visible !== false),
+    [role]
   );
+
+  if (isMasterPage) {
+    return <div className="min-h-screen bg-[#0F172A] text-white">{children}</div>;
+  }
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">
@@ -207,8 +217,22 @@ export default function DashboardLayout({
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
-        <div className="p-6 text-xl font-bold border-b border-white/10">
-          FlowDesk
+        <div className="p-5 border-b border-white/10">
+          <div
+            title={empresa || "FlowDesk"}
+            className="text-lg font-bold leading-tight text-white break-words overflow-hidden"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {empresa || "FlowDesk"}
+          </div>
+
+          <div className="text-xs text-white/40 mt-1">
+            CRM Comercial
+          </div>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
@@ -218,7 +242,8 @@ export default function DashboardLayout({
             if (item.children) {
               const isOpen = openMenus[item.name];
               const parentActive = item.children.some(
-                (child) => pathname === child.href || pathname.startsWith(child.href + "/")
+                (child) =>
+                  pathname === child.href || pathname.startsWith(child.href + "/")
               );
 
               return (
@@ -237,7 +262,11 @@ export default function DashboardLayout({
                       <span>{item.name}</span>
                     </div>
 
-                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    {isOpen ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronRight size={16} />
+                    )}
                   </button>
 
                   {isOpen && (
@@ -290,7 +319,7 @@ export default function DashboardLayout({
               Plano {plan === "pro" ? "Pro 🚀" : "Free"}
             </p>
 
-            {plan !== "pro" && (
+            {plan !== "pro" && role !== "vendedor" && (
               <>
                 <p className="text-xs text-gray-400 mb-3">
                   Desbloqueie recursos ilimitados
@@ -353,13 +382,19 @@ export default function DashboardLayout({
                 {inicial}
               </div>
 
-              <div className="flex flex-col leading-tight">
-                <span className="text-sm text-gray-300 hidden sm:block">
+              <div className="flex flex-col leading-tight min-w-0 max-w-[220px]">
+                <span
+                  className="text-sm text-gray-300 hidden sm:block truncate"
+                  title={email}
+                >
                   {email}
                 </span>
 
                 {empresa && (
-                  <span className="text-xs text-gray-500 hidden sm:block">
+                  <span
+                    className="text-xs text-gray-500 hidden sm:block truncate"
+                    title={empresa}
+                  >
                     {empresa}
                   </span>
                 )}
