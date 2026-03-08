@@ -7,7 +7,7 @@ import {
   Megaphone,
   MousePointerClick,
   Search,
- Filter,
+  Filter,
   BarChart3,
   Activity,
   CheckCircle2,
@@ -17,11 +17,18 @@ import {
   Target,
   RefreshCw,
   CalendarDays,
+  ShieldAlert,
 } from "lucide-react";
 
 type Company = {
   id: string;
   name: string;
+};
+
+type Membership = {
+  company_id: string;
+  role: string;
+  status: string;
 };
 
 type Campaign = {
@@ -49,6 +56,7 @@ type Servico = {
   company_id: string | null;
   campaign_id: string | null;
   valor: number | string | null;
+  valor_orcamento?: number | string | null;
   status: string | null;
   created_at: string | null;
 };
@@ -71,31 +79,22 @@ type CampaignMetric = {
   conversionRate: number;
 };
 
-type CompanySummary = {
-  company_id: string;
-  company_name: string;
-  campaigns: number;
-  activeCampaigns: number;
-  clicks: number;
-  leads: number;
-  sales: number;
-  revenue: number;
-  conversionRate: number;
-};
-
 export default function MasterCampanhasPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [company, setCompany] = useState<Company | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [role, setRole] = useState<string>("");
+
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [clicks, setClicks] = useState<CampaignClick[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
 
   const [search, setSearch] = useState("");
-  const [selectedCompany, setSelectedCompany] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [periodFilter, setPeriodFilter] = useState("all");
@@ -105,38 +104,121 @@ export default function MasterCampanhasPage() {
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
 
-      const [
-        { data: companiesData, error: companiesError },
-        { data: campaignsData, error: campaignsError },
-        { data: clicksData, error: clicksError },
-        { data: servicosData, error: servicosError },
-      ] = await Promise.all([
-        supabase.from("companies").select("id, name").order("name", { ascending: true }),
-        supabase
-          .from("campaigns")
-          .select(
-            "id, company_id, name, source, slug, target_type, target_value, is_active, created_at"
-          )
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("campaign_clicks")
-          .select("id, campaign_id, created_at, clicked_at, timestamp"),
-        supabase
-          .from("servicos")
-          .select("id, company_id, campaign_id, valor, status, created_at"),
-      ]);
+      setAccessDenied(false);
 
-      if (companiesError) console.error("Erro companies:", companiesError);
-      if (campaignsError) console.error("Erro campaigns:", campaignsError);
-      if (clicksError) console.error("Erro campaign_clicks:", clicksError);
-      if (servicosError) console.error("Erro servicos:", servicosError);
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      setCompanies(companiesData || []);
-      setCampaigns((campaignsData || []) as Campaign[]);
-      setClicks((clicksData || []) as CampaignClick[]);
-      setServicos((servicosData || []) as Servico[]);
+      if (userError) {
+        console.error("Erro ao buscar usuário:", userError);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!user) {
+        setAccessDenied(true);
+        return;
+      }
+
+      const { data: membership, error: membershipError } = await supabase
+        .from("company_users")
+        .select("company_id, role, status")
+        .eq("user_id", user.id)
+        .eq("status", "ativo")
+        .limit(1)
+        .maybeSingle();
+
+      if (membershipError) {
+        console.error("Erro ao buscar vínculo da empresa:", membershipError);
+        setAccessDenied(true);
+        return;
+      }
+
+      if (!membership?.company_id) {
+        console.error("Usuário sem vínculo ativo com empresa.");
+        setAccessDenied(true);
+        return;
+      }
+
+      const currentCompanyId = membership.company_id;
+      const currentRole = membership.role || "";
+
+      setCompanyId(currentCompanyId);
+      setRole(currentRole);
+
+      // Blindagem extra de front:
+      // vendedor não deve acessar campanhas
+      if (!["owner", "admin"].includes(currentRole)) {
+        setAccessDenied(true);
+        return;
+      }
+
+      const { data: companyData, error: companyError } = await supabase
+        .from("companies")
+        .select("id, name")
+        .eq("id", currentCompanyId)
+        .maybeSingle();
+
+      if (companyError) {
+        console.error("Erro ao carregar empresa:", companyError);
+      }
+
+      setCompany((companyData as Company) || null);
+
+      const { data: campaignsData, error: campaignsError } = await supabase
+        .from("campaigns")
+        .select(
+          "id, company_id, name, source, slug, target_type, target_value, is_active, created_at"
+        )
+        .eq("company_id", currentCompanyId)
+        .order("created_at", { ascending: false });
+
+      if (campaignsError) {
+        console.error("Erro campaigns:", campaignsError);
+        setCampaigns([]);
+        setClicks([]);
+        setServicos([]);
+        return;
+      }
+
+      const safeCampaigns = (campaignsData || []) as Campaign[];
+      setCampaigns(safeCampaigns);
+
+      const campaignIds = safeCampaigns.map((item) => item.id);
+
+      const { data: servicosData, error: servicosError } = await supabase
+        .from("servicos")
+        .select("id, company_id, campaign_id, valor, valor_orcamento, status, created_at")
+        .eq("company_id", currentCompanyId);
+
+      if (servicosError) {
+        console.error("Erro servicos:", servicosError);
+        setServicos([]);
+      } else {
+        setServicos((servicosData || []) as Servico[]);
+      }
+
+      if (campaignIds.length === 0) {
+        setClicks([]);
+        return;
+      }
+
+      const { data: clicksData, error: clicksError } = await supabase
+        .from("campaign_clicks")
+        .select("id, campaign_id, created_at, clicked_at, timestamp")
+        .in("campaign_id", campaignIds);
+
+      if (clicksError) {
+        console.error("Erro campaign_clicks:", clicksError);
+        setClicks([]);
+      } else {
+        setClicks((clicksData || []) as CampaignClick[]);
+      }
     } catch (error) {
-      console.error("Erro ao carregar master dashboard:", error);
+      console.error("Erro ao carregar dashboard de campanhas:", error);
+      setAccessDenied(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -184,6 +266,10 @@ export default function MasterCampanhasPage() {
     return 0;
   }
 
+  function getValorServico(servico: Servico) {
+    return toNumber(servico.valor_orcamento ?? servico.valor);
+  }
+
   function getDateFromAny(item: {
     created_at?: string | null;
     clicked_at?: string | null;
@@ -200,10 +286,14 @@ export default function MasterCampanhasPage() {
     if (Number.isNaN(date.getTime())) return false;
 
     const now = new Date();
+
+    if (period === "today") {
+      return date.toDateString() === now.toDateString();
+    }
+
     const diffMs = now.getTime() - date.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
-    if (period === "today") return diffDays <= 1;
     if (period === "7d") return diffDays <= 7;
     if (period === "30d") return diffDays <= 30;
     if (period === "90d") return diffDays <= 90;
@@ -211,19 +301,10 @@ export default function MasterCampanhasPage() {
     return true;
   }
 
-  const companyMap = useMemo(() => {
-    const map = new Map<string, string>();
-    companies.forEach((company) => {
-      map.set(company.id, company.name);
-    });
-    return map;
-  }, [companies]);
-
   const availableSources = useMemo(() => {
     const set = new Set<string>();
     campaigns.forEach((campaign) => {
-      const source = normalizeSource(campaign.source);
-      set.add(source);
+      set.add(normalizeSource(campaign.source));
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [campaigns]);
@@ -267,7 +348,7 @@ export default function MasterCampanhasPage() {
 
         revenueByCampaign.set(
           servico.campaign_id,
-          (revenueByCampaign.get(servico.campaign_id) || 0) + toNumber(servico.valor)
+          (revenueByCampaign.get(servico.campaign_id) || 0) + getValorServico(servico)
         );
       }
     });
@@ -281,7 +362,7 @@ export default function MasterCampanhasPage() {
       return {
         id: campaign.id,
         company_id: campaign.company_id,
-        company_name: companyMap.get(campaign.company_id) || "Sem empresa",
+        company_name: company?.name || "Sem empresa",
         name: campaign.name,
         source: campaign.source,
         slug: campaign.slug,
@@ -296,13 +377,10 @@ export default function MasterCampanhasPage() {
         conversionRate: leads > 0 ? (sales / leads) * 100 : 0,
       };
     });
-  }, [campaigns, clicks, servicos, companyMap, periodFilter]);
+  }, [campaigns, clicks, servicos, company, periodFilter]);
 
   const filteredCampaigns = useMemo(() => {
     return campaignMetrics.filter((campaign) => {
-      const matchesCompany =
-        selectedCompany === "all" || campaign.company_id === selectedCompany;
-
       const matchesStatus =
         statusFilter === "all" ||
         (statusFilter === "active" && campaign.is_active) ||
@@ -310,7 +388,8 @@ export default function MasterCampanhasPage() {
 
       const sourceLabel = normalizeSource(campaign.source);
       const matchesSource =
-        sourceFilter === "all" || sourceLabel.toLowerCase() === sourceFilter.toLowerCase();
+        sourceFilter === "all" ||
+        sourceLabel.toLowerCase() === sourceFilter.toLowerCase();
 
       const term = search.trim().toLowerCase();
       const matchesSearch =
@@ -320,9 +399,9 @@ export default function MasterCampanhasPage() {
         campaign.company_name.toLowerCase().includes(term) ||
         sourceLabel.toLowerCase().includes(term);
 
-      return matchesCompany && matchesStatus && matchesSource && matchesSearch;
+      return matchesStatus && matchesSource && matchesSearch;
     });
-  }, [campaignMetrics, selectedCompany, statusFilter, sourceFilter, search]);
+  }, [campaignMetrics, statusFilter, sourceFilter, search]);
 
   const summary = useMemo(() => {
     const totalCampaigns = filteredCampaigns.length;
@@ -332,7 +411,6 @@ export default function MasterCampanhasPage() {
     const totalLeads = filteredCampaigns.reduce((acc, item) => acc + item.leads, 0);
     const totalSales = filteredCampaigns.reduce((acc, item) => acc + item.sales, 0);
     const totalRevenue = filteredCampaigns.reduce((acc, item) => acc + item.revenue, 0);
-    const companiesInView = new Set(filteredCampaigns.map((item) => item.company_id)).size;
     const averageConversion =
       totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0;
 
@@ -344,44 +422,8 @@ export default function MasterCampanhasPage() {
       totalLeads,
       totalSales,
       totalRevenue,
-      companiesInView,
       averageConversion,
     };
-  }, [filteredCampaigns]);
-
-  const companySummaries = useMemo<CompanySummary[]>(() => {
-    const map = new Map<string, CompanySummary>();
-
-    filteredCampaigns.forEach((campaign) => {
-      const existing = map.get(campaign.company_id) || {
-        company_id: campaign.company_id,
-        company_name: campaign.company_name,
-        campaigns: 0,
-        activeCampaigns: 0,
-        clicks: 0,
-        leads: 0,
-        sales: 0,
-        revenue: 0,
-        conversionRate: 0,
-      };
-
-      existing.campaigns += 1;
-      if (campaign.is_active) existing.activeCampaigns += 1;
-      existing.clicks += campaign.clicks;
-      existing.leads += campaign.leads;
-      existing.sales += campaign.sales;
-      existing.revenue += campaign.revenue;
-
-      map.set(campaign.company_id, existing);
-    });
-
-    const result = Array.from(map.values()).map((item) => ({
-      ...item,
-      conversionRate: item.leads > 0 ? (item.sales / item.leads) * 100 : 0,
-    }));
-
-    result.sort((a, b) => b.revenue - a.revenue);
-    return result;
   }, [filteredCampaigns]);
 
   const topCampaign = useMemo(() => {
@@ -414,24 +456,52 @@ export default function MasterCampanhasPage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <div className="p-4 md:p-8 text-white">
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 md:p-8 max-w-2xl">
+          <div className="flex items-center gap-3 text-red-300 mb-3">
+            <ShieldAlert size={22} />
+            <h1 className="text-xl md:text-2xl font-bold">Acesso não permitido</h1>
+          </div>
+          <p className="text-sm md:text-base text-red-100/80">
+            Você não tem permissão para visualizar o dashboard de campanhas desta área.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-8 space-y-8 text-white">
       <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300 mb-3">
             <BarChart3 size={14} />
-            Visão master multiempresa
+            Painel isolado por empresa
           </div>
 
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-            Master Dashboard de Campanhas
+            Dashboard de Campanhas
           </h1>
 
           <p className="text-sm md:text-base text-gray-400 mt-2 max-w-4xl">
-            Centralize o acompanhamento das campanhas de todas as empresas,
-            monitore cliques, leads, vendas, receita e conversão em uma única visão
-            estratégica dentro do FlowDesk 2.0.
+            Acompanhe as campanhas, cliques, leads, vendas e receita da empresa
+            logada no FlowDesk 2.0.
           </p>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {company?.name && (
+              <span className="px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                Empresa: {company.name}
+              </span>
+            )}
+            {role && (
+              <span className="px-2.5 py-1 rounded-full bg-white/5 text-gray-300 border border-white/10">
+                Perfil: {role}
+              </span>
+            )}
+          </div>
         </div>
 
         <button
@@ -451,7 +521,7 @@ export default function MasterCampanhasPage() {
           <h2 className="text-lg font-semibold">Filtros inteligentes</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="xl:col-span-2">
             <label className="text-sm text-gray-400 mb-2 block">Buscar</label>
             <div className="relative">
@@ -461,28 +531,12 @@ export default function MasterCampanhasPage() {
               />
               <input
                 type="text"
-                placeholder="Nome da campanha, slug, empresa ou origem..."
+                placeholder="Nome da campanha, slug ou origem..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-[#0F172A] pl-10 pr-4 py-3 text-sm text-white outline-none focus:border-cyan-500/40"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-gray-400 mb-2 block">Empresa</label>
-            <select
-              value={selectedCompany}
-              onChange={(e) => setSelectedCompany(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-[#0F172A] px-4 py-3 text-sm text-white outline-none focus:border-cyan-500/40"
-            >
-              <option value="all">Todas as empresas</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div>
@@ -588,9 +642,9 @@ export default function MasterCampanhasPage() {
         />
 
         <MetricCard
-          title="Empresas"
-          value={formatNumber(summary.companiesInView)}
-          subtitle="No painel atual"
+          title="Empresa"
+          value={company?.name || "-"}
+          subtitle="Empresa logada"
           icon={<Building2 className="text-purple-400" size={18} />}
         />
       </div>
@@ -715,57 +769,7 @@ export default function MasterCampanhasPage() {
       <div className="rounded-2xl border border-white/10 bg-[#0B1120] shadow-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
           <div>
-            <h2 className="text-lg font-semibold">Ranking de empresas</h2>
-            <p className="text-sm text-gray-400">
-              Performance consolidada por empresa dentro dos filtros aplicados
-            </p>
-          </div>
-          <span className="text-xs text-gray-400 hidden md:block">
-            {companySummaries.length} empresa(s)
-          </span>
-        </div>
-
-        {companySummaries.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">
-            Nenhuma empresa encontrada com os filtros atuais.
-          </div>
-        ) : (
-          <div className="divide-y divide-white/10">
-            {companySummaries.slice(0, 8).map((company, index) => (
-              <div
-                key={company.company_id}
-                className="p-4 md:p-6 hover:bg-white/[0.02] transition"
-              >
-                <div className="grid grid-cols-1 lg:grid-cols-6 gap-4 items-center">
-                  <div className="lg:col-span-2">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-300 font-bold">
-                        #{index + 1}
-                      </div>
-                      <div>
-                        <p className="font-semibold">{company.company_name}</p>
-                        <p className="text-sm text-gray-400">
-                          {company.campaigns} campanha(s)
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <MiniStat label="Cliques" value={formatNumber(company.clicks)} />
-                  <MiniStat label="Leads" value={formatNumber(company.leads)} />
-                  <MiniStat label="Vendas" value={formatNumber(company.sales)} />
-                  <MiniStat label="Receita" value={formatCurrency(company.revenue)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-[#0B1120] shadow-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
-          <div>
-            <h2 className="text-lg font-semibold">Campanhas multiempresa</h2>
+            <h2 className="text-lg font-semibold">Campanhas da empresa</h2>
             <p className="text-sm text-gray-400">
               Visão detalhada das campanhas com cliques, leads, vendas e receita
             </p>
@@ -784,7 +788,7 @@ export default function MasterCampanhasPage() {
             </div>
             <h3 className="text-lg font-semibold">Nenhuma campanha encontrada</h3>
             <p className="text-sm text-gray-400 mt-2">
-              Ajuste os filtros para visualizar campanhas de outras empresas, origens ou períodos.
+              Ajuste os filtros para visualizar campanhas do período ou origem desejada.
             </p>
           </div>
         ) : (
@@ -894,21 +898,6 @@ function MetricCard({
       </div>
       <h2 className="text-2xl font-bold mt-4 break-words">{value}</h2>
       <p className="text-xs text-gray-500 mt-2">{subtitle}</p>
-    </div>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-[#0F172A] p-3">
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className="text-sm font-semibold mt-1 break-words">{value}</p>
     </div>
   );
 }

@@ -106,62 +106,61 @@ export default function CampanhasPage() {
     return window.location.origin;
   }, []);
 
-  async function loadCampaigns() {
-    try {
-      setLoading(true);
+async function loadCampaigns() {
+  try {
+    setLoading(true);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const { data: companyUser, error: companyError } = await supabase
-        .from("company_users")
-        .select("company_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (companyError) {
-        console.error("Erro ao buscar company_id:", companyError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!companyUser?.company_id) {
-        setLoading(false);
-        return;
-      }
-
-      setCompanyId(companyUser.company_id);
-
-      const { data, error } = await supabase
-        .from("campaigns")
-        .select(
-          `
-          *,
-          campaign_clicks(count)
-        `
-        )
-        .eq("company_id", companyUser.company_id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Erro ao carregar campanhas:", error.message);
-      } else {
-        setCampaigns(data || []);
-      }
-    } catch (error) {
-      console.error("Erro inesperado ao carregar campanhas:", error);
-    } finally {
+    if (!user) {
       setLoading(false);
+      return;
     }
-  }
 
+    const { data: companyUser, error: companyError } = await supabase
+      .from("company_users")
+      .select("company_id, role, status")
+      .eq("user_id", user.id)
+      .eq("status", "ativo")
+      .limit(1)
+      .maybeSingle();
+
+    if (companyError) {
+      console.error("Erro ao buscar company_id:", companyError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!companyUser?.company_id) {
+      console.error("Usuário sem vínculo ativo com empresa.");
+      setLoading(false);
+      return;
+    }
+
+    setCompanyId(companyUser.company_id);
+
+    const { data, error } = await supabase
+      .from("campaigns")
+      .select(`
+        *,
+        campaign_clicks(count)
+      `)
+      .eq("company_id", companyUser.company_id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar campanhas:", error.message);
+    } else {
+      setCampaigns(data || []);
+    }
+  } catch (error) {
+    console.error("Erro inesperado ao carregar campanhas:", error);
+  } finally {
+    setLoading(false);
+  }
+}
   useEffect(() => {
     loadCampaigns();
   }, []);
@@ -200,11 +199,12 @@ export default function CampanhasPage() {
     try {
       setSaving(true);
 
-      const { data: existingSlug } = await supabase
-        .from("campaigns")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
+const { data: existingSlug } = await supabase
+  .from("campaigns")
+  .select("id")
+  .eq("company_id", companyId)
+  .eq("slug", slug)
+  .maybeSingle();
 
       if (existingSlug) {
         alert("Já existe uma campanha com esse slug. Altere o nome ou slug.");
