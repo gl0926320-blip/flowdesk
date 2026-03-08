@@ -194,7 +194,7 @@ export default function Dashboard() {
       .eq("company_id", typedCompanyUser.company_id);
 
     if (typedCompanyUser.role === "vendedor") {
-      query = query.eq("user_id", user.id);
+      query = query.eq("criado_por", user.id);
     }
 
     if (
@@ -319,9 +319,9 @@ export default function Dashboard() {
     STATUS_REALIZADA.includes(o.status)
   );
 
-  const recusadosList = servicosFiltrados.filter((o) =>
-    ["recusado", "cancelado"].includes(o.status)
-  );
+const recusadosList = servicosFiltrados.filter((o) =>
+  ["recusado", "cancelado", "perdido"].includes(o.status)
+);
 
   const leadsQuentes = servicosFiltrados.filter(
     (item) => (item.temperatura || "morno") === "quente"

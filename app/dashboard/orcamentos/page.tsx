@@ -68,6 +68,7 @@ const STATUS_LABELS: Record<string, string> = {
   proposta_validada: "Proposta Validada",
   andamento: "Em Andamento",
   concluido: "Concluído",
+  perdido: "Perdido",
   cancelado: "Cancelado",
   recusado: "Recusado",
 };
@@ -79,6 +80,7 @@ const STATUS_COLORS: Record<string, string> = {
   proposta_validada: "bg-purple-500/20 text-purple-300 border-purple-500/30",
   andamento: "bg-orange-500/20 text-orange-300 border-orange-500/30",
   concluido: "bg-green-500/20 text-green-300 border-green-500/30",
+  perdido: "bg-red-500/20 text-red-300 border-red-500/30",
   cancelado: "bg-red-500/20 text-red-300 border-red-500/30",
   recusado: "bg-rose-500/20 text-rose-300 border-rose-500/30",
 };
@@ -817,6 +819,9 @@ return {
             <option value="concluido" className="bg-[#0f172a]">
               Concluído
             </option>
+              <option value="perdido" className="bg-[#0f172a]">
+             Perdido
+              </option>
             <option value="cancelado" className="bg-[#0f172a]">
               Cancelado
             </option>

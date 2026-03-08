@@ -15,6 +15,7 @@ import {
   Thermometer,
   MapPinned,
   Percent,
+  X,
 } from "lucide-react";
 import {
   DndContext,
@@ -38,6 +39,7 @@ const columns = [
   "proposta_validada",
   "andamento",
   "concluido",
+  "perdido",
 ] as const;
 
 type Vendedor = {
@@ -74,6 +76,10 @@ export default function Pipeline() {
   const [filtroVendedor, setFiltroVendedor] = useState<string>("todos");
   const [filtroTemperatura, setFiltroTemperatura] = useState<string>("todos");
   const [busca, setBusca] = useState("");
+
+  const [showPerdaModal, setShowPerdaModal] = useState(false);
+  const [itemPerdaId, setItemPerdaId] = useState<string | null>(null);
+  const [motivoPerda, setMotivoPerda] = useState("");
 
   const [form, setForm] = useState({
     cliente: "",
@@ -153,7 +159,7 @@ if (companyUserError) {
 const companyUser = companyUsers?.[0];
 if (!companyUser?.company_id) return;
 
-    if (!companyUser?.company_id) return;
+
 
     setCompanyId(companyUser.company_id);
     setRole(companyUser.role);
@@ -315,7 +321,19 @@ async function salvar() {
     const itemAtual = items.find((i) => i.id === id);
     if (!itemAtual) return;
 
+
+      if (updated.status === "perdido" && itemAtual.status !== "perdido") {
+      setItemPerdaId(id);
+      setMotivoPerda(itemAtual.motivo_perda || "");
+      setShowPerdaModal(true);
+      return;
+    }
+
     const payload = { ...updated };
+
+        if (payload.status && payload.status !== "perdido") {
+      payload.motivo_perda = null;
+    }
 
     if (payload.status === "concluido" && itemAtual.status !== "concluido") {
       const vendedor =
@@ -368,6 +386,43 @@ async function salvar() {
       atualizarItem(active.id, { status: over.id });
     }
   }
+
+    async function confirmarPerdaPipeline() {
+    if (!itemPerdaId || !companyId) return;
+
+    if (!motivoPerda.trim()) {
+      alert("Informe o motivo da perda.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("servicos")
+      .update({
+        status: "perdido",
+        motivo_perda: motivoPerda,
+      })
+      .eq("id", itemPerdaId)
+      .eq("company_id", companyId);
+
+    if (error) {
+      console.error("Erro ao registrar perda no pipeline:", error);
+      alert("Erro ao registrar perda.");
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemPerdaId
+          ? { ...item, status: "perdido", motivo_perda: motivoPerda }
+          : item
+      )
+    );
+
+    setShowPerdaModal(false);
+    setItemPerdaId(null);
+    setMotivoPerda("");
+  }
+
 
   const itensCalculados = useMemo<ServicoCalculado[]>(() => {
     return items.map((item) => {
@@ -780,6 +835,63 @@ if (
           </div>
         )}
 
+                {showPerdaModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+            <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-3xl w-[90%] max-w-[500px] space-y-5 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-2xl font-semibold text-red-300">
+                    Registrar perda
+                  </h3>
+                  <p className="text-sm text-blue-100/70 mt-1">
+                    Informe o motivo da perda deste lead no pipeline.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowPerdaModal(false);
+                    setItemPerdaId(null);
+                    setMotivoPerda("");
+                  }}
+                  className="text-gray-300 hover:text-white transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <textarea
+                value={motivoPerda}
+                onChange={(e) => setMotivoPerda(e.target.value)}
+                placeholder="Ex: cliente achou caro, fechou com concorrente, desistiu, sem retorno..."
+                rows={5}
+                className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-200/60 outline-none resize-none"
+              />
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowPerdaModal(false);
+                    setItemPerdaId(null);
+                    setMotivoPerda("");
+                  }}
+                  className="px-5 py-2 rounded-xl border border-white/30 hover:bg-white/10 transition"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  onClick={confirmarPerdaPipeline}
+                  className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-xl transition"
+                >
+                  Confirmar perda
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+
         {showUpgrade && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50">
             <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-10 rounded-3xl w-[420px] space-y-6 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white text-center">
@@ -836,6 +948,8 @@ function Column({ id, title, children, count }: any) {
         return "from-orange-600/40 to-orange-500/10 border-orange-400/40 text-orange-200";
       case "concluido":
         return "from-green-600/40 to-green-500/10 border-green-400/40 text-green-200";
+      case "perdido":
+        return "from-red-600/40 to-red-500/10 border-red-400/40 text-red-200";
       default:
         return "from-blue-600/40 to-blue-500/10 border-blue-400/40 text-blue-200";
     }
@@ -1218,6 +1332,18 @@ function Card({
                 <p className="text-[11px] text-gray-400 mb-1">Descrição</p>
                 <p>{item.descricao || "Sem descrição"}</p>
               </div>
+
+
+                            {item.status === "perdido" && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  <p className="text-[11px] text-red-300 mb-1 font-semibold">
+                    Motivo da perda
+                  </p>
+                  <p className="text-red-100">
+                    {item.motivo_perda || "Motivo não informado"}
+                  </p>
+                </div>
+              )}
 
               <div className="flex justify-between pt-3">
                 <button

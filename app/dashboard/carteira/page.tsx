@@ -60,6 +60,7 @@ const STATUS_LABELS: Record<string, string> = {
   proposta_validada: "Proposta Validada",
   andamento: "Em Andamento",
   concluido: "Concluído",
+  perdido: "Perdido",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -69,8 +70,8 @@ const STATUS_COLORS: Record<string, string> = {
   proposta_validada: "bg-purple-500/20 text-purple-300 border-purple-500/40",
   andamento: "bg-orange-500/20 text-orange-300 border-orange-500/40",
   concluido: "bg-green-500/20 text-green-300 border-green-500/40",
+  perdido: "bg-red-500/20 text-red-300 border-red-500/40",
 };
-
 const STATUS_POTENCIAL = [
   "lead",
   "proposta_enviada",

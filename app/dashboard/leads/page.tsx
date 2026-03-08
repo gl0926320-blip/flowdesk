@@ -21,6 +21,7 @@ const STATUS_COLUMNS = [
   "proposta_validada",
   "andamento",
   "concluido",
+  "perdido",
 ] as const;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -30,6 +31,7 @@ const STATUS_LABELS: Record<string, string> = {
   proposta_validada: "Proposta Validada",
   andamento: "Em Andamento",
   concluido: "Concluído",
+  perdido: "Perdido",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,8 +41,8 @@ const STATUS_COLORS: Record<string, string> = {
   proposta_validada: "bg-purple-500/20 text-purple-300 border-purple-500/40",
   andamento: "bg-orange-500/20 text-orange-300 border-orange-500/40",
   concluido: "bg-green-500/20 text-green-300 border-green-500/40",
+  perdido: "bg-red-500/20 text-red-300 border-red-500/40",
 };
-
 const TEMPERATURA_OPTIONS = ["frio", "morno", "quente"] as const;
 
 const TEMPERATURA_LABELS: Record<string, string> = {
@@ -102,6 +104,10 @@ export default function LeadsPage() {
   const [filtroResponsavel, setFiltroResponsavel] = useState("todos");
   const [filtroTemperatura, setFiltroTemperatura] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
+
+  const [showPerdaModal, setShowPerdaModal] = useState(false);
+  const [leadPerdaId, setLeadPerdaId] = useState<string | null>(null);
+  const [motivoPerda, setMotivoPerda] = useState("");
 
   const [form, setForm] = useState({
     cliente: "",
@@ -289,12 +295,23 @@ export default function LeadsPage() {
     setItems(data || []);
   }
 
-  async function atualizarStatus(id: string, status: string) {
-    const lead = items.find((i) => i.id === id);
-    if (!lead) return;
-    if (!companyId) return;
+async function atualizarStatus(id: string, status: string) {
+  const lead = items.find((i) => i.id === id);
+  if (!lead) return;
+  if (!companyId) return;
 
-    const updateData: any = { status };
+  if (status === "perdido") {
+    setLeadPerdaId(id);
+    setShowPerdaModal(true);
+    return;
+  }
+
+  let updateData: any = { status };
+
+  if (status !== "perdido") {
+  updateData.motivo_perda = null;
+}
+
 
     if (status === "concluido") {
       const member = findTeamMemberByLead(lead);
@@ -324,6 +341,37 @@ export default function LeadsPage() {
 
     load();
   }
+
+
+  async function confirmarPerda() {
+  if (!leadPerdaId || !companyId) return;
+
+  if (!motivoPerda.trim()) {
+    alert("Informe o motivo da perda.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("servicos")
+    .update({
+      status: "perdido",
+      motivo_perda: motivoPerda,
+    })
+    .eq("id", leadPerdaId)
+    .eq("company_id", companyId);
+
+  if (error) {
+    console.error(error);
+    alert("Erro ao registrar perda.");
+    return;
+  }
+
+  setShowPerdaModal(false);
+  setLeadPerdaId(null);
+  setMotivoPerda("");
+
+  load();
+}
 
   async function atualizarTemperatura(id: string, temperatura: string) {
     if (!companyId) return;
@@ -1066,21 +1114,31 @@ if (plan === "free") {
                   </select>
                 </td>
 
-                <td className="p-4">
-                  <select
-                    value={item.status}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => atualizarStatus(item.id, e.target.value)}
-                    className={`px-3 py-2 rounded-xl border text-sm font-semibold ${STATUS_COLORS[item.status]}`}
-                  >
-                    {STATUS_COLUMNS.map((col) => (
-                      <option key={col} value={col} className="bg-[#0f172a]">
-                        {STATUS_LABELS[col]}
-                      </option>
-                    ))}
-                  </select>
-                </td>
+                                <td className="p-4">
+                  <div className="flex flex-col gap-2">
+                    <select
+                      value={item.status}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => atualizarStatus(item.id, e.target.value)}
+                      className={`px-3 py-2 rounded-xl border text-sm font-semibold ${STATUS_COLORS[item.status]}`}
+                    >
+                      {STATUS_COLUMNS.map((col) => (
+                        <option key={col} value={col} className="bg-[#0f172a]">
+                          {STATUS_LABELS[col]}
+                        </option>
+                      ))}
+                    </select>
 
+                    {item.status === "perdido" && item.motivo_perda && (
+                      <span
+                        className="text-[11px] text-red-300 truncate max-w-[140px]"
+                        title={item.motivo_perda}
+                      >
+                        Motivo: {item.motivo_perda}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="p-4 text-cyan-400 font-bold">
                   {contarCompras(item.cliente)}x
                 </td>
@@ -1511,6 +1569,29 @@ if (plan === "free") {
                 )}
               </div>
 
+                            {selectedLead.status === "perdido" && (
+                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl col-span-2">
+                  <p className="text-red-300 text-xs font-semibold">Motivo da perda</p>
+
+                  {isEditing ? (
+                    <textarea
+                      value={selectedLead.motivo_perda || ""}
+                      onChange={(e) =>
+                        setSelectedLead({
+                          ...selectedLead,
+                          motivo_perda: e.target.value,
+                        })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full mt-2"
+                    />
+                  ) : (
+                    <p className="text-red-100 mt-2">
+                      {selectedLead.motivo_perda || "Motivo não informado."}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="col-span-2">
                 <strong>Itens:</strong>
 
@@ -1627,6 +1708,67 @@ if (plan === "free") {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {showPerdaModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-[460px] p-8 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-2xl font-bold text-red-400">Registrar perda</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Informe o motivo da perda deste lead.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowPerdaModal(false);
+                  setLeadPerdaId(null);
+                  setMotivoPerda("");
+                }}
+                className="text-gray-400 hover:text-white transition"
+              >
+                <X />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-gray-300 font-medium">
+                Motivo da perda
+              </label>
+
+              <textarea
+                value={motivoPerda}
+                onChange={(e) => setMotivoPerda(e.target.value)}
+                placeholder="Ex: cliente achou caro, fechou com concorrente, desistiu, sem retorno..."
+                rows={5}
+                className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowPerdaModal(false);
+                  setLeadPerdaId(null);
+                  setMotivoPerda("");
+                }}
+                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={confirmarPerda}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 font-semibold transition"
+              >
+                Confirmar perda
+              </button>
             </div>
           </div>
         </div>
