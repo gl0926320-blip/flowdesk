@@ -396,7 +396,7 @@ if (currentRole !== "vendedor" && filtroVendedor !== "todos") {
 
       <div className="grid md:grid-cols-3 gap-4">
         <ResumoItem
-          label="Total Clientes"
+          label="Clientes ativos"
           value={String(totalClientes)}
           color="text-cyan-400"
         />

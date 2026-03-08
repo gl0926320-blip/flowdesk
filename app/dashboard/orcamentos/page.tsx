@@ -761,13 +761,13 @@ return {
         />
         <MetricCard
           icon={<Percent size={18} />}
-          title="Comissão Total"
+          title="Comissão Potencial"
           value={formatarMoeda(resumo.comissaoTotal)}
           subtitle="Comissão calculada"
         />
         <MetricCard
           icon={<TrendingUp size={18} />}
-          title="Lucro Estimado"
+          title="Lucro Potencial"
           value={formatarMoeda(resumo.lucroTotal)}
           subtitle="Valor - custo - comissão"
         />
