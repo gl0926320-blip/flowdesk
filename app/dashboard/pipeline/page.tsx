@@ -317,58 +317,63 @@ async function salvar() {
   }
 }
 
-  async function atualizarItem(id: string, updated: any) {
-    const itemAtual = items.find((i) => i.id === id);
-    if (!itemAtual) return;
+async function atualizarItem(id: string, updated: any) {
+  const itemAtual = items.find((i) => i.id === id);
+  if (!itemAtual || !companyId) return;
 
-
-      if (updated.status === "perdido" && itemAtual.status !== "perdido") {
-      setItemPerdaId(id);
-      setMotivoPerda(itemAtual.motivo_perda || "");
-      setShowPerdaModal(true);
-      return;
-    }
-
-    const payload = { ...updated };
-
-        if (payload.status && payload.status !== "perdido") {
-      payload.motivo_perda = null;
-    }
-
-    if (payload.status === "concluido" && itemAtual.status !== "concluido") {
-      const vendedor =
-        findVendedorByUserId(payload.user_id || itemAtual.user_id) ||
-        findVendedorByEmail(payload.responsavel || itemAtual.responsavel);
-
-      const valorOrcamento = Number(
-        payload.valor_orcamento ?? itemAtual.valor_orcamento ?? 0
-      );
-
-      const comissaoCongelada = calcularComissaoCongelada({
-        valorOrcamento,
-        valorComissaoAtual: payload.valor_comissao ?? itemAtual.valor_comissao,
-        percentualComissaoAtual:
-          payload.percentual_comissao ?? itemAtual.percentual_comissao,
-        vendedor,
-      });
-
-      payload.data_fechamento = itemAtual.data_fechamento || new Date().toISOString();
-      payload.ultima_compra = new Date().toISOString();
-      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
-      payload.valor_comissao = comissaoCongelada.valor_comissao;
-    }
-
-    await supabase
-      .from("servicos")
-      .update(payload)
-      .eq("id", id)
-      .eq("company_id", companyId);
-
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, ...payload } : i))
-    );
+  if (updated.status === "perdido" && itemAtual.status !== "perdido") {
+    setItemPerdaId(id);
+    setMotivoPerda(itemAtual.motivo_perda || "");
+    setShowPerdaModal(true);
+    return;
   }
 
+  const payload = { ...updated };
+
+  if (payload.status && payload.status !== "perdido") {
+    payload.motivo_perda = null;
+  }
+
+  if (payload.status === "concluido" && itemAtual.status !== "concluido") {
+    const vendedor =
+      findVendedorByUserId(payload.user_id || itemAtual.user_id) ||
+      findVendedorByEmail(payload.responsavel || itemAtual.responsavel);
+
+    const valorOrcamento = Number(
+      payload.valor_orcamento ?? itemAtual.valor_orcamento ?? 0
+    );
+
+    const comissaoCongelada = calcularComissaoCongelada({
+      valorOrcamento,
+      valorComissaoAtual: payload.valor_comissao ?? itemAtual.valor_comissao,
+      percentualComissaoAtual:
+        payload.percentual_comissao ?? itemAtual.percentual_comissao,
+      vendedor,
+    });
+
+    payload.data_fechamento =
+      itemAtual.data_fechamento || new Date().toISOString();
+    payload.ultima_compra = new Date().toISOString();
+    payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+    payload.valor_comissao = comissaoCongelada.valor_comissao;
+  }
+
+  const { data, error } = await supabase
+    .from("servicos")
+    .update(payload)
+    .eq("id", id)
+    .eq("company_id", companyId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Erro ao atualizar item no pipeline:", error);
+    alert("Erro ao salvar alterações: " + error.message);
+    return;
+  }
+
+  setItems((prev) => prev.map((i) => (i.id === id ? data : i)));
+}
   async function deletar(id: string) {
     await supabase
       .from("servicos")
@@ -1083,37 +1088,55 @@ function Card({
     Number(item.custo || 0) -
     Number(item.valor_comissao_calculado || 0);
 
-  async function salvarEdicao() {
-    const vendedor =
-      findVendedorByUserId(local.user_id || item.user_id) ||
-      findVendedorByEmail(local.responsavel || item.responsavel);
+ async function salvarEdicao() {
+  const vendedor =
+    findVendedorByUserId(local.user_id || item.user_id) ||
+    findVendedorByEmail(local.responsavel || item.responsavel);
 
-    const valorOrcamento = Number(local.valor_orcamento || 0);
+  const valorOrcamento = Number(local.valor_orcamento || 0);
 
-    const payload: any = {
-      ...local,
-      valor_orcamento: valorOrcamento,
-      custo: Number(local.custo || 0),
-    };
+  const payload: any = {
+    cliente: local.cliente || "",
+    origem_lead: local.origem_lead || "",
+    telefone: local.telefone || "",
+    tipo_servico: local.tipo_servico || "",
+    descricao: local.descricao || "",
+    valor_orcamento: valorOrcamento,
+    custo: Number(local.custo || 0),
+    temperatura: local.temperatura || "morno",
+  };
 
-    if (payload.status === "concluido") {
-      const comissaoCongelada = calcularComissaoCongelada({
-        valorOrcamento,
-        valorComissaoAtual: local.valor_comissao,
-        percentualComissaoAtual: local.percentual_comissao,
-        vendedor,
-      });
-
-      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
-      payload.valor_comissao = comissaoCongelada.valor_comissao;
-      payload.data_fechamento = local.data_fechamento || new Date().toISOString();
-      payload.ultima_compra = local.ultima_compra || new Date().toISOString();
-    }
-
-    await atualizarItem(item.id, payload);
-    setEditMode(false);
+  if (local.status) {
+    payload.status = local.status;
   }
 
+  if (local.responsavel) {
+    payload.responsavel = local.responsavel;
+  }
+
+  if (local.user_id) {
+    payload.user_id = local.user_id;
+  }
+
+  if (local.status === "concluido") {
+    const comissaoCongelada = calcularComissaoCongelada({
+      valorOrcamento,
+      valorComissaoAtual: local.valor_comissao,
+      percentualComissaoAtual: local.percentual_comissao,
+      vendedor,
+    });
+
+    payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+    payload.valor_comissao = comissaoCongelada.valor_comissao;
+    payload.data_fechamento =
+      local.data_fechamento || new Date().toISOString();
+    payload.ultima_compra =
+      local.ultima_compra || new Date().toISOString();
+  }
+
+  await atualizarItem(item.id, payload);
+  setEditMode(false);
+}
   const temperatura = item.temperatura || "morno";
 
   return (
