@@ -42,6 +42,16 @@ const columns = [
   "perdido",
 ] as const;
 
+const STATUS_LABELS: Record<string, string> = {
+  lead: "Lead",
+  proposta_enviada: "Proposta Enviada",
+  aguardando_cliente: "Aguardando Cliente",
+  proposta_validada: "Proposta Validada",
+  andamento: "Em Andamento",
+  concluido: "Concluído",
+  perdido: "Perdido",
+};
+
 type Vendedor = {
   user_id: string;
   email: string;
@@ -62,6 +72,7 @@ export default function Pipeline() {
 
   const [items, setItems] = useState<any[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string>("");
   const [openModal, setOpenModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -138,28 +149,55 @@ export default function Pipeline() {
     };
   }
 
+  async function registrarAtividade(params: {
+    servicoId: string;
+    tipo: string;
+    titulo?: string;
+    descricao?: string;
+    dataAtividade?: string | null;
+  }) {
+    if (!companyId || !userId) return;
+
+    const { error } = await supabase.from("lead_atividades").insert({
+      company_id: companyId,
+      servico_id: params.servicoId,
+      tipo: params.tipo,
+      titulo: params.titulo || null,
+      descricao: params.descricao || null,
+      data_atividade: params.dataAtividade || null,
+      criado_por: userId,
+      criado_por_email: userEmail || null,
+      concluida: false,
+    });
+
+    if (error) {
+      console.error("Erro ao registrar atividade no pipeline:", error);
+    }
+  }
+
   async function load() {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
 
     const currentUserId = data.user.id;
+    const currentUserEmail = data.user.email || "";
+
     setUserId(currentUserId);
+    setUserEmail(currentUserEmail);
 
-const { data: companyUsers, error: companyUserError } = await supabase
-  .from("company_users")
-  .select("company_id, role")
-  .eq("user_id", currentUserId)
-  .eq("status", "ativo");
+    const { data: companyUsers, error: companyUserError } = await supabase
+      .from("company_users")
+      .select("company_id, role")
+      .eq("user_id", currentUserId)
+      .eq("status", "ativo");
 
-if (companyUserError) {
-  console.error("Erro ao buscar vínculo:", companyUserError);
-  return;
-}
+    if (companyUserError) {
+      console.error("Erro ao buscar vínculo:", companyUserError);
+      return;
+    }
 
-const companyUser = companyUsers?.[0];
-if (!companyUser?.company_id) return;
-
-
+    const companyUser = companyUsers?.[0];
+    if (!companyUser?.company_id) return;
 
     setCompanyId(companyUser.company_id);
     setRole(companyUser.role);
@@ -180,10 +218,10 @@ if (!companyUser?.company_id) return;
       .eq("company_id", companyUser.company_id)
       .eq("ativo", true);
 
-if (companyUser.role === "vendedor") {
-  query = query.eq("criado_por", currentUserId);
-  setFiltroVendedor(currentUserId);
-}
+    if (companyUser.role === "vendedor") {
+      query = query.or(`criado_por.eq.${currentUserId},user_id.eq.${currentUserId}`);
+      setFiltroVendedor(currentUserId);
+    }
 
     const { data: servicos } = await query.order("created_at", {
       ascending: false,
@@ -206,174 +244,202 @@ if (companyUser.role === "vendedor") {
     });
   }
 
-async function salvar() {
-  if (!userId) return;
+  async function salvar() {
+    if (!userId) return;
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("plan")
-    .eq("id", userId)
-    .maybeSingle();
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("plan")
+      .eq("id", userId)
+      .maybeSingle();
 
-  if (profileError) {
-    console.error("Erro ao verificar plano:", profileError);
-    alert("Erro ao verificar plano");
-    return;
-  }
+    if (profileError) {
+      console.error("Erro ao verificar plano:", profileError);
+      alert("Erro ao verificar plano");
+      return;
+    }
 
-  const { data: memberships, error: membershipError } = await supabase
-    .from("company_users")
-    .select("company_id, role, status, email")
-    .eq("user_id", userId)
-    .eq("status", "ativo");
+    const { data: memberships, error: membershipError } = await supabase
+      .from("company_users")
+      .select("company_id, role, status, email")
+      .eq("user_id", userId)
+      .eq("status", "ativo");
 
-  if (membershipError) {
-    console.error("Erro ao buscar vínculo:", membershipError);
-    alert("Erro ao buscar empresa do usuário");
-    return;
-  }
+    if (membershipError) {
+      console.error("Erro ao buscar vínculo:", membershipError);
+      alert("Erro ao buscar empresa do usuário");
+      return;
+    }
 
-  const membership = memberships?.[0];
-  if (!membership?.company_id) {
-    alert("Usuário sem empresa vinculada");
-    return;
-  }
+    const membership = memberships?.[0];
+    if (!membership?.company_id) {
+      alert("Usuário sem empresa vinculada");
+      return;
+    }
 
-  const plan = profile?.plan ?? "free";
-  const LIMITE_FREE = 5;
+    const plan = profile?.plan ?? "free";
+    const LIMITE_FREE = 5;
 
-  if (plan === "free") {
-    const { count, error: erroCount } = await supabase
+    if (plan === "free") {
+      const { count, error: erroCount } = await supabase
+        .from("servicos")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", membership.company_id)
+        .eq("criado_por", userId)
+        .eq("ativo", true);
+
+      if (erroCount) {
+        console.error("Erro ao verificar limite:", erroCount);
+        alert("Erro ao verificar limite");
+        return;
+      }
+
+      if ((count ?? 0) >= LIMITE_FREE) {
+        setShowUpgrade(true);
+        return;
+      }
+    }
+
+    const meuVinculo = vendedores.find((v) => v.user_id === userId) || null;
+    const statusInicial = form.status;
+    const valorOrcamento = Number(form.valor_orcamento || 0);
+    const agoraIso = new Date().toISOString();
+
+    const comissaoCongelada =
+      statusInicial === "concluido"
+        ? calcularComissaoCongelada({
+            valorOrcamento,
+            vendedor: meuVinculo,
+          })
+        : { percentual_comissao: 0, valor_comissao: 0 };
+
+    const novo = {
+      user_id: userId,
+      criado_por: userId,
+      criado_por_email: meuVinculo?.email || userEmail || "",
+      company_id: membership.company_id,
+      numero_os: `OS-${Date.now()}`,
+      cliente: form.cliente,
+      origem_lead: form.origem_lead,
+      telefone: form.telefone,
+      titulo: form.tipo_servico,
+      descricao: form.descricao,
+      tipo_servico: form.tipo_servico,
+      valor_orcamento: valorOrcamento,
+      custo: Number(form.custo || 0),
+      status: statusInicial,
+      temperatura: form.temperatura,
+      responsavel: meuVinculo?.email || userEmail || "",
+      percentual_comissao: comissaoCongelada.percentual_comissao,
+      valor_comissao: comissaoCongelada.valor_comissao,
+      data_fechamento: statusInicial === "concluido" ? agoraIso : null,
+      ultima_compra: statusInicial === "concluido" ? agoraIso : null,
+      ativo: true,
+    };
+
+    const { data, error } = await supabase
       .from("servicos")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", membership.company_id)
-      .eq("criado_por", userId)
-      .eq("ativo", true);
+      .insert([novo])
+      .select();
 
-    if (erroCount) {
-      console.error("Erro ao verificar limite:", erroCount);
-      alert("Erro ao verificar limite");
+    if (error) {
+      console.error("Erro ao salvar no pipeline:", error);
+      alert(error.message || "Erro ao salvar");
       return;
     }
 
-    if ((count ?? 0) >= LIMITE_FREE) {
-      setShowUpgrade(true);
-      return;
+    if (data?.[0]) {
+      await registrarAtividade({
+        servicoId: data[0].id,
+        tipo: "status",
+        titulo: "Lead criado pelo pipeline",
+        descricao: `Lead criado com status inicial "${STATUS_LABELS[statusInicial] || statusInicial}".`,
+      });
+
+      if (form.descricao?.trim()) {
+        await registrarAtividade({
+          servicoId: data[0].id,
+          tipo: "observacao",
+          titulo: "Observação inicial",
+          descricao: form.descricao,
+        });
+      }
+
+      setItems((prev) => [data[0], ...prev]);
+      setOpenModal(false);
+      resetForm();
     }
   }
 
-  const meuVinculo = vendedores.find((v) => v.user_id === userId) || null;
-  const statusInicial = form.status;
-  const valorOrcamento = Number(form.valor_orcamento || 0);
-  const agoraIso = new Date().toISOString();
+  async function atualizarItem(id: string, updated: any) {
+    const itemAtual = items.find((i) => i.id === id);
+    if (!itemAtual || !companyId) return;
 
-  const comissaoCongelada =
-    statusInicial === "concluido"
-      ? calcularComissaoCongelada({
-          valorOrcamento,
-          vendedor: meuVinculo,
-        })
-      : { percentual_comissao: 0, valor_comissao: 0 };
+    if (updated.status === "perdido" && itemAtual.status !== "perdido") {
+      setItemPerdaId(id);
+      setMotivoPerda(itemAtual.motivo_perda || "");
+      setShowPerdaModal(true);
+      return;
+    }
 
-  const novo = {
-    user_id: userId,
-    criado_por: userId,
-    criado_por_email: meuVinculo?.email || "",
-    company_id: membership.company_id,
-    numero_os: `OS-${Date.now()}`,
-    cliente: form.cliente,
-    origem_lead: form.origem_lead,
-    telefone: form.telefone,
-    titulo: form.tipo_servico,
-    descricao: form.descricao,
-    tipo_servico: form.tipo_servico,
-    valor_orcamento: valorOrcamento,
-    custo: Number(form.custo || 0),
-    status: statusInicial,
-    temperatura: form.temperatura,
-    responsavel: meuVinculo?.email || "",
-    percentual_comissao: comissaoCongelada.percentual_comissao,
-    valor_comissao: comissaoCongelada.valor_comissao,
-    data_fechamento: statusInicial === "concluido" ? agoraIso : null,
-    ultima_compra: statusInicial === "concluido" ? agoraIso : null,
-    ativo: true,
-  };
+    const payload = { ...updated };
 
-  const { data, error } = await supabase
-    .from("servicos")
-    .insert([novo])
-    .select();
+    if (payload.status && payload.status !== "perdido") {
+      payload.motivo_perda = null;
+    }
 
-  if (error) {
-    console.error("Erro ao salvar no pipeline:", error);
-    alert(error.message || "Erro ao salvar");
-    return;
+    if (payload.status === "concluido" && itemAtual.status !== "concluido") {
+      const vendedor =
+        findVendedorByUserId(payload.user_id || itemAtual.user_id) ||
+        findVendedorByEmail(payload.responsavel || itemAtual.responsavel);
+
+      const valorOrcamento = Number(
+        payload.valor_orcamento ?? itemAtual.valor_orcamento ?? 0
+      );
+
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento,
+        valorComissaoAtual: payload.valor_comissao ?? itemAtual.valor_comissao,
+        percentualComissaoAtual:
+          payload.percentual_comissao ?? itemAtual.percentual_comissao,
+        vendedor,
+      });
+
+      payload.data_fechamento =
+        itemAtual.data_fechamento || new Date().toISOString();
+      payload.ultima_compra = new Date().toISOString();
+      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      payload.valor_comissao = comissaoCongelada.valor_comissao;
+    }
+
+    const oldStatus = itemAtual.status;
+
+    const { data, error } = await supabase
+      .from("servicos")
+      .update(payload)
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao atualizar item no pipeline:", error);
+      alert("Erro ao salvar alterações: " + error.message);
+      return;
+    }
+
+    if (payload.status && payload.status !== oldStatus) {
+      await registrarAtividade({
+        servicoId: id,
+        tipo: "status",
+        titulo: "Status atualizado pelo pipeline",
+        descricao: `Status alterado de "${STATUS_LABELS[oldStatus] || oldStatus}" para "${STATUS_LABELS[payload.status] || payload.status}".`,
+      });
+    }
+
+    setItems((prev) => prev.map((i) => (i.id === id ? data : i)));
   }
 
-  if (data) {
-    setItems((prev) => [data[0], ...prev]);
-    setOpenModal(false);
-    resetForm();
-  }
-}
-
-async function atualizarItem(id: string, updated: any) {
-  const itemAtual = items.find((i) => i.id === id);
-  if (!itemAtual || !companyId) return;
-
-  if (updated.status === "perdido" && itemAtual.status !== "perdido") {
-    setItemPerdaId(id);
-    setMotivoPerda(itemAtual.motivo_perda || "");
-    setShowPerdaModal(true);
-    return;
-  }
-
-  const payload = { ...updated };
-
-  if (payload.status && payload.status !== "perdido") {
-    payload.motivo_perda = null;
-  }
-
-  if (payload.status === "concluido" && itemAtual.status !== "concluido") {
-    const vendedor =
-      findVendedorByUserId(payload.user_id || itemAtual.user_id) ||
-      findVendedorByEmail(payload.responsavel || itemAtual.responsavel);
-
-    const valorOrcamento = Number(
-      payload.valor_orcamento ?? itemAtual.valor_orcamento ?? 0
-    );
-
-    const comissaoCongelada = calcularComissaoCongelada({
-      valorOrcamento,
-      valorComissaoAtual: payload.valor_comissao ?? itemAtual.valor_comissao,
-      percentualComissaoAtual:
-        payload.percentual_comissao ?? itemAtual.percentual_comissao,
-      vendedor,
-    });
-
-    payload.data_fechamento =
-      itemAtual.data_fechamento || new Date().toISOString();
-    payload.ultima_compra = new Date().toISOString();
-    payload.percentual_comissao = comissaoCongelada.percentual_comissao;
-    payload.valor_comissao = comissaoCongelada.valor_comissao;
-  }
-
-  const { data, error } = await supabase
-    .from("servicos")
-    .update(payload)
-    .eq("id", id)
-    .eq("company_id", companyId)
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Erro ao atualizar item no pipeline:", error);
-    alert("Erro ao salvar alterações: " + error.message);
-    return;
-  }
-
-  setItems((prev) => prev.map((i) => (i.id === id ? data : i)));
-}
   async function deletar(id: string) {
     await supabase
       .from("servicos")
@@ -392,13 +458,15 @@ async function atualizarItem(id: string, updated: any) {
     }
   }
 
-    async function confirmarPerdaPipeline() {
+  async function confirmarPerdaPipeline() {
     if (!itemPerdaId || !companyId) return;
 
     if (!motivoPerda.trim()) {
       alert("Informe o motivo da perda.");
       return;
     }
+
+    const itemAtual = items.find((item) => item.id === itemPerdaId);
 
     const { error } = await supabase
       .from("servicos")
@@ -415,6 +483,22 @@ async function atualizarItem(id: string, updated: any) {
       return;
     }
 
+    await registrarAtividade({
+      servicoId: itemPerdaId,
+      tipo: "perda",
+      titulo: "Lead marcado como perdido pelo pipeline",
+      descricao: motivoPerda,
+    });
+
+    if (itemAtual?.status && itemAtual.status !== "perdido") {
+      await registrarAtividade({
+        servicoId: itemPerdaId,
+        tipo: "status",
+        titulo: "Status atualizado pelo pipeline",
+        descricao: `Status alterado de "${STATUS_LABELS[itemAtual.status] || itemAtual.status}" para "${STATUS_LABELS.perdido}".`,
+      });
+    }
+
     setItems((prev) =>
       prev.map((item) =>
         item.id === itemPerdaId
@@ -428,11 +512,11 @@ async function atualizarItem(id: string, updated: any) {
     setMotivoPerda("");
   }
 
-
   const itensCalculados = useMemo<ServicoCalculado[]>(() => {
     return items.map((item) => {
       const vendedor =
-        findVendedorByUserId(item.criado_por || item.user_id) || findVendedorByEmail(item.responsavel);
+        findVendedorByUserId(item.criado_por || item.user_id) ||
+        findVendedorByEmail(item.responsavel);
 
       const comissao = calcularComissaoCongelada({
         valorOrcamento: Number(item.valor_orcamento || 0),
@@ -500,12 +584,12 @@ async function atualizarItem(id: string, updated: any) {
 
       if (!passouPeriodo) return false;
 
-if (
-  filtroVendedor !== "todos" &&
-  (item.criado_por || item.user_id) !== filtroVendedor
-) {
-  return false;
-}
+      if (
+        filtroVendedor !== "todos" &&
+        (item.criado_por || item.user_id) !== filtroVendedor
+      ) {
+        return false;
+      }
 
       if (
         filtroTemperatura !== "todos" &&
@@ -527,7 +611,15 @@ if (
 
       return true;
     });
-  }, [itensCalculados, filtro, dataInicio, dataFim, filtroVendedor, filtroTemperatura, busca]);
+  }, [
+    itensCalculados,
+    filtro,
+    dataInicio,
+    dataFim,
+    filtroVendedor,
+    filtroTemperatura,
+    busca,
+  ]);
 
   const metrics = useMemo(() => {
     const ativos = itensFiltrados.filter((i) => i.ativo === true);
@@ -840,7 +932,7 @@ if (
           </div>
         )}
 
-                {showPerdaModal && (
+        {showPerdaModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
             <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-3xl w-[90%] max-w-[500px] space-y-5 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white">
               <div className="flex items-start justify-between">
@@ -895,7 +987,6 @@ if (
             </div>
           </div>
         )}
-
 
         {showUpgrade && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50">
@@ -1088,55 +1179,56 @@ function Card({
     Number(item.custo || 0) -
     Number(item.valor_comissao_calculado || 0);
 
- async function salvarEdicao() {
-  const vendedor =
-    findVendedorByUserId(local.user_id || item.user_id) ||
-    findVendedorByEmail(local.responsavel || item.responsavel);
+  async function salvarEdicao() {
+    const vendedor =
+      findVendedorByUserId(local.user_id || item.user_id) ||
+      findVendedorByEmail(local.responsavel || item.responsavel);
 
-  const valorOrcamento = Number(local.valor_orcamento || 0);
+    const valorOrcamento = Number(local.valor_orcamento || 0);
 
-  const payload: any = {
-    cliente: local.cliente || "",
-    origem_lead: local.origem_lead || "",
-    telefone: local.telefone || "",
-    tipo_servico: local.tipo_servico || "",
-    descricao: local.descricao || "",
-    valor_orcamento: valorOrcamento,
-    custo: Number(local.custo || 0),
-    temperatura: local.temperatura || "morno",
-  };
+    const payload: any = {
+      cliente: local.cliente || "",
+      origem_lead: local.origem_lead || "",
+      telefone: local.telefone || "",
+      tipo_servico: local.tipo_servico || "",
+      descricao: local.descricao || "",
+      valor_orcamento: valorOrcamento,
+      custo: Number(local.custo || 0),
+      temperatura: local.temperatura || "morno",
+    };
 
-  if (local.status) {
-    payload.status = local.status;
+    if (local.status) {
+      payload.status = local.status;
+    }
+
+    if (local.responsavel) {
+      payload.responsavel = local.responsavel;
+    }
+
+    if (local.user_id) {
+      payload.user_id = local.user_id;
+    }
+
+    if (local.status === "concluido") {
+      const comissaoCongelada = calcularComissaoCongelada({
+        valorOrcamento,
+        valorComissaoAtual: local.valor_comissao,
+        percentualComissaoAtual: local.percentual_comissao,
+        vendedor,
+      });
+
+      payload.percentual_comissao = comissaoCongelada.percentual_comissao;
+      payload.valor_comissao = comissaoCongelada.valor_comissao;
+      payload.data_fechamento =
+        local.data_fechamento || new Date().toISOString();
+      payload.ultima_compra =
+        local.ultima_compra || new Date().toISOString();
+    }
+
+    await atualizarItem(item.id, payload);
+    setEditMode(false);
   }
 
-  if (local.responsavel) {
-    payload.responsavel = local.responsavel;
-  }
-
-  if (local.user_id) {
-    payload.user_id = local.user_id;
-  }
-
-  if (local.status === "concluido") {
-    const comissaoCongelada = calcularComissaoCongelada({
-      valorOrcamento,
-      valorComissaoAtual: local.valor_comissao,
-      percentualComissaoAtual: local.percentual_comissao,
-      vendedor,
-    });
-
-    payload.percentual_comissao = comissaoCongelada.percentual_comissao;
-    payload.valor_comissao = comissaoCongelada.valor_comissao;
-    payload.data_fechamento =
-      local.data_fechamento || new Date().toISOString();
-    payload.ultima_compra =
-      local.ultima_compra || new Date().toISOString();
-  }
-
-  await atualizarItem(item.id, payload);
-  setEditMode(false);
-}
   const temperatura = item.temperatura || "morno";
 
   return (
@@ -1296,68 +1388,67 @@ function Card({
             </>
           ) : (
             <>
-<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">Responsável</p>
-    <p className="break-all text-sm leading-snug">
-      {item.responsavel || "Não definido"}
-    </p>
-  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">Responsável</p>
+                  <p className="break-all text-sm leading-snug">
+                    {item.responsavel || "Não definido"}
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">Telefone</p>
-    <p className="break-all text-sm leading-snug">
-      {item.telefone || "Não informado"}
-    </p>
-  </div>
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">Telefone</p>
+                  <p className="break-all text-sm leading-snug">
+                    {item.telefone || "Não informado"}
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">Temperatura</p>
-    <p className="text-sm leading-snug">
-      {temperatura === "frio"
-        ? "Frio"
-        : temperatura === "quente"
-        ? "Quente"
-        : "Morno"}
-    </p>
-  </div>
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">Temperatura</p>
+                  <p className="text-sm leading-snug">
+                    {temperatura === "frio"
+                      ? "Frio"
+                      : temperatura === "quente"
+                      ? "Quente"
+                      : "Morno"}
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">Custo</p>
-    <p className="text-sm leading-snug">
-      {formatMoney(Number(item.custo || 0))}
-    </p>
-  </div>
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">Custo</p>
+                  <p className="text-sm leading-snug">
+                    {formatMoney(Number(item.custo || 0))}
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">% Comissão</p>
-    <p className="text-sm leading-snug">
-      {Number(item.percentual_comissao_calculado || 0).toFixed(1)}%
-    </p>
-  </div>
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">% Comissão</p>
+                  <p className="text-sm leading-snug">
+                    {Number(item.percentual_comissao_calculado || 0).toFixed(1)}%
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 min-w-0">
-    <p className="text-[11px] text-gray-400">Comissão</p>
-    <p className="text-sm leading-snug">
-      {formatMoney(Number(item.valor_comissao_calculado || 0))}
-    </p>
-  </div>
+                <div className="bg-white/5 rounded-xl p-3 min-w-0">
+                  <p className="text-[11px] text-gray-400">Comissão</p>
+                  <p className="text-sm leading-snug">
+                    {formatMoney(Number(item.valor_comissao_calculado || 0))}
+                  </p>
+                </div>
 
-  <div className="bg-white/5 rounded-xl p-3 sm:col-span-2 min-w-0">
-    <p className="text-[11px] text-gray-400">Origem do Lead</p>
-    <p className="break-words text-sm leading-snug">
-      {item.origem_lead || "Não informada"}
-    </p>
-  </div>
-</div>
+                <div className="bg-white/5 rounded-xl p-3 sm:col-span-2 min-w-0">
+                  <p className="text-[11px] text-gray-400">Origem do Lead</p>
+                  <p className="break-words text-sm leading-snug">
+                    {item.origem_lead || "Não informada"}
+                  </p>
+                </div>
+              </div>
 
               <div className="bg-white/5 rounded-xl p-3">
                 <p className="text-[11px] text-gray-400 mb-1">Descrição</p>
                 <p>{item.descricao || "Sem descrição"}</p>
               </div>
 
-
-                            {item.status === "perdido" && (
+              {item.status === "perdido" && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
                   <p className="text-[11px] text-red-300 mb-1 font-semibold">
                     Motivo da perda

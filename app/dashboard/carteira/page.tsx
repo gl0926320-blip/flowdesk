@@ -187,7 +187,9 @@ if (me.role === "vendedor") {
 
 if (myRole !== "vendedor" && vendedorSelecionado !== "todos") {
   lista = lista.filter(
-    (item) => (item.criado_por || item.user_id) === vendedorSelecionado
+    (item) =>
+      item.user_id === vendedorSelecionado ||
+      item.criado_por === vendedorSelecionado
   );
 }
 
@@ -263,11 +265,17 @@ if (myRole !== "vendedor" && vendedorSelecionado !== "todos") {
       .filter((i) => STATUS_REALIZADA.includes(i.status))
       .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-    const concluidos = servicosFiltrados.filter(
-      (i) => i.status === "concluido"
-    ).length;
+const concluidos = servicosFiltrados.filter(
+  (i) => i.status === "concluido"
+).length;
 
-    const conversao = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+const baseConversao =
+  servicosFiltrados.filter((i) =>
+    [...STATUS_POTENCIAL, ...STATUS_CONFIRMADA, ...STATUS_REALIZADA].includes(i.status)
+  ).length;
+
+const conversao =
+  baseConversao > 0 ? Math.round((concluidos / baseConversao) * 100) : 0;
 
     return {
       total,
@@ -291,7 +299,7 @@ if (myRole !== "vendedor" && vendedorSelecionado !== "todos") {
     return baseUsuarios.map((vendedor) => {
 const lista = servicos.filter(
   (item) =>
-    (item.criado_por || item.user_id) === vendedor.user_id &&
+    (item.user_id === vendedor.user_id || item.criado_por === vendedor.user_id) &&
     item.ativo === true &&
     item.company_id === companyId
 );
@@ -313,8 +321,14 @@ const lista = servicos.filter(
         .filter((i) => STATUS_REALIZADA.includes(i.status))
         .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-      const concluidos = lista.filter((i) => i.status === "concluido").length;
-      const conversao = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+const concluidos = lista.filter((i) => i.status === "concluido").length;
+
+const baseConversao = lista.filter((i) =>
+  [...STATUS_POTENCIAL, ...STATUS_CONFIRMADA, ...STATUS_REALIZADA].includes(i.status)
+).length;
+
+const conversao =
+  baseConversao > 0 ? Math.round((concluidos / baseConversao) * 100) : 0;
 
       const metaLeads = Number(vendedor.meta_leads || 0);
       const metaVendas = Number(vendedor.meta_vendas || 0);
@@ -538,8 +552,8 @@ const lista = servicos.filter(
 
             <tbody>
               {servicosFiltrados.map((item) => {
-                const vendedor = vendedores.find(
-  (v) => v.user_id === (item.criado_por || item.user_id)
+const vendedor = vendedores.find(
+  (v) => v.user_id === item.user_id || v.user_id === item.criado_por
 );
 
                 return (

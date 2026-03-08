@@ -12,6 +12,12 @@ import {
   Thermometer,
   ClipboardList,
   Filter,
+  Phone,
+  CalendarClock,
+  StickyNote,
+  Clock3,
+  History,
+  ListTodo,
 } from "lucide-react";
 
 const STATUS_COLUMNS = [
@@ -43,6 +49,7 @@ const STATUS_COLORS: Record<string, string> = {
   concluido: "bg-green-500/20 text-green-300 border-green-500/40",
   perdido: "bg-red-500/20 text-red-300 border-red-500/40",
 };
+
 const TEMPERATURA_OPTIONS = ["frio", "morno", "quente"] as const;
 
 const TEMPERATURA_LABELS: Record<string, string> = {
@@ -62,6 +69,24 @@ const OPTION_STYLE = {
   backgroundColor: "#ffffff",
 };
 
+const ACTIVITY_TYPES = [
+  "ligacao",
+  "tarefa",
+  "retorno",
+  "observacao",
+  "agendamento",
+] as const;
+
+const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+  ligacao: "Ligação",
+  tarefa: "Tarefa",
+  retorno: "Retorno",
+  observacao: "Observação",
+  agendamento: "Agendamento",
+  status: "Mudança de Status",
+  perda: "Perda",
+};
+
 type TeamMember = {
   user_id: string | null;
   email: string;
@@ -79,6 +104,21 @@ type Membership = {
   status?: string;
   email?: string;
   user_id?: string | null;
+};
+
+type LeadActivity = {
+  id: string;
+  company_id: string;
+  servico_id: string;
+  tipo: string;
+  titulo: string | null;
+  descricao: string | null;
+  data_atividade: string | null;
+  concluida: boolean;
+  criado_por: string | null;
+  criado_por_email: string | null;
+  created_at: string;
+  updated_at?: string | null;
 };
 
 export default function LeadsPage() {
@@ -109,6 +149,16 @@ export default function LeadsPage() {
   const [leadPerdaId, setLeadPerdaId] = useState<string | null>(null);
   const [motivoPerda, setMotivoPerda] = useState("");
 
+  const [leadActivities, setLeadActivities] = useState<LeadActivity[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [savingActivity, setSavingActivity] = useState(false);
+  const [activityForm, setActivityForm] = useState({
+    tipo: "observacao",
+    titulo: "",
+    descricao: "",
+    data_atividade: "",
+  });
+
   const [form, setForm] = useState({
     cliente: "",
     origem_lead: "",
@@ -138,16 +188,49 @@ export default function LeadsPage() {
         body * {
           visibility: hidden;
         }
+
         #print-area, #print-area * {
           visibility: visible;
         }
+
         #print-area {
           position: absolute;
           left: 0;
           top: 0;
           width: 100%;
-          background: white;
-          color: black;
+          max-height: none !important;
+          overflow: visible !important;
+          background: white !important;
+          color: black !important;
+          padding: 24px !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+        }
+
+        #print-area .no-print,
+        #print-area .no-print * {
+          display: none !important;
+          visibility: hidden !important;
+        }
+
+        #print-area .print-grid-single {
+          display: block !important;
+        }
+
+        #print-area .print-card,
+        #print-area .print-card * {
+          background: white !important;
+          color: black !important;
+          border-color: #d1d5db !important;
+          box-shadow: none !important;
+        }
+
+        #print-area textarea,
+        #print-area input,
+        #print-area select {
+          border: 1px solid #d1d5db !important;
+          background: white !important;
+          color: black !important;
         }
       }
     `;
@@ -157,6 +240,14 @@ export default function LeadsPage() {
       document.head.removeChild(style);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedLead?.id && companyId) {
+      loadLeadActivities(selectedLead.id);
+    } else {
+      setLeadActivities([]);
+    }
+  }, [selectedLead?.id, companyId]);
 
   function findTeamMemberByUserId(userId?: string | null) {
     if (!userId) return null;
@@ -234,6 +325,56 @@ export default function LeadsPage() {
     return null;
   }
 
+  async function registrarAtividade(params: {
+    servicoId: string;
+    tipo: string;
+    titulo?: string;
+    descricao?: string;
+    dataAtividade?: string | null;
+  }) {
+    if (!companyId || !myUserId) return;
+
+    const payload = {
+      company_id: companyId,
+      servico_id: params.servicoId,
+      tipo: params.tipo,
+      titulo: params.titulo || null,
+      descricao: params.descricao || null,
+      data_atividade: params.dataAtividade || null,
+      criado_por: myUserId,
+      criado_por_email: myEmail || null,
+      concluida: false,
+    };
+
+    const { error } = await supabase.from("lead_atividades").insert(payload);
+
+    if (error) {
+      console.error("Erro ao registrar atividade:", error);
+    }
+  }
+
+  async function loadLeadActivities(servicoId: string) {
+    if (!companyId) return;
+
+    setLoadingActivities(true);
+
+    const { data, error } = await supabase
+      .from("lead_atividades")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("servico_id", servicoId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar atividades:", error);
+      setLeadActivities([]);
+    } else {
+      setLeadActivities((data || []) as LeadActivity[]);
+    }
+
+    setLoadingActivities(false);
+  }
+
   async function load() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
@@ -295,23 +436,22 @@ export default function LeadsPage() {
     setItems(data || []);
   }
 
-async function atualizarStatus(id: string, status: string) {
-  const lead = items.find((i) => i.id === id);
-  if (!lead) return;
-  if (!companyId) return;
+  async function atualizarStatus(id: string, status: string) {
+    const lead = items.find((i) => i.id === id);
+    if (!lead) return;
+    if (!companyId) return;
 
-  if (status === "perdido") {
-    setLeadPerdaId(id);
-    setShowPerdaModal(true);
-    return;
-  }
+    if (status === "perdido") {
+      setLeadPerdaId(id);
+      setShowPerdaModal(true);
+      return;
+    }
 
-  let updateData: any = { status };
+    let updateData: any = { status };
 
-  if (status !== "perdido") {
-  updateData.motivo_perda = null;
-}
-
+    if (status !== "perdido") {
+      updateData.motivo_perda = null;
+    }
 
     if (status === "concluido") {
       const member = findTeamMemberByLead(lead);
@@ -327,6 +467,8 @@ async function atualizarStatus(id: string, status: string) {
       updateData.valor_comissao = comissaoCongelada.valor_comissao;
     }
 
+    const oldStatus = lead.status;
+
     const { error } = await supabase
       .from("servicos")
       .update(updateData)
@@ -339,39 +481,69 @@ async function atualizarStatus(id: string, status: string) {
       return;
     }
 
+    await registrarAtividade({
+      servicoId: id,
+      tipo: "status",
+      titulo: "Status atualizado",
+      descricao: `Status alterado de "${STATUS_LABELS[oldStatus] || oldStatus}" para "${STATUS_LABELS[status] || status}".`,
+    });
+
+    if (selectedLead?.id === id) {
+      setSelectedLead({
+        ...selectedLead,
+        ...updateData,
+      });
+      await loadLeadActivities(id);
+    }
+
     load();
   }
 
-
   async function confirmarPerda() {
-  if (!leadPerdaId || !companyId) return;
+    if (!leadPerdaId || !companyId) return;
 
-  if (!motivoPerda.trim()) {
-    alert("Informe o motivo da perda.");
-    return;
+    if (!motivoPerda.trim()) {
+      alert("Informe o motivo da perda.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("servicos")
+      .update({
+        status: "perdido",
+        motivo_perda: motivoPerda,
+      })
+      .eq("id", leadPerdaId)
+      .eq("company_id", companyId);
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao registrar perda.");
+      return;
+    }
+
+    await registrarAtividade({
+      servicoId: leadPerdaId,
+      tipo: "perda",
+      titulo: "Lead marcado como perdido",
+      descricao: motivoPerda,
+    });
+
+    if (selectedLead?.id === leadPerdaId) {
+      setSelectedLead({
+        ...selectedLead,
+        status: "perdido",
+        motivo_perda: motivoPerda,
+      });
+      await loadLeadActivities(leadPerdaId);
+    }
+
+    setShowPerdaModal(false);
+    setLeadPerdaId(null);
+    setMotivoPerda("");
+
+    load();
   }
-
-  const { error } = await supabase
-    .from("servicos")
-    .update({
-      status: "perdido",
-      motivo_perda: motivoPerda,
-    })
-    .eq("id", leadPerdaId)
-    .eq("company_id", companyId);
-
-  if (error) {
-    console.error(error);
-    alert("Erro ao registrar perda.");
-    return;
-  }
-
-  setShowPerdaModal(false);
-  setLeadPerdaId(null);
-  setMotivoPerda("");
-
-  load();
-}
 
   async function atualizarTemperatura(id: string, temperatura: string) {
     if (!companyId) return;
@@ -386,6 +558,13 @@ async function atualizarStatus(id: string, status: string) {
       console.error("Erro ao atualizar temperatura:", error);
       alert("Erro ao atualizar temperatura: " + error.message);
       return;
+    }
+
+    if (selectedLead?.id === id) {
+      setSelectedLead({
+        ...selectedLead,
+        temperatura,
+      });
     }
 
     load();
@@ -441,25 +620,25 @@ async function atualizarStatus(id: string, status: string) {
     const plan = profile?.plan ?? "free";
     const LIMITE_FREE = 5;
 
-if (plan === "free") {
-  const { count, error: erroCount } = await supabase
-    .from("servicos")
-    .select("*", { count: "exact", head: true })
-    .eq("company_id", currentCompanyId)
-    .eq("criado_por", currentUserId)
-    .eq("ativo", true);
+    if (plan === "free") {
+      const { count, error: erroCount } = await supabase
+        .from("servicos")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", currentCompanyId)
+        .eq("criado_por", currentUserId)
+        .eq("ativo", true);
 
-  if (erroCount) {
-    console.error("Erro ao verificar limite:", erroCount);
-    alert("Erro ao verificar limite do plano.");
-    return;
-  }
+      if (erroCount) {
+        console.error("Erro ao verificar limite:", erroCount);
+        alert("Erro ao verificar limite do plano.");
+        return;
+      }
 
-  if ((count ?? 0) >= LIMITE_FREE) {
-    setShowUpgrade(true);
-    return;
-  }
-}
+      if ((count ?? 0) >= LIMITE_FREE) {
+        setShowUpgrade(true);
+        return;
+      }
+    }
 
     const isVendedor = currentRole === "vendedor";
 
@@ -518,6 +697,22 @@ if (plan === "free") {
       return;
     }
 
+    await registrarAtividade({
+      servicoId: insertedLead.id,
+      tipo: "status",
+      titulo: "Lead criado",
+      descricao: `Lead criado com status inicial "${STATUS_LABELS.lead}".`,
+    });
+
+    if (form.observacoes?.trim()) {
+      await registrarAtividade({
+        servicoId: insertedLead.id,
+        tipo: "observacao",
+        titulo: "Observação inicial",
+        descricao: form.observacoes,
+      });
+    }
+
     setItems((prev) => [insertedLead, ...prev]);
 
     setOpenModal(false);
@@ -539,6 +734,70 @@ if (plan === "free") {
     setItens([{ nome: "", quantidade: 1, valor: 0 }]);
 
     load();
+  }
+
+  async function salvarNovaAtividade() {
+    if (!selectedLead?.id || !companyId || !myUserId) return;
+
+    if (!activityForm.descricao.trim()) {
+      alert("Descreva a atividade.");
+      return;
+    }
+
+    setSavingActivity(true);
+
+    const payload = {
+      company_id: companyId,
+      servico_id: selectedLead.id,
+      tipo: activityForm.tipo,
+      titulo: activityForm.titulo.trim() || ACTIVITY_TYPE_LABELS[activityForm.tipo],
+      descricao: activityForm.descricao.trim(),
+      data_atividade: activityForm.data_atividade
+        ? new Date(activityForm.data_atividade).toISOString()
+        : null,
+      concluida: false,
+      criado_por: myUserId,
+      criado_por_email: myEmail || null,
+    };
+
+    const { error } = await supabase.from("lead_atividades").insert(payload);
+
+    if (error) {
+      console.error("Erro ao salvar atividade:", error);
+      alert("Erro ao salvar atividade: " + error.message);
+      setSavingActivity(false);
+      return;
+    }
+
+    setActivityForm({
+      tipo: "observacao",
+      titulo: "",
+      descricao: "",
+      data_atividade: "",
+    });
+
+    await loadLeadActivities(selectedLead.id);
+    setSavingActivity(false);
+  }
+
+  async function concluirAtividade(activity: LeadActivity) {
+    if (!companyId) return;
+
+    const { error } = await supabase
+      .from("lead_atividades")
+      .update({ concluida: !activity.concluida })
+      .eq("id", activity.id)
+      .eq("company_id", companyId);
+
+    if (error) {
+      console.error("Erro ao concluir atividade:", error);
+      alert("Erro ao atualizar atividade: " + error.message);
+      return;
+    }
+
+    if (selectedLead?.id) {
+      await loadLeadActivities(selectedLead.id);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -649,43 +908,51 @@ if (plan === "free") {
   const metrics = useMemo(() => {
     const total = filtered.length;
 
-    const STATUS_POTENCIAL = ["lead", "proposta_enviada", "aguardando_cliente"];
-    const STATUS_CONFIRMADA = ["proposta_validada", "andamento"];
-    const STATUS_REALIZADA = ["concluido"];
+const STATUS_POTENCIAL = ["lead", "proposta_enviada", "aguardando_cliente"];
+const STATUS_CONFIRMADA = ["proposta_validada", "andamento"];
+const STATUS_REALIZADA = ["concluido"];
 
-    const receitaPotencial = filtered
-      .filter((i) => STATUS_POTENCIAL.includes(i.status))
-      .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+const receitaPotencial = filtered
+  .filter((i) => STATUS_POTENCIAL.includes(i.status))
+  .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-    const receitaConfirmada = filtered
-      .filter((i) => STATUS_CONFIRMADA.includes(i.status))
-      .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+const receitaConfirmada = filtered
+  .filter((i) => STATUS_CONFIRMADA.includes(i.status))
+  .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-    const receitaReal = filtered
-      .filter((i) => STATUS_REALIZADA.includes(i.status))
-      .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
+const receitaReal = filtered
+  .filter((i) => STATUS_REALIZADA.includes(i.status))
+  .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-    const concluidos = filtered.filter((i) =>
-      STATUS_REALIZADA.includes(i.status)
-    ).length;
+const concluidos = filtered.filter((i) =>
+  STATUS_REALIZADA.includes(i.status)
+).length;
 
-    return {
-      total,
-      receitaReal: receitaReal.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      receitaConfirmada: receitaConfirmada.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }),
-      concluidos,
-      conversao: total > 0 ? `${Math.round((concluidos / total) * 100)}%` : "0%",
-    };
+const baseConversao =
+  filtered.filter((i) => STATUS_POTENCIAL.includes(i.status)).length +
+  filtered.filter((i) => STATUS_CONFIRMADA.includes(i.status)).length +
+  filtered.filter((i) => STATUS_REALIZADA.includes(i.status)).length;
+
+return {
+  total,
+  receitaReal: receitaReal.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+  receitaPotencial: receitaPotencial.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+  receitaConfirmada: receitaConfirmada.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }),
+  concluidos,
+  conversao:
+    baseConversao > 0
+      ? `${((concluidos / baseConversao) * 100).toFixed(1)}%`
+      : "0.0%",
+};
   }, [filtered]);
 
   const funnelData = useMemo(() => {
@@ -712,7 +979,7 @@ if (plan === "free") {
 
   function EditableField({ label, value, field }: any) {
     return (
-      <div className="bg-white/5 p-4 rounded-xl">
+      <div className="bg-white/5 p-4 rounded-xl print-card">
         <p className="text-gray-400 text-xs">{label}</p>
 
         {isEditing ? (
@@ -794,6 +1061,23 @@ if (plan === "free") {
 
     setIsEditing(false);
     load();
+  }
+
+  function formatActivityDate(date?: string | null) {
+    if (!date) return "-";
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return "-";
+    return parsed.toLocaleString("pt-BR");
+  }
+
+  function activityIcon(tipo: string) {
+    if (tipo === "ligacao") return <Phone size={14} className="text-cyan-300" />;
+    if (tipo === "tarefa") return <ListTodo size={14} className="text-yellow-300" />;
+    if (tipo === "retorno") return <Clock3 size={14} className="text-orange-300" />;
+    if (tipo === "agendamento") return <CalendarClock size={14} className="text-green-300" />;
+    if (tipo === "status") return <History size={14} className="text-purple-300" />;
+    if (tipo === "perda") return <X size={14} className="text-red-300" />;
+    return <StickyNote size={14} className="text-blue-300" />;
   }
 
   return (
@@ -1114,7 +1398,7 @@ if (plan === "free") {
                   </select>
                 </td>
 
-                                <td className="p-4">
+                <td className="p-4">
                   <div className="flex flex-col gap-2">
                     <select
                       value={item.status}
@@ -1139,6 +1423,7 @@ if (plan === "free") {
                     )}
                   </div>
                 </td>
+
                 <td className="p-4 text-cyan-400 font-bold">
                   {contarCompras(item.cliente)}x
                 </td>
@@ -1340,11 +1625,20 @@ if (plan === "free") {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div
             id="print-area"
-            className="bg-[#0f172a] p-8 rounded-3xl w-[800px] max-h-[90vh] overflow-y-auto relative"
+            className="bg-[#0f172a] p-8 rounded-3xl w-[1100px] max-h-[90vh] overflow-y-auto relative"
           >
             <button
-              onClick={() => setSelectedLead(null)}
-              className="absolute top-4 right-4 text-gray-400"
+              onClick={() => {
+                setSelectedLead(null);
+                setLeadActivities([]);
+                setActivityForm({
+                  tipo: "observacao",
+                  titulo: "",
+                  descricao: "",
+                  data_atividade: "",
+                });
+              }}
+              className="absolute top-4 right-4 text-gray-400 no-print"
             >
               <X />
             </button>
@@ -1357,7 +1651,7 @@ if (plan === "free") {
               Gerado em {new Date(selectedLead.created_at).toLocaleDateString("pt-BR")}
             </p>
 
-            <div className="flex gap-3 mb-6">
+            <div className="flex gap-3 mb-6 no-print">
               <button
                 onClick={() => window.print()}
                 className="px-4 py-2 bg-green-600 rounded-xl text-sm font-semibold"
@@ -1373,346 +1667,491 @@ if (plan === "free") {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 text-sm">
-              <div className="bg-white/5 p-4 rounded-xl">
-                <p className="text-gray-400 text-xs">Cliente</p>
-
-                {isEditing ? (
-                  <input
-                    value={selectedLead.cliente}
-                    onChange={(e) =>
-                      setSelectedLead({ ...selectedLead, cliente: e.target.value })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  />
-                ) : (
-                  <p className="font-semibold">{selectedLead.cliente}</p>
-                )}
-              </div>
-
-              <div className="bg-white/5 p-4 rounded-xl">
-                <p className="text-gray-400 text-xs">Telefone</p>
-
-                {isEditing ? (
-                  <input
-                    value={selectedLead.telefone || ""}
-                    onChange={(e) =>
-                      setSelectedLead({ ...selectedLead, telefone: e.target.value })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  />
-                ) : (
-                  <p className="font-semibold">{selectedLead.telefone || "-"}</p>
-                )}
-              </div>
-
-              <EditableField
-                label="Origem"
-                value={selectedLead.origem_lead}
-                field="origem_lead"
-              />
-
-              <EditableField
-                label="Responsável"
-                value={selectedLead.responsavel}
-                field="responsavel"
-              />
-
-              <div className="bg-white/5 p-4 rounded-xl">
-                <p className="text-gray-400 text-xs">Temperatura</p>
-
-                {isEditing ? (
-                  <select
-                    value={selectedLead.temperatura || "morno"}
-                    onChange={(e) =>
-                      setSelectedLead({
-                        ...selectedLead,
-                        temperatura: e.target.value,
-                      })
-                    }
-                    className={`p-2 rounded-lg w-full border ${
-                      TEMPERATURA_COLORS[selectedLead.temperatura || "morno"]
-                    }`}
-                  >
-                    {TEMPERATURA_OPTIONS.map((temp) => (
-                      <option key={temp} value={temp} className="bg-[#0f172a]">
-                        {TEMPERATURA_LABELS[temp]}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span
-                    className={`inline-flex px-3 py-1 rounded-xl border text-sm font-semibold ${
-                      TEMPERATURA_COLORS[selectedLead.temperatura || "morno"]
-                    }`}
-                  >
-                    {TEMPERATURA_LABELS[selectedLead.temperatura || "morno"]}
-                  </span>
-                )}
-              </div>
-
-              <div className="bg-white/5 p-4 rounded-xl">
-                <p className="text-gray-400 text-xs">Tipo Pessoa</p>
-
-                {isEditing ? (
-                  <select
-                    value={selectedLead.tipo_pessoa}
-                    onChange={(e) =>
-                      setSelectedLead({
-                        ...selectedLead,
-                        tipo_pessoa: e.target.value,
-                      })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  >
-                    <option value="pf">Pessoa Física</option>
-                    <option value="pj">Pessoa Jurídica</option>
-                  </select>
-                ) : (
-                  <p className="font-semibold">
-                    {selectedLead.tipo_pessoa === "pf"
-                      ? "Pessoa Física"
-                      : "Pessoa Jurídica"}
-                  </p>
-                )}
-              </div>
-
-              <div className="bg-white/5 p-4 rounded-xl">
-                <p className="text-gray-400 text-xs">
-                  {selectedLead.tipo_pessoa === "pf" ? "CPF" : "CNPJ"}
-                </p>
-
-                {isEditing ? (
-                  <input
-                    value={
-                      selectedLead.tipo_pessoa === "pf"
-                        ? selectedLead.cpf || ""
-                        : selectedLead.cnpj || ""
-                    }
-                    onChange={(e) =>
-                      setSelectedLead({
-                        ...selectedLead,
-                        [selectedLead.tipo_pessoa === "pf" ? "cpf" : "cnpj"]:
-                          e.target.value,
-                      })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  />
-                ) : (
-                  <p className="font-semibold">
-                    {selectedLead.tipo_pessoa === "pf"
-                      ? selectedLead.cpf || "-"
-                      : selectedLead.cnpj || "-"}
-                  </p>
-                )}
-              </div>
-
-              <EditableField
-                label="Tipo de Serviço"
-                value={selectedLead.tipo_servico}
-                field="tipo_servico"
-              />
-
-              <EditableField
-                label="Forma de Pagamento"
-                value={selectedLead.forma_pagamento}
-                field="forma_pagamento"
-              />
-
-              <div>
-                <strong>Entrega:</strong> {selectedLead.entrega ? "Sim" : "Não"}
-              </div>
-
-              <div>
-                <strong>Valor Total:</strong>{" "}
-                {Number(selectedLead.valor_orcamento || 0).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </div>
-
-              <div className="bg-white/5 p-4 rounded-xl col-span-2">
-                <p className="text-gray-400 text-xs">Descrição</p>
-
-                {isEditing ? (
-                  <textarea
-                    value={selectedLead.descricao || ""}
-                    onChange={(e) =>
-                      setSelectedLead({
-                        ...selectedLead,
-                        descricao: e.target.value,
-                      })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  />
-                ) : (
-                  <p className="text-gray-300">{selectedLead.descricao || "-"}</p>
-                )}
-              </div>
-
-              <div className="bg-white/5 p-4 rounded-xl col-span-2">
-                <p className="text-gray-400 text-xs">Observações</p>
-
-                {isEditing ? (
-                  <textarea
-                    value={selectedLead.observacoes || ""}
-                    onChange={(e) =>
-                      setSelectedLead({
-                        ...selectedLead,
-                        observacoes: e.target.value,
-                      })
-                    }
-                    className="bg-white/10 p-2 rounded-lg w-full"
-                  />
-                ) : (
-                  <p className="text-gray-300">{selectedLead.observacoes || "-"}</p>
-                )}
-              </div>
-
-                            {selectedLead.status === "perdido" && (
-                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl col-span-2">
-                  <p className="text-red-300 text-xs font-semibold">Motivo da perda</p>
+            <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6 print-grid-single">
+              <div className="grid grid-cols-2 gap-6 text-sm">
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Cliente</p>
 
                   {isEditing ? (
-                    <textarea
-                      value={selectedLead.motivo_perda || ""}
+                    <input
+                      value={selectedLead.cliente}
+                      onChange={(e) =>
+                        setSelectedLead({ ...selectedLead, cliente: e.target.value })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    />
+                  ) : (
+                    <p className="font-semibold">{selectedLead.cliente}</p>
+                  )}
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Telefone</p>
+
+                  {isEditing ? (
+                    <input
+                      value={selectedLead.telefone || ""}
+                      onChange={(e) =>
+                        setSelectedLead({ ...selectedLead, telefone: e.target.value })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    />
+                  ) : (
+                    <p className="font-semibold">{selectedLead.telefone || "-"}</p>
+                  )}
+                </div>
+
+                <EditableField
+                  label="Origem"
+                  value={selectedLead.origem_lead}
+                  field="origem_lead"
+                />
+
+                <EditableField
+                  label="Responsável"
+                  value={selectedLead.responsavel}
+                  field="responsavel"
+                />
+
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Temperatura</p>
+
+                  {isEditing ? (
+                    <select
+                      value={selectedLead.temperatura || "morno"}
                       onChange={(e) =>
                         setSelectedLead({
                           ...selectedLead,
-                          motivo_perda: e.target.value,
+                          temperatura: e.target.value,
                         })
                       }
-                      className="bg-white/10 p-2 rounded-lg w-full mt-2"
-                    />
+                      className={`p-2 rounded-lg w-full border ${
+                        TEMPERATURA_COLORS[selectedLead.temperatura || "morno"]
+                      }`}
+                    >
+                      {TEMPERATURA_OPTIONS.map((temp) => (
+                        <option key={temp} value={temp} className="bg-[#0f172a]">
+                          {TEMPERATURA_LABELS[temp]}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    <p className="text-red-100 mt-2">
-                      {selectedLead.motivo_perda || "Motivo não informado."}
+                    <span
+                      className={`inline-flex px-3 py-1 rounded-xl border text-sm font-semibold ${
+                        TEMPERATURA_COLORS[selectedLead.temperatura || "morno"]
+                      }`}
+                    >
+                      {TEMPERATURA_LABELS[selectedLead.temperatura || "morno"]}
+                    </span>
+                  )}
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Tipo Pessoa</p>
+
+                  {isEditing ? (
+                    <select
+                      value={selectedLead.tipo_pessoa}
+                      onChange={(e) =>
+                        setSelectedLead({
+                          ...selectedLead,
+                          tipo_pessoa: e.target.value,
+                        })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    >
+                      <option value="pf">Pessoa Física</option>
+                      <option value="pj">Pessoa Jurídica</option>
+                    </select>
+                  ) : (
+                    <p className="font-semibold">
+                      {selectedLead.tipo_pessoa === "pf"
+                        ? "Pessoa Física"
+                        : "Pessoa Jurídica"}
                     </p>
                   )}
                 </div>
-              )}
 
-              <div className="col-span-2">
-                <strong>Itens:</strong>
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">
+                    {selectedLead.tipo_pessoa === "pf" ? "CPF" : "CNPJ"}
+                  </p>
 
-                <div className="mt-3 space-y-3">
-                  {editingItens.map((i: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-4 gap-3 bg-white/5 p-3 rounded-xl items-center"
+                  {isEditing ? (
+                    <input
+                      value={
+                        selectedLead.tipo_pessoa === "pf"
+                          ? selectedLead.cpf || ""
+                          : selectedLead.cnpj || ""
+                      }
+                      onChange={(e) =>
+                        setSelectedLead({
+                          ...selectedLead,
+                          [selectedLead.tipo_pessoa === "pf" ? "cpf" : "cnpj"]:
+                            e.target.value,
+                        })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    />
+                  ) : (
+                    <p className="font-semibold">
+                      {selectedLead.tipo_pessoa === "pf"
+                        ? selectedLead.cpf || "-"
+                        : selectedLead.cnpj || "-"}
+                    </p>
+                  )}
+                </div>
+
+                <EditableField
+                  label="Tipo de Serviço"
+                  value={selectedLead.tipo_servico}
+                  field="tipo_servico"
+                />
+
+                <EditableField
+                  label="Forma de Pagamento"
+                  value={selectedLead.forma_pagamento}
+                  field="forma_pagamento"
+                />
+
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Entrega</p>
+                  <p className="font-semibold">{selectedLead.entrega ? "Sim" : "Não"}</p>
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl print-card">
+                  <p className="text-gray-400 text-xs">Valor Total</p>
+                  <p className="font-semibold text-green-400">
+                    {Number(selectedLead.valor_orcamento || 0).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </p>
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl col-span-2 print-card">
+                  <p className="text-gray-400 text-xs">Descrição</p>
+
+                  {isEditing ? (
+                    <textarea
+                      value={selectedLead.descricao || ""}
+                      onChange={(e) =>
+                        setSelectedLead({
+                          ...selectedLead,
+                          descricao: e.target.value,
+                        })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    />
+                  ) : (
+                    <p className="text-gray-300">{selectedLead.descricao || "-"}</p>
+                  )}
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl col-span-2 print-card">
+                  <p className="text-gray-400 text-xs">Observações</p>
+
+                  {isEditing ? (
+                    <textarea
+                      value={selectedLead.observacoes || ""}
+                      onChange={(e) =>
+                        setSelectedLead({
+                          ...selectedLead,
+                          observacoes: e.target.value,
+                        })
+                      }
+                      className="bg-white/10 p-2 rounded-lg w-full"
+                    />
+                  ) : (
+                    <p className="text-gray-300">{selectedLead.observacoes || "-"}</p>
+                  )}
+                </div>
+
+                {selectedLead.status === "perdido" && (
+                  <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl col-span-2 print-card">
+                    <p className="text-red-300 text-xs font-semibold">Motivo da perda</p>
+
+                    {isEditing ? (
+                      <textarea
+                        value={selectedLead.motivo_perda || ""}
+                        onChange={(e) =>
+                          setSelectedLead({
+                            ...selectedLead,
+                            motivo_perda: e.target.value,
+                          })
+                        }
+                        className="bg-white/10 p-2 rounded-lg w-full mt-2"
+                      />
+                    ) : (
+                      <p className="text-red-100 mt-2">
+                        {selectedLead.motivo_perda || "Motivo não informado."}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="col-span-2 print-card">
+                  <strong>Itens:</strong>
+
+                  <div className="mt-3 space-y-3">
+                    {editingItens.map((i: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="grid grid-cols-4 gap-3 bg-white/5 p-3 rounded-xl items-center print-card"
+                      >
+                        {isEditing ? (
+                          <>
+                            <input
+                              value={i.nome}
+                              onChange={(e) =>
+                                atualizarItemEditado(idx, "nome", e.target.value)
+                              }
+                              className="p-2 rounded-lg bg-white/10"
+                              placeholder="Item"
+                            />
+
+                            <input
+                              type="number"
+                              value={i.quantidade}
+                              onChange={(e) =>
+                                atualizarItemEditado(
+                                  idx,
+                                  "quantidade",
+                                  Number(e.target.value)
+                                )
+                              }
+                              className="p-2 rounded-lg bg-white/10"
+                            />
+
+                            <input
+                              type="number"
+                              value={i.valor}
+                              onChange={(e) =>
+                                atualizarItemEditado(
+                                  idx,
+                                  "valor",
+                                  Number(e.target.value)
+                                )
+                              }
+                              className="p-2 rounded-lg bg-white/10"
+                            />
+
+                            <button
+                              onClick={() => removerItemEditado(idx)}
+                              className="text-red-400 font-bold no-print"
+                            >
+                              Remover
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {i.nome} ({i.quantidade}x)
+                            </span>
+                            <span className="text-green-400 font-semibold col-span-3 text-right">
+                              {(i.quantidade * i.valor).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {isEditing && (
+                    <button
+                      onClick={adicionarItemEditado}
+                      className="mt-3 text-blue-400 no-print"
                     >
-                      {isEditing ? (
-                        <>
-                          <input
-                            value={i.nome}
-                            onChange={(e) =>
-                              atualizarItemEditado(idx, "nome", e.target.value)
-                            }
-                            className="p-2 rounded-lg bg-white/10"
-                            placeholder="Item"
-                          />
-
-                          <input
-                            type="number"
-                            value={i.quantidade}
-                            onChange={(e) =>
-                              atualizarItemEditado(
-                                idx,
-                                "quantidade",
-                                Number(e.target.value)
-                              )
-                            }
-                            className="p-2 rounded-lg bg-white/10"
-                          />
-
-                          <input
-                            type="number"
-                            value={i.valor}
-                            onChange={(e) =>
-                              atualizarItemEditado(
-                                idx,
-                                "valor",
-                                Number(e.target.value)
-                              )
-                            }
-                            className="p-2 rounded-lg bg-white/10"
-                          />
-
-                          <button
-                            onClick={() => removerItemEditado(idx)}
-                            className="text-red-400 font-bold"
-                          >
-                            Remover
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span>
-                            {i.nome} ({i.quantidade}x)
-                          </span>
-                          <span className="text-green-400 font-semibold col-span-3 text-right">
-                            {(i.quantidade * i.valor).toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                      + Adicionar Item
+                    </button>
+                  )}
                 </div>
 
                 {isEditing && (
-                  <button
-                    onClick={adicionarItemEditado}
-                    className="mt-3 text-blue-400"
-                  >
-                    + Adicionar Item
-                  </button>
+                  <div className="mt-6 space-y-3 col-span-2 no-print">
+                    <button
+                      onClick={salvarLeadEditado}
+                      className="w-full py-3 bg-green-600 rounded-xl font-bold"
+                    >
+                      Salvar Alterações
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        if (!companyId) return;
+
+                        const { error } = await supabase
+                          .from("servicos")
+                          .update({ ativo: !selectedLead.ativo })
+                          .eq("id", selectedLead.id)
+                          .eq("company_id", companyId);
+
+                        if (error) {
+                          console.error("Erro ao alterar ativo:", error);
+                          alert("Erro ao alterar status do lead: " + error.message);
+                          return;
+                        }
+
+                        setSelectedLead(null);
+                        load();
+                      }}
+                      className={`w-full py-3 rounded-xl font-bold ${
+                        selectedLead.ativo ? "bg-red-600" : "bg-green-600"
+                      }`}
+                    >
+                      {selectedLead.ativo ? "Inativar Lead" : "Reativar Lead"}
+                    </button>
+                  </div>
                 )}
               </div>
 
-              {isEditing && (
-                <div className="mt-6 space-y-3 col-span-2">
-                  <button
-                    onClick={salvarLeadEditado}
-                    className="w-full py-3 bg-green-600 rounded-xl font-bold"
-                  >
-                    Salvar Alterações
-                  </button>
+              <div className="space-y-6 no-print">
+                <div className="bg-[#111827] border border-white/10 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <History size={18} className="text-cyan-400" />
+                    <h3 className="text-lg font-bold">Histórico / Follow-up</h3>
+                  </div>
 
-                  <button
-                    onClick={async () => {
-                      if (!companyId) return;
-
-                      const { error } = await supabase
-                        .from("servicos")
-                        .update({ ativo: !selectedLead.ativo })
-                        .eq("id", selectedLead.id)
-                        .eq("company_id", companyId);
-
-                      if (error) {
-                        console.error("Erro ao alterar ativo:", error);
-                        alert("Erro ao alterar status do lead: " + error.message);
-                        return;
+                  <div className="space-y-3">
+                    <select
+                      value={activityForm.tipo}
+                      onChange={(e) =>
+                        setActivityForm({ ...activityForm, tipo: e.target.value })
                       }
+                      className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+                    >
+                      {ACTIVITY_TYPES.map((tipo) => (
+                        <option key={tipo} value={tipo} style={OPTION_STYLE}>
+                          {ACTIVITY_TYPE_LABELS[tipo]}
+                        </option>
+                      ))}
+                    </select>
 
-                      setSelectedLead(null);
-                      load();
-                    }}
-                    className={`w-full py-3 rounded-xl font-bold ${
-                      selectedLead.ativo ? "bg-red-600" : "bg-green-600"
-                    }`}
-                  >
-                    {selectedLead.ativo ? "Inativar Lead" : "Reativar Lead"}
-                  </button>
+                    <input
+                      placeholder="Título da atividade"
+                      value={activityForm.titulo}
+                      onChange={(e) =>
+                        setActivityForm({ ...activityForm, titulo: e.target.value })
+                      }
+                      className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
+                    />
+
+                    <textarea
+                      placeholder="Descreva a atividade, retorno, observação ou próximo passo..."
+                      value={activityForm.descricao}
+                      onChange={(e) =>
+                        setActivityForm({ ...activityForm, descricao: e.target.value })
+                      }
+                      className="w-full p-3 rounded-xl bg-white/10 border border-white/20 min-h-[110px]"
+                    />
+
+                    <div>
+                      <label className="text-xs text-gray-400 mb-2 block">
+                        Data da atividade / próximo follow-up
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={activityForm.data_atividade}
+                        onChange={(e) =>
+                          setActivityForm({
+                            ...activityForm,
+                            data_atividade: e.target.value,
+                          })
+                        }
+                        className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
+                      />
+                    </div>
+
+                    <button
+                      onClick={salvarNovaAtividade}
+                      disabled={savingActivity}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 font-bold disabled:opacity-60"
+                    >
+                      {savingActivity ? "Salvando..." : "Adicionar atividade"}
+                    </button>
+                  </div>
                 </div>
-              )}
+
+                <div className="bg-[#111827] border border-white/10 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Clock3 size={18} className="text-cyan-400" />
+                    <h3 className="text-lg font-bold">Timeline do lead</h3>
+                  </div>
+
+                  {loadingActivities ? (
+                    <p className="text-sm text-gray-400">Carregando atividades...</p>
+                  ) : leadActivities.length === 0 ? (
+                    <p className="text-sm text-gray-400">
+                      Nenhuma atividade registrada para este lead.
+                    </p>
+                  ) : (
+                    <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                      {leadActivities.map((activity) => (
+                        <div
+                          key={activity.id}
+                          className={`rounded-2xl border p-4 ${
+                            activity.concluida
+                              ? "bg-emerald-500/5 border-emerald-500/20"
+                              : "bg-white/5 border-white/10"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              {activityIcon(activity.tipo)}
+                              <div>
+                                <div className="font-semibold">
+                                  {activity.titulo || ACTIVITY_TYPE_LABELS[activity.tipo] || activity.tipo}
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {ACTIVITY_TYPE_LABELS[activity.tipo] || activity.tipo}
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => concluirAtividade(activity)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                activity.concluida
+                                  ? "bg-emerald-500/20 text-emerald-300"
+                                  : "bg-white/10 text-gray-300 hover:bg-white/20"
+                              }`}
+                            >
+                              {activity.concluida ? "Concluída" : "Marcar concluída"}
+                            </button>
+                          </div>
+
+                          {activity.descricao && (
+                            <p className="text-sm text-gray-300 mt-3 whitespace-pre-wrap">
+                              {activity.descricao}
+                            </p>
+                          )}
+
+                          <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-400">
+                            <span>
+                              Criado em: {formatActivityDate(activity.created_at)}
+                            </span>
+                            {activity.data_atividade && (
+                              <span>
+                                Data da atividade: {formatActivityDate(activity.data_atividade)}
+                              </span>
+                            )}
+                            {activity.criado_por_email && (
+                              <span>Registrado por: {activity.criado_por_email}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
-
 
       {showPerdaModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
