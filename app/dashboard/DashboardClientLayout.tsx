@@ -46,6 +46,8 @@ type Membership = {
   status?: string;
   email?: string;
   user_id?: string | null;
+  can_access_atendimento?: boolean | null;
+  can_access_campanhas?: boolean | null;
   companies?: {
     name?: string | null;
     plan?: string | null;
@@ -69,6 +71,9 @@ export default function DashboardLayout({
   const [role, setRole] = useState("");
   const [email, setEmail] = useState("");
 
+  const [canAccessAtendimento, setCanAccessAtendimento] = useState(false);
+  const [canAccessCampanhas, setCanAccessCampanhas] = useState(false);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -89,6 +94,16 @@ export default function DashboardLayout({
       ? "Vendedor"
       : "";
 
+  const isOwner = role === "owner";
+  const isAdmin = role === "admin";
+  const isVendedor = role === "vendedor";
+
+  const hasAtendimentoAccess =
+    isOwner || isAdmin || canAccessAtendimento === true;
+
+  const hasCampanhasAccess =
+    isOwner || isAdmin || canAccessCampanhas === true;
+
   async function handleLogout() {
     await supabase.auth.signOut();
     window.location.href = "/";
@@ -98,7 +113,7 @@ export default function DashboardLayout({
     const { data, error } = await supabase
       .from("company_users")
       .select(
-        "company_id, role, status, email, user_id, companies(name, plan), created_at"
+        "company_id, role, status, email, user_id, can_access_atendimento, can_access_campanhas, companies(name, plan), created_at"
       )
       .eq("user_id", userId)
       .eq("status", "ativo")
@@ -126,6 +141,13 @@ export default function DashboardLayout({
     const user = session?.user;
 
     if (!user) {
+      setCompanyId(null);
+      setRole("");
+      setEmpresa("");
+      setPlan("free");
+      setEmail("");
+      setCanAccessAtendimento(false);
+      setCanAccessCampanhas(false);
       setLoadedMembership(true);
       return;
     }
@@ -143,11 +165,18 @@ export default function DashboardLayout({
 
     if (membership?.company_id) {
       setCompanyId(membership.company_id);
-      setRole(membership.role);
+      setRole(membership.role || "");
       setEmpresa(membership?.companies?.name || "");
       setPlan(membership?.companies?.plan || profile?.plan || "free");
+      setCanAccessAtendimento(membership?.can_access_atendimento === true);
+      setCanAccessCampanhas(membership?.can_access_campanhas === true);
     } else {
+      setCompanyId(null);
+      setRole("");
+      setEmpresa("");
       setPlan(profile?.plan || "free");
+      setCanAccessAtendimento(false);
+      setCanAccessCampanhas(false);
     }
 
     setLoadedMembership(true);
@@ -178,32 +207,48 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!loadedMembership) return;
+    if (isMasterPage) return;
 
-    if (pathname.startsWith("/dashboard/empresas") && role !== "owner") {
+    if (pathname.startsWith("/dashboard/empresas") && !isOwner) {
       router.replace("/dashboard");
       return;
     }
 
-    if (pathname.startsWith("/dashboard/campanhas") && role === "vendedor") {
+    if (pathname.startsWith("/dashboard/equipe") && !(isOwner || isAdmin)) {
       router.replace("/dashboard");
       return;
     }
 
-    if (pathname.startsWith("/dashboard/billing") && role === "vendedor") {
+    if (pathname.startsWith("/dashboard/campanhas") && !hasCampanhasAccess) {
       router.replace("/dashboard");
       return;
     }
 
-    if (pathname.startsWith("/dashboard/atendimento") && role === "vendedor") {
+    if (pathname.startsWith("/dashboard/billing") && isVendedor) {
       router.replace("/dashboard");
       return;
     }
 
-    if (pathname.startsWith("/dashboard/flowia") && role === "vendedor") {
+    if (pathname.startsWith("/dashboard/atendimento") && !hasAtendimentoAccess) {
       router.replace("/dashboard");
       return;
     }
-  }, [pathname, role, loadedMembership, router]);
+
+    if (pathname.startsWith("/dashboard/flowia") && isVendedor) {
+      router.replace("/dashboard");
+      return;
+    }
+  }, [
+    pathname,
+    isOwner,
+    isAdmin,
+    isVendedor,
+    hasAtendimentoAccess,
+    hasCampanhasAccess,
+    loadedMembership,
+    router,
+    isMasterPage,
+  ]);
 
   function toggleMenu(menuName: string) {
     setOpenMenus((prev) => ({
@@ -230,7 +275,7 @@ export default function DashboardLayout({
           name: "Atendimento",
           href: "/dashboard/atendimento",
           icon: Headset,
-          visible: role !== "vendedor",
+          visible: hasAtendimentoAccess,
         },
         { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
         { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
@@ -238,7 +283,7 @@ export default function DashboardLayout({
         {
           name: "Campanhas",
           icon: Megaphone,
-          visible: role !== "vendedor",
+          visible: hasCampanhasAccess,
           children: [
             { name: "Campanhas", href: "/dashboard/campanhas" },
             { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
@@ -249,29 +294,33 @@ export default function DashboardLayout({
           name: "Empresas",
           href: "/dashboard/empresas",
           icon: Building2,
-          visible: role === "owner",
+          visible: isOwner,
         },
         {
           name: "Equipe",
           href: "/dashboard/equipe",
           icon: Users2,
-          visible: role === "owner" || role === "admin",
+          visible: isOwner || isAdmin,
         },
         {
           name: "Assinatura",
           href: "/dashboard/billing",
           icon: CreditCard,
-          visible: role !== "vendedor",
+          visible: !isVendedor,
         },
-        { name: "Configurações", href: "/dashboard/configuracoes", icon: Settings },
+        {
+          name: "Configurações",
+          href: "/dashboard/configuracoes",
+          icon: Settings,
+        },
         {
           name: "FlowIA",
           href: "/dashboard/flowia",
           icon: Bot,
-          visible: role !== "vendedor",
+          visible: !isVendedor,
         },
       ].filter((item) => item.visible !== false),
-    [role]
+    [hasAtendimentoAccess, hasCampanhasAccess, isOwner, isAdmin, isVendedor]
   );
 
   if (isMasterPage) {
@@ -324,14 +373,25 @@ export default function DashboardLayout({
 
             if (item.children) {
               const isOpen = openMenus[item.name];
+              const hasActiveChild = item.children.some((child) =>
+                pathname.startsWith(child.href)
+              );
 
               return (
                 <div key={item.name}>
                   <button
                     onClick={() => toggleMenu(item.name)}
-                    className="flex w-full items-center justify-between rounded-lg p-3 hover:bg-white/5"
+                    className={`flex w-full items-center justify-between rounded-lg p-3 transition ${
+                      hasActiveChild
+                        ? "border border-cyan-500/20 bg-cyan-500/15 text-cyan-300"
+                        : "hover:bg-white/5"
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div
+                      className={`flex items-center ${
+                        isSidebarCollapsed ? "justify-center w-full" : "gap-3"
+                      }`}
+                    >
                       <Icon size={18} />
                       {!isSidebarCollapsed && item.name}
                     </div>
@@ -346,15 +406,23 @@ export default function DashboardLayout({
 
                   {!isSidebarCollapsed && isOpen && (
                     <div className="ml-4 space-y-1 border-l border-white/10 pl-3">
-                      {item.children.map((child) => (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          className="block rounded-lg p-2 text-sm hover:bg-white/5"
-                        >
-                          {child.name}
-                        </Link>
-                      ))}
+                      {item.children.map((child) => {
+                        const childActive = pathname.startsWith(child.href);
+
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={`block rounded-lg p-2 text-sm transition ${
+                              childActive
+                                ? "bg-cyan-500/15 text-cyan-300"
+                                : "hover:bg-white/5"
+                            }`}
+                          >
+                            {child.name}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -391,7 +459,7 @@ export default function DashboardLayout({
               Plano {plan === "pro" ? "Pro 🚀" : "Free"}
             </p>
 
-            {plan !== "pro" && role !== "vendedor" && (
+            {plan !== "pro" && !isVendedor && (
               <Link
                 href="/dashboard/billing"
                 className="block rounded-lg bg-blue-600 p-2 text-center text-sm hover:bg-blue-700"
