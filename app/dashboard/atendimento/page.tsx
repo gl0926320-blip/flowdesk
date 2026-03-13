@@ -5,16 +5,27 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import {
+  AlertTriangle,
+  Check,
+  CheckCheck,
   CheckCircle2,
-  CircleDot,
-  Clock3,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  File,
+  FileImage,
+  Inbox,
+  KanbanSquare,
   Link2,
   Loader2,
   Mail,
   MessageCircle,
+  MoreVertical,
+  Paperclip,
   Percent,
   Phone,
   RefreshCcw,
@@ -22,17 +33,14 @@ import {
   Search,
   Send,
   Settings2,
+  Smile,
   Sparkles,
   TrendingUp,
   UserCheck,
   Users,
   Wallet,
-  ChevronDown,
-  ChevronUp,
-  Inbox,
-  ArrowRightLeft,
-  AlertTriangle,
-  XCircle,
+  X,
+  Film,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -74,6 +82,7 @@ type ConversationRow = {
   notes?: string | null;
   created_at: string;
   updated_at: string;
+  avatar_url?: string | null;
 };
 
 type MessageRow = {
@@ -88,6 +97,7 @@ type MessageRow = {
   direction: "inbound" | "outbound";
   status: string | null;
   created_at: string;
+  media_url?: string | null;
 };
 
 type WhatsAppConnectionRow = {
@@ -104,6 +114,27 @@ type WhatsAppConnectionRow = {
   created_at?: string;
   updated_at?: string;
 };
+
+type AttachmentDraft = {
+  id: string;
+  file: File;
+  previewUrl: string | null;
+  kind: "image" | "video" | "file";
+};
+
+type InboxView = "all" | "general_queue" | "my_queue" | "active";
+type CenterView = "chat" | "kanban";
+type FlowFilter = "all" | "queue" | ConversationStage;
+
+type AgentLookup = Record<
+  string,
+  {
+    id: string;
+    name: string;
+    email: string;
+    role?: string | null;
+  }
+>;
 
 const PIPELINE_STAGES: ConversationStage[] = [
   "lead",
@@ -126,14 +157,29 @@ const STAGE_LABELS: Record<ConversationStage, string> = {
 };
 
 const STAGE_BADGES: Record<ConversationStage, string> = {
-  lead: "bg-cyan-500/15 text-cyan-300 border-cyan-500/20",
-  proposta_enviada: "bg-yellow-500/15 text-yellow-300 border-yellow-500/20",
-  aguardando_cliente: "bg-purple-500/15 text-purple-300 border-purple-500/20",
-  proposta_validada: "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
-  andamento: "bg-orange-500/15 text-orange-300 border-orange-500/20",
-  concluido: "bg-green-500/15 text-green-300 border-green-500/20",
-  perdido: "bg-red-500/15 text-red-300 border-red-500/20",
+  lead: "border-cyan-500/25 bg-cyan-500/12 text-cyan-300",
+  proposta_enviada: "border-yellow-500/25 bg-yellow-500/12 text-yellow-300",
+  aguardando_cliente: "border-violet-500/25 bg-violet-500/12 text-violet-300",
+  proposta_validada: "border-emerald-500/25 bg-emerald-500/12 text-emerald-300",
+  andamento: "border-orange-500/25 bg-orange-500/12 text-orange-300",
+  concluido: "border-green-500/25 bg-green-500/12 text-green-300",
+  perdido: "border-red-500/25 bg-red-500/12 text-red-300",
 };
+
+const QUICK_EMOJIS = [
+  "😀",
+  "😁",
+  "😎",
+  "🔥",
+  "🚀",
+  "💬",
+  "✅",
+  "🙏",
+  "👀",
+  "❤️",
+  "🎯",
+  "📌",
+];
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -195,6 +241,31 @@ function formatDateTime(value?: string | null) {
   }
 }
 
+function formatHour(value?: string | null) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return "";
+  }
+}
+
+function formatDayLabel(value?: string | null) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return "";
+  }
+}
+
 function formatRelative(value?: string | null) {
   if (!value) return "sem atividade";
   const diff = Date.now() - new Date(value).getTime();
@@ -210,12 +281,12 @@ function getTemperatureBadge(value?: string | null) {
   const temp = (value || "").toLowerCase();
 
   if (temp === "quente") {
-    return "bg-red-500/15 text-red-300 border-red-500/20";
+    return "border-red-500/25 bg-red-500/12 text-red-300";
   }
   if (temp === "frio") {
-    return "bg-slate-500/15 text-slate-300 border-slate-500/20";
+    return "border-slate-500/25 bg-slate-500/12 text-slate-300";
   }
-  return "bg-yellow-500/15 text-yellow-300 border-yellow-500/20";
+  return "border-yellow-500/25 bg-yellow-500/12 text-yellow-300";
 }
 
 function getEffectiveStage(item: ConversationRow): ConversationStage {
@@ -237,9 +308,51 @@ function maskToken(value?: string | null) {
   return `${value.slice(0, 6)}••••••••${value.slice(-4)}`;
 }
 
+function getInitials(name?: string | null) {
+  const clean = String(name || "").trim();
+  if (!clean) return "CL";
+
+  const parts = clean.split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() || "").join("");
+}
+
+function groupMessagesByDay(messages: MessageRow[]) {
+  const groups: Array<{ day: string; items: MessageRow[] }> = [];
+
+  for (const msg of messages) {
+    const day = formatDayLabel(msg.created_at) || "Sem data";
+    const found = groups.find((group) => group.day === day);
+    if (found) found.items.push(msg);
+    else groups.push({ day, items: [msg] });
+  }
+
+  return groups;
+}
+
+function getAttachmentKind(file: File): AttachmentDraft["kind"] {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  return "file";
+}
+
+function getAssignedMeta(
+  item: ConversationRow,
+  agentLookup: AgentLookup
+): { name: string; email: string } | null {
+  if (!item.assigned_to && !item.assigned_to_name) return null;
+
+  const lookup = item.assigned_to ? agentLookup[item.assigned_to] : null;
+
+  return {
+    name: lookup?.name || item.assigned_to_name || "Atendente",
+    email: lookup?.email || "",
+  };
+}
+
 export default function AtendimentoPage() {
   const supabase = useMemo(() => createClient(), []);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -248,12 +361,21 @@ export default function AtendimentoPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string>("Atendente");
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
+
   const [search, setSearch] = useState("");
+  const [flowFilter, setFlowFilter] = useState<FlowFilter>("all");
+  const [inboxView, setInboxView] = useState<InboxView>("all");
+  const [centerView, setCenterView] = useState<CenterView>("chat");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
+
+  const [showEmojiPanel, setShowEmojiPanel] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
+
   const [apiOpen, setApiOpen] = useState(false);
   const [pageError, setPageError] = useState<string>("");
   const [pageSuccess, setPageSuccess] = useState<string>("");
@@ -261,6 +383,8 @@ export default function AtendimentoPage() {
   const [connection, setConnection] = useState<WhatsAppConnectionRow | null>(
     null
   );
+  const [agentLookup, setAgentLookup] = useState<AgentLookup>({});
+
   const [connectionForm, setConnectionForm] = useState({
     connection_name: "WhatsApp Principal",
     phone_number: "",
@@ -339,6 +463,14 @@ export default function AtendimentoPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      attachments.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [attachments]);
+
   function clearNotices() {
     setPageError("");
     setPageSuccess("");
@@ -369,7 +501,7 @@ export default function AtendimentoPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("id, full_name, name, email")
+        .select("id, full_name, email")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -377,9 +509,7 @@ export default function AtendimentoPage() {
         console.error("Erro ao buscar profile:", profileError.message);
       }
 
-      setCurrentUserName(
-        profile?.full_name || profile?.name || profile?.email || "Atendente"
-      );
+      setCurrentUserName(profile?.full_name || profile?.email || "Atendente");
       setCurrentUserEmail(profile?.email || user.email || "");
 
       const { data: membership, error: membershipError } = await supabase
@@ -406,6 +536,7 @@ export default function AtendimentoPage() {
       await Promise.all([
         fetchConversations(membership.company_id),
         fetchConnection(membership.company_id),
+        fetchAgents(membership.company_id),
       ]);
     } catch (error) {
       console.error(error);
@@ -413,6 +544,56 @@ export default function AtendimentoPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function fetchAgents(activeCompanyId: string) {
+    const { data: memberships, error: membershipError } = await supabase
+      .from("company_users")
+      .select("user_id, role")
+      .eq("company_id", activeCompanyId);
+
+    if (membershipError) {
+      console.error("Erro ao buscar company_users:", membershipError.message);
+      return;
+    }
+
+    const userIds = Array.from(
+      new Set((memberships || []).map((row) => row.user_id).filter(Boolean))
+    );
+
+    if (userIds.length === 0) {
+      setAgentLookup({});
+      return;
+    }
+
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", userIds);
+
+    if (profileError) {
+      console.error("Erro ao buscar profiles:", profileError.message);
+      return;
+    }
+
+    const profilesMap = new Map(
+      (profiles || []).map((profile) => [profile.id, profile])
+    );
+
+    const nextLookup: AgentLookup = {};
+
+    for (const membership of memberships || []) {
+      const profile = profilesMap.get(membership.user_id);
+
+      nextLookup[membership.user_id] = {
+        id: membership.user_id,
+        name: profile?.full_name || profile?.email || "Atendente",
+        email: profile?.email || "",
+        role: membership.role || null,
+      };
+    }
+
+    setAgentLookup(nextLookup);
   }
 
   async function fetchConnection(activeCompanyId: string) {
@@ -603,6 +784,7 @@ export default function AtendimentoPage() {
     await Promise.all([
       fetchConversations(companyId),
       fetchConnection(companyId),
+      fetchAgents(companyId),
       selectedId ? fetchMessages(selectedId) : Promise.resolve(),
     ]);
 
@@ -650,9 +832,11 @@ export default function AtendimentoPage() {
       status: "sent",
     });
 
+    setInboxView("my_queue");
     setSelectedId(conversationId);
     await fetchConversations(target.company_id);
     await fetchMessages(conversationId);
+    await fetchAgents(target.company_id);
   }
 
   async function unassignConversation(conversationId: string) {
@@ -682,14 +866,16 @@ export default function AtendimentoPage() {
       company_id: target.company_id,
       sender_type: "system",
       sender_name: "Sistema",
-      message: "Conversa devolvida para a fila de atendimento.",
+      message: "Conversa devolvida para a fila de atendimento geral.",
       message_type: "text",
       direction: "outbound",
       status: "sent",
     });
 
+    setInboxView("general_queue");
     await fetchConversations(target.company_id);
     await fetchMessages(conversationId);
+    await fetchAgents(target.company_id);
   }
 
   async function moveStage(conversationId: string, stage: ConversationStage) {
@@ -739,13 +925,59 @@ export default function AtendimentoPage() {
     await moveStage(conversationId, "perdido");
   }
 
-  async function returnToLead(conversationId: string) {
-    await moveStage(conversationId, "lead");
+  function addEmoji(emoji: string) {
+    setMessageText((prev) => `${prev}${emoji}`);
+    setShowEmojiPanel(false);
+  }
+
+  function handleFilesSelected(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+
+    const newItems: AttachmentDraft[] = Array.from(fileList).map((file) => {
+      const kind = getAttachmentKind(file);
+      const previewUrl =
+        kind === "image" || kind === "video" ? URL.createObjectURL(file) : null;
+
+      return {
+        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+        file,
+        previewUrl,
+        kind,
+      };
+    });
+
+    setAttachments((prev) => [...prev, ...newItems]);
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => {
+      const item = prev.find((entry) => entry.id === id);
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((entry) => entry.id !== id);
+    });
+  }
+
+  function buildMessagePayload() {
+    const text = messageText.trim();
+    if (attachments.length === 0) return text;
+
+    const attachmentLines = attachments.map((item) => {
+      const icon =
+        item.kind === "image" ? "🖼️" : item.kind === "video" ? "🎥" : "📎";
+      return `${icon} ${item.file.name}`;
+    });
+
+    const attachmentBlock = `Arquivos anexados:\n${attachmentLines
+      .map((line) => `• ${line}`)
+      .join("\n")}`;
+
+    if (text) return `${text}\n\n${attachmentBlock}`;
+    return attachmentBlock;
   }
 
   async function sendMessage() {
-    const text = messageText.trim();
-    if (!selectedId || !companyId || !text || sending) return;
+    const payloadText = buildMessagePayload();
+    if (!selectedId || !companyId || !payloadText.trim() || sending) return;
 
     clearNotices();
     setSending(true);
@@ -758,7 +990,7 @@ export default function AtendimentoPage() {
         },
         body: JSON.stringify({
           conversationId: selectedId,
-          text,
+          text: payloadText,
           userId: currentUserId,
           userName: currentUserName,
           userEmail: currentUserEmail,
@@ -775,6 +1007,10 @@ export default function AtendimentoPage() {
       }
 
       setMessageText("");
+      attachments.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      setAttachments([]);
       setPageSuccess("Mensagem enviada com sucesso.");
       await fetchMessages(selectedId);
       if (companyId) await fetchConversations(companyId);
@@ -786,7 +1022,14 @@ export default function AtendimentoPage() {
     }
   }
 
-  const filtered = useMemo(() => {
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  const searched = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return conversations;
 
@@ -811,46 +1054,85 @@ export default function AtendimentoPage() {
 
   const queueItems = useMemo(
     () =>
-      filtered.filter(
+      searched.filter(
         (item) =>
           !item.assigned_to &&
           (item.status === "queue" || getEffectiveStage(item) === "lead")
       ),
-    [filtered]
+    [searched]
   );
 
-  const grouped = useMemo(() => {
+  const myQueueItems = useMemo(
+    () =>
+      searched.filter(
+        (item) =>
+          item.assigned_to === currentUserId &&
+          !["concluido", "perdido"].includes(getEffectiveStage(item))
+      ),
+    [searched, currentUserId]
+  );
+
+  const activeItems = useMemo(
+    () =>
+      searched.filter(
+        (item) =>
+          !!item.assigned_to &&
+          !["concluido", "perdido"].includes(getEffectiveStage(item))
+      ),
+    [searched]
+  );
+
+  const filtered = useMemo(() => {
+    if (inboxView === "general_queue") return queueItems;
+    if (inboxView === "my_queue") return myQueueItems;
+    if (inboxView === "active") return activeItems;
+    return searched;
+  }, [inboxView, queueItems, myQueueItems, activeItems, searched]);
+
+  const filteredKanban = useMemo(() => {
+    if (flowFilter === "all") return searched;
+
+    if (flowFilter === "queue") {
+      return searched.filter(
+        (item) =>
+          !item.assigned_to &&
+          (item.status === "queue" || getEffectiveStage(item) === "lead")
+      );
+    }
+
+    return searched.filter((item) => getEffectiveStage(item) === flowFilter);
+  }, [searched, flowFilter]);
+
+  const groupedKanban = useMemo(() => {
     return PIPELINE_STAGES.reduce((acc, stage) => {
-      acc[stage] = filtered.filter(
-        (item) => !!item.assigned_to && getEffectiveStage(item) === stage
+      acc[stage] = filteredKanban.filter(
+        (item) => getEffectiveStage(item) === stage
       );
       return acc;
     }, {} as Record<ConversationStage, ConversationRow[]>);
-  }, [filtered]);
+  }, [filteredKanban]);
 
   const selectedConversation =
     conversations.find((item) => item.id === selectedId) || null;
 
   const totalOpen =
     queueItems.length +
-    grouped.lead.length +
-    grouped.proposta_enviada.length +
-    grouped.aguardando_cliente.length +
-    grouped.proposta_validada.length +
-    grouped.andamento.length;
+    searched.filter((item) => getEffectiveStage(item) === "proposta_enviada")
+      .length +
+    searched.filter((item) => getEffectiveStage(item) === "aguardando_cliente")
+      .length +
+    searched.filter((item) => getEffectiveStage(item) === "proposta_validada")
+      .length +
+    searched.filter((item) => getEffectiveStage(item) === "andamento").length;
 
-  const myOpen = filtered.filter(
-    (item) =>
-      item.assigned_to === currentUserId &&
-      !["concluido", "perdido"].includes(getEffectiveStage(item))
-  ).length;
+  const myOpen = myQueueItems.length;
 
   const unreadTotal = conversations.reduce(
     (acc, item) => acc + Number(item.unread_count || 0),
     0
   );
 
-  const totalRevenue = filtered.reduce(
+  const totalRevenue = searched.reduce(
     (acc, item) => acc + Number(item.amount || 0),
     0
   );
@@ -859,19 +1141,35 @@ export default function AtendimentoPage() {
     ? getEffectiveStage(selectedConversation)
     : null;
 
+  const groupedMessages = useMemo(() => groupMessagesByDay(messages), [messages]);
+
   const stageTotals = useMemo(() => {
     return PIPELINE_STAGES.reduce((acc, stage) => {
-      acc[stage] = grouped[stage].reduce(
+      acc[stage] = groupedKanban[stage].reduce(
         (sum, item) => sum + Number(item.amount || 0),
         0
       );
       return acc;
     }, {} as Record<ConversationStage, number>);
-  }, [grouped]);
+  }, [groupedKanban]);
+
+  const timelineMessages = useMemo(() => {
+    return [...messages]
+      .filter((msg) => msg.sender_type === "system")
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      .slice(0, 8);
+  }, [messages]);
+
+  const selectedAssignedAgent = selectedConversation
+    ? getAssignedMeta(selectedConversation, agentLookup)
+    : null;
 
   if (loading) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center rounded-3xl border border-white/10 bg-white/5 p-8 text-white">
+      <div className="flex min-h-[70vh] items-center justify-center rounded-[28px] border border-white/10 bg-white/5 p-8 text-white">
         Carregando atendimento...
       </div>
     );
@@ -879,405 +1177,597 @@ export default function AtendimentoPage() {
 
   return (
     <div className="space-y-5 text-white">
-      <div className="rounded-[28px] border border-cyan-500/10 bg-[linear-gradient(135deg,rgba(8,15,35,0.98),rgba(20,31,58,0.98))] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_18px_60px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
-                FlowConversa
-              </span>
+      <div className="overflow-hidden rounded-[30px] border border-cyan-500/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_28%),linear-gradient(135deg,rgba(8,15,35,0.98),rgba(18,28,52,0.98))] shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_18px_60px_rgba(0,0,0,0.35)]">
+        <div className="p-5 md:p-6">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                  FlowConversa
+                </span>
 
-              <span
-                className={cn(
-                  "rounded-full border px-3 py-1 text-[11px] font-semibold",
-                  connection?.status === "connected"
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                    : "border-amber-500/20 bg-amber-500/10 text-amber-300"
-                )}
-              >
-                {connection?.status === "connected"
-                  ? "API conectada"
-                  : "API não configurada"}
-              </span>
-
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-300">
-                {currentUserName}
-              </span>
-
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-400">
-                {currentUserEmail || "sem e-mail"}
-              </span>
-            </div>
-
-            <h1 className="mt-3 text-3xl font-black tracking-wide text-white">
-              ATENDIMENTO
-            </h1>
-            <p className="mt-2 text-sm text-slate-300">
-              Fila de atendimento + pipeline comercial + WhatsApp em uma única
-              central.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-            <MetricCard
-              icon={<Inbox className="h-4 w-4" />}
-              label="Fila"
-              value={String(queueItems.length)}
-            />
-            <MetricCard
-              icon={<Users className="h-4 w-4" />}
-              label="Abertos"
-              value={String(totalOpen)}
-            />
-            <MetricCard
-              icon={<UserCheck className="h-4 w-4" />}
-              label="Meus atend."
-              value={String(myOpen)}
-            />
-            <MetricCard
-              icon={<MessageCircle className="h-4 w-4" />}
-              label="Não lidas"
-              value={String(unreadTotal)}
-            />
-            <MetricCard
-              icon={<Wallet className="h-4 w-4" />}
-              label="Receita"
-              value={formatCurrency(totalRevenue)}
-            />
-            <MetricCard
-              icon={<CheckCircle2 className="h-4 w-4" />}
-              label="Concluídos"
-              value={String(grouped.concluido.length)}
-            />
-          </div>
-        </div>
-
-        {(pageError || pageSuccess) && (
-          <div className="mt-4 space-y-2">
-            {pageError && (
-              <div className="flex items-start gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{pageError}</span>
-              </div>
-            )}
-
-            {pageSuccess && (
-              <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{pageSuccess}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-col gap-3 xl:flex-row">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por cliente, telefone, e-mail, origem, temperatura..."
-              className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
-            />
-          </div>
-
-          <button
-            onClick={handleRefresh}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
-          >
-            <RefreshCcw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            Atualizar
-          </button>
-
-          <button
-            onClick={() => setApiOpen((prev) => !prev)}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/15"
-          >
-            <Settings2 className="h-4 w-4" />
-            {apiOpen ? "Ocultar API" : "Configurar API"}
-            {apiOpen ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </button>
-        </div>
-
-        {apiOpen && (
-          <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-4">
-            <div className="mb-4 flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-cyan-300" />
-              <h2 className="text-sm font-semibold text-white">
-                Configuração da WhatsApp Cloud API
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-              <InputField
-                label="Nome da conexão"
-                value={connectionForm.connection_name}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({
-                    ...prev,
-                    connection_name: value,
-                  }))
-                }
-                placeholder="WhatsApp Principal"
-              />
-              <InputField
-                label="Número conectado"
-                value={connectionForm.phone_number}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({ ...prev, phone_number: value }))
-                }
-                placeholder="+55 11 99999-9999"
-              />
-              <InputField
-                label="Phone Number ID"
-                value={connectionForm.phone_number_id}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({
-                    ...prev,
-                    phone_number_id: value,
-                  }))
-                }
-                placeholder="123456789012345"
-              />
-              <InputField
-                label="Business Account ID"
-                value={connectionForm.business_account_id}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({
-                    ...prev,
-                    business_account_id: value,
-                  }))
-                }
-                placeholder="WABA ID"
-              />
-              <InputField
-                label="Verify Token"
-                value={connectionForm.verify_token}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({ ...prev, verify_token: value }))
-                }
-                placeholder="token de verificação do webhook"
-              />
-              <InputField
-                label="Access Token"
-                value={connectionForm.access_token}
-                onChange={(value) =>
-                  setConnectionForm((prev) => ({ ...prev, access_token: value }))
-                }
-                placeholder="token da Meta"
-                type="password"
-              />
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
-              <StatusMini
-                label="Status"
-                value={
-                  connection?.status === "connected"
+                <span
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-[11px] font-semibold",
+                    connection?.status === "connected"
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                      : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                  )}
+                >
+                  {connection?.status === "connected"
                     ? "API conectada"
-                    : isConnectionReady
-                    ? "Pronta para salvar"
-                    : "Campos obrigatórios pendentes"
-                }
-                tone={
-                  connection?.status === "connected"
-                    ? "success"
-                    : isConnectionReady
-                    ? "info"
-                    : "warning"
-                }
-              />
-              <StatusMini
-                label="Token"
-                value={maskToken(connectionForm.access_token)}
-                tone="neutral"
-              />
-              <StatusMini
-                label="Webhook esperado"
-                value="/api/whatsapp/webhook"
-                tone="info"
-              />
-            </div>
+                    : "API não configurada"}
+                </span>
 
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                onClick={saveConnection}
-                disabled={savingConnection}
-                className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:opacity-60"
-              >
-                {savingConnection ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Salvar conexão
-              </button>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-300">
+                  {currentUserName}
+                </span>
 
-              <div className="text-xs text-slate-400">
-                Após salvar, o status precisa ficar como{" "}
-                <span className="text-emerald-300">API conectada</span>.
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-400">
+                  {currentUserEmail || "sem e-mail"}
+                </span>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_1.35fr]">
-        <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,38,0.96),rgba(8,14,30,0.98))] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-white">Kanban de conversas</h2>
-              <p className="text-xs text-slate-400">
-                Visual comercial com rolagem lateral e totais por etapa.
+              <h1 className="mt-3 text-3xl font-black tracking-wide text-white md:text-4xl">
+                ATENDIMENTO PREMIUM
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-300 md:text-[15px]">
+                Central multiatendente com fila geral, minha fila, ativos e
+                kanban comercial.
               </p>
             </div>
 
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300">
-              <ArrowRightLeft className="h-4 w-4 text-cyan-300" />
-              Arraste lateralmente
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+              <MetricCard
+                icon={<Inbox className="h-4 w-4" />}
+                label="Fila geral"
+                value={String(queueItems.length)}
+              />
+              <MetricCard
+                icon={<Users className="h-4 w-4" />}
+                label="Abertos"
+                value={String(totalOpen)}
+              />
+              <MetricCard
+                icon={<UserCheck className="h-4 w-4" />}
+                label="Minha fila"
+                value={String(myOpen)}
+              />
+              <MetricCard
+                icon={<MessageCircle className="h-4 w-4" />}
+                label="Não lidas"
+                value={String(unreadTotal)}
+              />
+              <MetricCard
+                icon={<Wallet className="h-4 w-4" />}
+                label="Receita"
+                value={formatCurrency(totalRevenue)}
+              />
+              <MetricCard
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label="Concluídos"
+                value={String(
+                  searched.filter(
+                    (item) => getEffectiveStage(item) === "concluido"
+                  ).length
+                )}
+              />
             </div>
           </div>
 
-          <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max gap-4">
-              <StageColumn
-                title="Fila de atendimento"
+          {(pageError || pageSuccess) && (
+            <div className="mt-4 space-y-2">
+              {pageError && (
+                <div className="flex items-start gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{pageError}</span>
+                </div>
+              )}
+
+              {pageSuccess && (
+                <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{pageSuccess}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-col gap-3 xl:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por cliente, telefone, e-mail, origem, temperatura..."
+                className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
+              />
+            </div>
+
+            <button
+              onClick={handleRefresh}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+            >
+              <RefreshCcw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+              Atualizar
+            </button>
+
+            <button
+              onClick={() => setApiOpen((prev) => !prev)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/15"
+            >
+              <Settings2 className="h-4 w-4" />
+              {apiOpen ? "Ocultar API" : "Configurar API"}
+              {apiOpen ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+
+          {apiOpen && (
+            <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-cyan-300" />
+                <h2 className="text-sm font-semibold text-white">
+                  Configuração da WhatsApp Cloud API
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                <InputField
+                  label="Nome da conexão"
+                  value={connectionForm.connection_name}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      connection_name: value,
+                    }))
+                  }
+                  placeholder="WhatsApp Principal"
+                />
+                <InputField
+                  label="Número conectado"
+                  value={connectionForm.phone_number}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      phone_number: value,
+                    }))
+                  }
+                  placeholder="+55 11 99999-9999"
+                />
+                <InputField
+                  label="Phone Number ID"
+                  value={connectionForm.phone_number_id}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      phone_number_id: value,
+                    }))
+                  }
+                  placeholder="123456789012345"
+                />
+                <InputField
+                  label="Business Account ID"
+                  value={connectionForm.business_account_id}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      business_account_id: value,
+                    }))
+                  }
+                  placeholder="WABA ID"
+                />
+                <InputField
+                  label="Verify Token"
+                  value={connectionForm.verify_token}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      verify_token: value,
+                    }))
+                  }
+                  placeholder="token de verificação do webhook"
+                />
+                <InputField
+                  label="Access Token"
+                  value={connectionForm.access_token}
+                  onChange={(value) =>
+                    setConnectionForm((prev) => ({
+                      ...prev,
+                      access_token: value,
+                    }))
+                  }
+                  placeholder="token da Meta"
+                  type="password"
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                <StatusMini
+                  label="Status"
+                  value={
+                    connection?.status === "connected"
+                      ? "API conectada"
+                      : isConnectionReady
+                      ? "Pronta para salvar"
+                      : "Campos obrigatórios pendentes"
+                  }
+                  tone={
+                    connection?.status === "connected"
+                      ? "success"
+                      : isConnectionReady
+                      ? "info"
+                      : "warning"
+                  }
+                />
+                <StatusMini
+                  label="Token"
+                  value={maskToken(connectionForm.access_token)}
+                  tone="neutral"
+                />
+                <StatusMini
+                  label="Webhook esperado"
+                  value="/api/whatsapp/webhook"
+                  tone="info"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={saveConnection}
+                  disabled={savingConnection}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:opacity-60"
+                >
+                  {savingConnection ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Salvar conexão
+                </button>
+
+                <div className="text-xs text-slate-400">
+                  Após salvar, o status precisa ficar como{" "}
+                  <span className="text-emerald-300">API conectada</span>.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)_340px]">
+        <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,37,0.96),rgba(8,14,30,0.98))] shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+          <div className="border-b border-white/10 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">Conversas</h2>
+                <p className="text-xs text-slate-400">
+                  Filas por atendente + visão geral.
+                </p>
+              </div>
+
+              <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-bold text-cyan-300">
+                {inboxView === "general_queue"
+                  ? queueItems.length
+                  : inboxView === "my_queue"
+                  ? myQueueItems.length
+                  : inboxView === "active"
+                  ? activeItems.length
+                  : searched.length}
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <InboxTab
+                icon={<ChevronRight className="h-4 w-4" />}
+                label="Todos"
+                count={searched.length}
+                active={inboxView === "all"}
+                onClick={() => setInboxView("all")}
+              />
+              <InboxTab
+                icon={<Inbox className="h-4 w-4" />}
+                label="Fila geral"
                 count={queueItems.length}
-                total={queueItems.reduce(
-                  (sum, item) => sum + Number(item.amount || 0),
-                  0
-                )}
-                badgeClass="bg-blue-500/15 text-blue-300 border-blue-500/20"
-              >
-                {queueItems.length === 0 ? (
-                  <EmptyColumn text="Nenhuma conversa aguardando atendimento." />
-                ) : (
-                  queueItems.map((item) => (
-                    <ConversationCard
+                active={inboxView === "general_queue"}
+                onClick={() => setInboxView("general_queue")}
+              />
+              <InboxTab
+                icon={<UserCheck className="h-4 w-4" />}
+                label="Minha fila"
+                count={myQueueItems.length}
+                active={inboxView === "my_queue"}
+                onClick={() => setInboxView("my_queue")}
+              />
+              <InboxTab
+                icon={<Users className="h-4 w-4" />}
+                label="Ativos"
+                count={activeItems.length}
+                active={inboxView === "active"}
+                onClick={() => setInboxView("active")}
+              />
+            </div>
+
+            <button
+              onClick={() => setCenterView("kanban")}
+              className={cn(
+                "mt-3 flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-sm font-semibold transition",
+                centerView === "kanban"
+                  ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-300"
+                  : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+              )}
+            >
+              <span className="inline-flex items-center gap-2">
+                <KanbanSquare className="h-4 w-4" />
+                Abrir kanban
+              </span>
+              {centerView === "kanban" ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+
+          <div className="max-h-[78vh] overflow-y-auto p-3">
+            {filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5 text-center text-sm text-slate-400">
+                Nenhuma conversa encontrada nesta fila.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filtered.map((item) => {
+                  const assignedMeta = getAssignedMeta(item, agentLookup);
+
+                  return (
+                    <ConversationInboxCard
                       key={item.id}
                       item={item}
                       active={selectedId === item.id}
-                      onClick={() => setSelectedId(item.id)}
+                      onClick={() => {
+                        setSelectedId(item.id);
+                        setCenterView("chat");
+                      }}
+                      assignedName={
+                        assignedMeta?.name || item.assigned_to_name || ""
+                      }
+                      assignedEmail={assignedMeta?.email || ""}
                     />
-                  ))
-                )}
-              </StageColumn>
-
-              {PIPELINE_STAGES.map((stage) => (
-                <StageColumn
-                  key={stage}
-                  title={STAGE_LABELS[stage]}
-                  count={grouped[stage].length}
-                  total={stageTotals[stage]}
-                  badgeClass={STAGE_BADGES[stage]}
-                >
-                  {grouped[stage].length === 0 ? (
-                    <EmptyColumn text="Nenhum item nesta etapa." />
-                  ) : (
-                    grouped[stage].map((item) => (
-                      <ConversationCard
-                        key={item.id}
-                        item={item}
-                        active={selectedId === item.id}
-                        onClick={() => setSelectedId(item.id)}
-                      />
-                    ))
-                  )}
-                </StageColumn>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="min-h-[78vh] rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,38,0.96),rgba(8,14,30,0.98))] shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+        <div className="min-h-[78vh] overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,38,0.96),rgba(8,14,30,0.98))] shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
           {!selectedConversation ? (
             <div className="flex h-full items-center justify-center p-8 text-center text-sm text-slate-400">
-              Selecione uma conversa para ver os detalhes.
+              Selecione uma conversa para abrir o painel.
+            </div>
+          ) : centerView === "kanban" ? (
+            <div className="flex h-full flex-col">
+              <div className="border-b border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0))] px-4 py-4 md:px-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-white md:text-2xl">
+                      Kanban comercial
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Visual de pipeline completo separado do chat.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <CenterTab
+                      active={false}
+                      onClick={() => setCenterView("chat")}
+                      label="Chat"
+                      icon={<MessageCircle className="h-4 w-4" />}
+                    />
+                    <CenterTab
+                      active
+                      onClick={() => setCenterView("kanban")}
+                      label="Kanban"
+                      icon={<KanbanSquare className="h-4 w-4" />}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 overflow-x-auto pb-1">
+                  <div className="flex min-w-max gap-3">
+                    <FlowStagePill
+                      title="Todos"
+                      active={flowFilter === "all"}
+                      onClick={() => setFlowFilter("all")}
+                      count={searched.length}
+                      total={totalRevenue}
+                      badgeClass="border-white/10 bg-white/5 text-slate-200"
+                    />
+                    <FlowStagePill
+                      title="Fila"
+                      active={flowFilter === "queue"}
+                      onClick={() => setFlowFilter("queue")}
+                      count={queueItems.length}
+                      total={queueItems.reduce(
+                        (sum, item) => sum + Number(item.amount || 0),
+                        0
+                      )}
+                      badgeClass="border-blue-500/25 bg-blue-500/12 text-blue-300"
+                    />
+                    {PIPELINE_STAGES.map((stage) => (
+                      <FlowStagePill
+                        key={stage}
+                        title={STAGE_LABELS[stage]}
+                        active={flowFilter === stage}
+                        onClick={() => setFlowFilter(stage)}
+                        count={groupedKanban[stage].length}
+                        total={stageTotals[stage]}
+                        badgeClass={STAGE_BADGES[stage]}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-x-auto overflow-y-auto p-4">
+                <div className="flex min-w-max gap-4">
+                  {PIPELINE_STAGES.map((stage) => (
+                    <KanbanColumn
+                      key={stage}
+                      title={STAGE_LABELS[stage]}
+                      badgeClass={STAGE_BADGES[stage]}
+                      count={groupedKanban[stage].length}
+                      total={stageTotals[stage]}
+                    >
+                      {groupedKanban[stage].length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-500">
+                          Nenhuma conversa nesta etapa.
+                        </div>
+                      ) : (
+                        groupedKanban[stage].map((item) => {
+                          const assignedMeta = getAssignedMeta(item, agentLookup);
+
+                          return (
+                            <ConversationInboxCard
+                              key={item.id}
+                              item={item}
+                              active={selectedId === item.id}
+                              onClick={() => {
+                                setSelectedId(item.id);
+                                setCenterView("chat");
+                              }}
+                              assignedName={
+                                assignedMeta?.name || item.assigned_to_name || ""
+                              }
+                              assignedEmail={assignedMeta?.email || ""}
+                            />
+                          );
+                        })
+                      )}
+                    </KanbanColumn>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex h-full flex-col">
-              <div className="border-b border-white/10 p-5">
-                <div className="flex flex-col gap-5">
-                  <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-2xl font-bold text-white">
-                          {selectedConversation.client_name || "Sem nome"}
-                        </h2>
+              <div className="border-b border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0))] px-4 py-4 md:px-5">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <AvatarBubble
+                        name={selectedConversation.client_name}
+                        avatarUrl={selectedConversation.avatar_url}
+                        size="lg"
+                        showWhatsapp
+                      />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="truncate text-lg font-bold text-white md:text-2xl">
+                            {selectedConversation.client_name || "Sem nome"}
+                          </h2>
 
-                        <span
-                          className={cn(
-                            "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                            selectedConversation.assigned_to
-                              ? STAGE_BADGES[selectedStage || "lead"]
-                              : "border-blue-500/20 bg-blue-500/10 text-blue-300"
+                          <span
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                              selectedConversation.assigned_to
+                                ? STAGE_BADGES[selectedStage || "lead"]
+                                : "border-blue-500/25 bg-blue-500/12 text-blue-300"
+                            )}
+                          >
+                            {selectedConversation.assigned_to
+                              ? selectedStage
+                                ? STAGE_LABELS[selectedStage]
+                                : "Lead"
+                              : "Fila geral"}
+                          </span>
+
+                          <span
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                              getTemperatureBadge(selectedConversation.temperature)
+                            )}
+                          >
+                            {selectedConversation.temperature || "Morno"}
+                          </span>
+
+                          {selectedAssignedAgent?.name && (
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                              Assumido por {selectedAssignedAgent.name}
+                            </span>
                           )}
-                        >
-                          {selectedConversation.assigned_to
-                            ? selectedStage
-                              ? STAGE_LABELS[selectedStage]
-                              : "Lead"
-                            : "Fila de atendimento"}
-                        </span>
+                        </div>
 
-                        <span
-                          className={cn(
-                            "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                            getTemperatureBadge(selectedConversation.temperature)
-                          )}
-                        >
-                          {selectedConversation.temperature || "Morno"}
-                        </span>
+                        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-slate-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Phone className="h-4 w-4 text-slate-400" />
+                            {formatPhone(selectedConversation.client_phone)}
+                          </span>
+
+                          <span className="inline-flex items-center gap-1.5">
+                            <Mail className="h-4 w-4 text-slate-400" />
+                            {selectedConversation.client_email || "Sem e-mail"}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-sm text-slate-400">
+                          {selectedConversation.subject || "Sem assunto definido"}
+                        </p>
                       </div>
-
-                      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-300">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Phone className="h-4 w-4 text-slate-400" />
-                          {formatPhone(selectedConversation.client_phone)}
-                        </span>
-
-                        <span className="inline-flex items-center gap-1.5">
-                          <Mail className="h-4 w-4 text-slate-400" />
-                          {selectedConversation.client_email || "Sem e-mail"}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-sm text-slate-400">
-                        {selectedConversation.subject || "Sem assunto definido"}
-                      </p>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      <CenterTab
+                        active
+                        onClick={() => setCenterView("chat")}
+                        label="Chat"
+                        icon={<MessageCircle className="h-4 w-4" />}
+                      />
+                      <CenterTab
+                        active={false}
+                        onClick={() => setCenterView("kanban")}
+                        label="Kanban"
+                        icon={<KanbanSquare className="h-4 w-4" />}
+                      />
+
                       {!selectedConversation.assigned_to ? (
                         <button
                           onClick={() => assumeConversation(selectedConversation.id)}
-                          className="rounded-2xl bg-cyan-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
+                          className="rounded-2xl bg-cyan-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
                         >
                           Assumir atendimento
                         </button>
-                      ) : (
+                      ) : selectedConversation.assigned_to === currentUserId ? (
                         <button
-                          onClick={() => unassignConversation(selectedConversation.id)}
-                          className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-3.5 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
+                          onClick={() =>
+                            unassignConversation(selectedConversation.id)
+                          }
+                          className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-3.5 py-2.5 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
                         >
                           Voltar para fila
                         </button>
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm font-medium text-slate-300">
+                          Em atendimento por{" "}
+                          {selectedAssignedAgent?.name || "outro atendente"}
+                        </div>
                       )}
 
                       <button
                         onClick={() => finalizeConversation(selectedConversation.id)}
-                        className="rounded-2xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                        className="rounded-2xl bg-emerald-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
                       >
                         Concluir
                       </button>
 
                       <button
                         onClick={() => markLost(selectedConversation.id)}
-                        className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/15"
+                        className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2.5 text-sm font-medium text-red-300 transition hover:bg-red-500/15"
                       >
                         Perder
                       </button>
@@ -1300,8 +1790,310 @@ export default function AtendimentoPage() {
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
 
-                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <div className="relative flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.06),transparent_28%)] p-4 md:p-5">
+                <div className="absolute inset-0 opacity-[0.035] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
+                <div className="relative">
+                  {messages.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-400">
+                      Ainda não há mensagens nesta conversa.
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      {groupedMessages.map((group) => (
+                        <div key={group.day}>
+                          <div className="mb-4 flex justify-center">
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-300">
+                              {group.day}
+                            </span>
+                          </div>
+
+                          <div className="space-y-3">
+                            {group.items.map((msg) => {
+                              const isAgent = msg.sender_type === "agent";
+                              const isSystem = msg.sender_type === "system";
+
+                              return (
+                                <div
+                                  key={msg.id}
+                                  className={cn(
+                                    "flex gap-3",
+                                    isSystem
+                                      ? "justify-center"
+                                      : isAgent
+                                      ? "justify-end"
+                                      : "justify-start"
+                                  )}
+                                >
+                                  {!isAgent && !isSystem && (
+                                    <AvatarBubble
+                                      name={
+                                        msg.sender_name ||
+                                        selectedConversation.client_name ||
+                                        "Cliente"
+                                      }
+                                      avatarUrl={selectedConversation.avatar_url}
+                                      size="sm"
+                                      showWhatsapp
+                                    />
+                                  )}
+
+                                  <div
+                                    className={cn(
+                                      "max-w-[90%] md:max-w-[76%]",
+                                      isSystem && "max-w-full"
+                                    )}
+                                  >
+                                    {!isSystem && (
+                                      <div
+                                        className={cn(
+                                          "mb-1 px-1 text-[11px] font-medium",
+                                          isAgent
+                                            ? "text-right text-cyan-200"
+                                            : "text-slate-400"
+                                        )}
+                                      >
+                                        {msg.sender_name ||
+                                          (msg.sender_type === "client"
+                                            ? selectedConversation.client_name ||
+                                              "Cliente"
+                                            : "Atendente")}
+                                      </div>
+                                    )}
+
+                                    <div
+                                      className={cn(
+                                        "rounded-[24px] px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.18)]",
+                                        isSystem &&
+                                          "border border-white/10 bg-white/5 text-center text-slate-300",
+                                        isAgent &&
+                                          "rounded-br-md bg-[linear-gradient(180deg,rgba(6,182,212,1),rgba(14,116,144,1))] text-white",
+                                        !isAgent &&
+                                          !isSystem &&
+                                          "rounded-bl-md border border-white/10 bg-[linear-gradient(180deg,rgba(31,41,55,0.96),rgba(15,23,42,0.98))] text-white"
+                                      )}
+                                    >
+                                      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                                        {msg.message}
+                                      </div>
+
+                                      <div
+                                        className={cn(
+                                          "mt-2 flex items-center gap-1 text-[11px]",
+                                          isSystem
+                                            ? "justify-center text-slate-400"
+                                            : isAgent
+                                            ? "justify-end text-cyan-100/80"
+                                            : "justify-end text-slate-400"
+                                        )}
+                                      >
+                                        <span>{formatHour(msg.created_at)}</span>
+                                        {isAgent && (
+                                          <>
+                                            {msg.status === "read" ? (
+                                              <CheckCheck className="h-3.5 w-3.5" />
+                                            ) : (
+                                              <Check className="h-3.5 w-3.5" />
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {isAgent && (
+                                    <AvatarBubble
+                                      name={currentUserName}
+                                      size="sm"
+                                      agent
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.08))] p-4">
+                {attachments.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-3">
+                    {attachments.map((item) => (
+                      <AttachmentChip
+                        key={item.id}
+                        item={item}
+                        onRemove={() => removeAttachment(item.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <div className="rounded-[28px] border border-white/10 bg-white/5 p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPanel((prev) => !prev)}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10"
+                    >
+                      <Smile className="h-4 w-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </button>
+
+                    <div className="hidden items-center gap-2 md:flex">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10"
+                      >
+                        <FileImage className="h-4 w-4" />
+                        Foto
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10"
+                      >
+                        <Film className="h-4 w-4" />
+                        Vídeo
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10"
+                      >
+                        <File className="h-4 w-4" />
+                        Arquivo
+                      </button>
+                    </div>
+
+                    <div className="ml-auto text-[11px] text-slate-500">
+                      Enter envia • Shift + Enter quebra linha
+                    </div>
+                  </div>
+
+                  {showEmojiPanel && (
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex flex-wrap gap-2">
+                        {QUICK_EMOJIS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => addEmoji(emoji)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg transition hover:bg-white/10"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-end gap-3">
+                    <textarea
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      onKeyDown={handleComposerKeyDown}
+                      placeholder="Digite uma mensagem para o cliente..."
+                      rows={3}
+                      className="min-h-[92px] flex-1 resize-none rounded-[22px] border border-white/10 bg-[rgba(7,12,25,0.72)] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
+                    />
+
+                    <button
+                      onClick={sendMessage}
+                      disabled={
+                        sending ||
+                        (!messageText.trim() && attachments.length === 0)
+                      }
+                      className="inline-flex h-[56px] items-center justify-center gap-2 rounded-[22px] bg-cyan-600 px-5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {sending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Enviar
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleFilesSelected(e.target.files);
+                    e.currentTarget.value = "";
+                  }}
+                />
+
+                <p className="mt-2 text-xs text-slate-500">
+                  O envio de texto continua usando{" "}
+                  <span className="text-cyan-300">/api/whatsapp/send</span>.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,37,0.96),rgba(8,14,30,0.98))] shadow-[0_12px_40px_rgba(0,0,0,0.35)] 2xl:block">
+          {!selectedConversation ? (
+            <div className="flex h-full min-h-[260px] items-center justify-center p-8 text-center text-sm text-slate-400">
+              Selecione uma conversa para ver os detalhes.
+            </div>
+          ) : (
+            <div className="max-h-[78vh] overflow-y-auto p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">
+                    Painel da conversa
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Responsável, e-mail, etapa e linha do tempo.
+                  </p>
+                </div>
+                <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10">
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center gap-3">
+                    <AvatarBubble
+                      name={selectedConversation.client_name}
+                      avatarUrl={selectedConversation.avatar_url}
+                      size="md"
+                      showWhatsapp
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-semibold text-white">
+                        {selectedConversation.client_name || "Sem nome"}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {formatPhone(selectedConversation.client_phone)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
                     <InfoMini
                       icon={<Wallet className="h-4 w-4" />}
                       label="Valor"
@@ -1328,18 +2120,31 @@ export default function AtendimentoPage() {
                       icon={<Sparkles className="h-4 w-4" />}
                       label="Origem"
                       value={selectedConversation.lead_source || "WhatsApp"}
-                      accent="text-purple-300"
+                      accent="text-violet-300"
                     />
                   </div>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold text-white">
+                    Situação e atendimento
+                  </div>
+                  <div className="space-y-3">
                     <InfoMini
                       label="Responsável"
+                      value={selectedAssignedAgent?.name || "Não atribuído"}
+                    />
+                    <InfoMini
+                      label="E-mail do responsável"
                       value={
-                        selectedConversation.assigned_to_name || "Não atribuído"
+                        selectedAssignedAgent?.email ||
+                        (selectedConversation.assigned_to
+                          ? "E-mail não encontrado"
+                          : "Sem responsável")
                       }
                     />
                     <InfoMini label="Atendente logado" value={currentUserName} />
+                    <InfoMini label="Seu e-mail" value={currentUserEmail || "—"} />
                     <InfoMini
                       label="Última atividade"
                       value={formatRelative(selectedConversation.last_message_at)}
@@ -1350,105 +2155,67 @@ export default function AtendimentoPage() {
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.06),transparent_28%)] p-5">
-                {messages.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-400">
-                    Ainda não há mensagens nesta conversa.
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold text-white">
+                    Etapa atual
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    {messages.map((msg) => {
-                      const isAgent = msg.sender_type === "agent";
-                      const isSystem = msg.sender_type === "system";
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={cn(
-                            "flex",
-                            isSystem
-                              ? "justify-center"
-                              : isAgent
-                              ? "justify-end"
-                              : "justify-start"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "max-w-[90%] rounded-[22px] px-4 py-3 text-sm shadow-sm",
-                              isSystem &&
-                                "border border-white/10 bg-white/5 text-slate-300",
-                              isAgent &&
-                                "bg-cyan-600 text-white shadow-[0_10px_30px_rgba(6,182,212,0.18)]",
-                              !isAgent &&
-                                !isSystem &&
-                                "border border-white/10 bg-slate-800/70 text-white"
-                            )}
-                          >
-                            {!isSystem && (
-                              <div
-                                className={cn(
-                                  "mb-1 text-[11px] font-medium",
-                                  isAgent ? "text-cyan-100" : "text-slate-400"
-                                )}
-                              >
-                                {msg.sender_name ||
-                                  (msg.sender_type === "client"
-                                    ? selectedConversation.client_name || "Cliente"
-                                    : "Atendente")}
-                              </div>
-                            )}
-
-                            <div className="whitespace-pre-wrap leading-relaxed">
-                              {msg.message}
-                            </div>
-
-                            <div
-                              className={cn(
-                                "mt-2 text-[11px]",
-                                isAgent ? "text-cyan-100/80" : "text-slate-400"
-                              )}
-                            >
-                              {formatDateTime(msg.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
+                  <div className="flex flex-wrap gap-2">
+                    {PIPELINE_STAGES.map((stage) => (
+                      <button
+                        key={stage}
+                        onClick={() => moveStage(selectedConversation.id, stage)}
+                        className={cn(
+                          "rounded-2xl border px-3 py-2 text-xs font-semibold transition",
+                          selectedStage === stage
+                            ? STAGE_BADGES[stage]
+                            : "border-white/10 bg-black/20 text-slate-300 hover:bg-white/10"
+                        )}
+                      >
+                        {STAGE_LABELS[stage]}
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-
-              <div className="border-t border-white/10 bg-black/10 p-4">
-                <div className="flex items-end gap-3">
-                  <textarea
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="Digite uma mensagem para o cliente..."
-                    rows={3}
-                    className="min-h-[90px] flex-1 resize-none rounded-[22px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={sending || !messageText.trim()}
-                    className="inline-flex h-[54px] items-center justify-center gap-2 rounded-[22px] bg-cyan-600 px-5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {sending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    Enviar
-                  </button>
                 </div>
 
-                <p className="mt-2 text-xs text-slate-500">
-                  O envio já está preparado para usar{" "}
-                  <span className="text-cyan-300">/api/whatsapp/send</span>.
-                </p>
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold text-white">
+                    Linha do tempo
+                  </div>
+
+                  {timelineMessages.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-slate-400">
+                      Nenhum evento de sistema ainda.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {timelineMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className="rounded-2xl border border-white/10 bg-black/20 p-3"
+                        >
+                          <div className="text-sm leading-relaxed text-slate-200">
+                            {msg.message}
+                          </div>
+                          <div className="mt-2 text-[11px] text-slate-500">
+                            {formatDateTime(msg.created_at)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedConversation.notes && (
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                    <div className="mb-2 text-sm font-semibold text-white">
+                      Observações
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+                      {selectedConversation.notes}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1468,7 +2235,7 @@ function MetricCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-3 shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur-sm">
       <div className="mb-2 flex items-center gap-2 text-slate-400">
         {icon}
         <span className="text-xs font-medium">{label}</span>
@@ -1507,67 +2274,159 @@ function InputField({
   );
 }
 
-function StageColumn({
+function InboxTab({
+  icon,
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center justify-between rounded-2xl border px-3 py-3 text-left transition",
+        active
+          ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-300"
+          : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+      )}
+    >
+      <span className="inline-flex items-center gap-2 text-sm font-medium">
+        {icon}
+        {label}
+      </span>
+      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] font-bold text-white">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function CenterTab({
+  active,
+  onClick,
+  label,
+  icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-medium transition",
+        active
+          ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-300"
+          : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function FlowStagePill({
   title,
+  active,
+  onClick,
   count,
   total,
   badgeClass,
-  children,
 }: {
   title: string;
+  active: boolean;
+  onClick: () => void;
   count: number;
   total: number;
   badgeClass: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "min-w-[180px] rounded-[22px] border px-4 py-3 text-left transition",
+        badgeClass,
+        active
+          ? "shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_12px_30px_rgba(0,0,0,0.16)]"
+          : "opacity-85 hover:opacity-100"
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="truncate text-xs font-bold uppercase tracking-[0.12em]">
+          {title}
+        </div>
+        <div className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] font-bold text-white">
+          {count}
+        </div>
+      </div>
+      <div className="mt-2 text-sm font-semibold text-white">
+        {formatCurrency(total)}
+      </div>
+    </button>
+  );
+}
+
+function KanbanColumn({
+  title,
+  badgeClass,
+  count,
+  total,
+  children,
+}: {
+  title: string;
+  badgeClass: string;
+  count: number;
+  total: number;
   children: ReactNode;
 }) {
   return (
-    <div className="w-[285px] min-w-[285px] rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,27,52,0.94),rgba(12,19,38,0.98))] shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
-      <div className="border-b border-white/10 px-4 py-4">
+    <div className="w-[320px] rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,37,0.96),rgba(8,14,30,0.98))] p-3">
+      <div className="mb-3 rounded-2xl border border-white/10 bg-white/5 p-3">
         <div className="flex items-center justify-between gap-2">
           <span
             className={cn(
-              "rounded-xl border px-3 py-1 text-[11px] font-bold uppercase",
+              "rounded-full border px-2.5 py-1 text-[11px] font-bold",
               badgeClass
             )}
           >
             {title}
           </span>
-          <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-slate-300">
+          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] font-bold text-white">
             {count}
           </span>
         </div>
-
-        <div className="mt-3 text-xs text-slate-400">
-          Total da etapa
-          <div className="mt-1 text-sm font-semibold text-white">
-            {formatCurrency(total)}
-          </div>
+        <div className="mt-2 text-sm font-semibold text-white">
+          {formatCurrency(total)}
         </div>
       </div>
 
-      <div className="max-h-[67vh] space-y-3 overflow-y-auto p-4">
-        {children}
-      </div>
+      <div className="space-y-3">{children}</div>
     </div>
   );
 }
 
-function EmptyColumn({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-500">
-      {text}
-    </div>
-  );
-}
-
-function ConversationCard({
+function ConversationInboxCard({
   item,
   active,
   onClick,
+  assignedName,
+  assignedEmail,
 }: {
   item: ConversationRow;
   active: boolean;
   onClick: () => void;
+  assignedName?: string;
+  assignedEmail?: string;
 }) {
   const stage = getEffectiveStage(item);
   const isQueue =
@@ -1577,87 +2436,214 @@ function ConversationCard({
     <button
       onClick={onClick}
       className={cn(
-        "w-full rounded-[22px] border p-4 text-left transition",
+        "w-full rounded-[24px] border p-4 text-left transition",
         active
-          ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
+          ? "border-cyan-500/30 bg-[linear-gradient(180deg,rgba(34,211,238,0.14),rgba(34,211,238,0.06))] shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
           : "border-white/10 bg-white/5 hover:bg-white/10"
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <AvatarBubble
+          name={item.client_name}
+          avatarUrl={item.avatar_url}
+          size="md"
+          showWhatsapp
+        />
+
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {isQueue && <Inbox className="h-4 w-4 text-blue-300" />}
-            {!isQueue && stage === "lead" && (
-              <CircleDot className="h-4 w-4 text-cyan-400" />
-            )}
-            {stage === "andamento" && (
-              <Clock3 className="h-4 w-4 text-orange-300" />
-            )}
-            {stage === "concluido" && (
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            )}
-            {stage === "perdido" && (
-              <XCircle className="h-4 w-4 text-red-400" />
-            )}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-white">
+                {item.client_name || "Sem nome"}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                {formatPhone(item.client_phone)}
+              </div>
+            </div>
 
-            <h4 className="truncate font-semibold text-white">
-              {item.client_name || "Sem nome"}
-            </h4>
+            <div className="shrink-0 text-right">
+              <div className="text-[11px] text-slate-400">
+                {formatRelative(item.last_message_at || item.updated_at)}
+              </div>
+              {!!item.unread_count && item.unread_count > 0 && (
+                <div className="mt-1 inline-flex rounded-full bg-cyan-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {item.unread_count}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="mt-2 line-clamp-2 text-xs text-slate-400">
-            {item.last_message || item.subject || "Sem mensagem recente"}
+          <div className="mt-3">
+            <p className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-300">
+              {item.last_message || item.subject || "Sem mensagem recente"}
+            </p>
           </div>
 
-          <div className="mt-2 text-[11px] text-slate-500">
-            {item.lead_source || "WhatsApp"}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                isQueue
+                  ? "border-blue-500/25 bg-blue-500/12 text-blue-300"
+                  : STAGE_BADGES[stage]
+              )}
+            >
+              {isQueue ? "Fila geral" : STAGE_LABELS[stage]}
+            </span>
+
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                getTemperatureBadge(item.temperature)
+              )}
+            >
+              {item.temperature || "Morno"}
+            </span>
+
+            {assignedName && (
+              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
+                {assignedName}
+              </span>
+            )}
+          </div>
+
+          {(assignedName || assignedEmail) && (
+            <div className="mt-2 space-y-1">
+              {assignedName && (
+                <div className="text-[11px] text-slate-400">
+                  Assumido por{" "}
+                  <span className="font-medium text-slate-200">
+                    {assignedName}
+                  </span>
+                </div>
+              )}
+              {assignedEmail && (
+                <div className="truncate text-[11px] text-slate-500">
+                  {assignedEmail}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="text-[11px] text-slate-500">
+              {item.lead_source || "WhatsApp"}
+            </div>
+            <div className="text-sm font-bold text-cyan-300">
+              {formatCurrency(item.amount)}
+            </div>
           </div>
         </div>
-
-        <div className="text-right">
-          <div className="text-sm font-bold text-cyan-300">
-            {formatCurrency(item.amount)}
-          </div>
-          <div className="mt-1 text-[11px] text-slate-400">
-            {formatRelative(item.last_message_at || item.updated_at)}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-1 text-xs text-slate-300">
-        <div>{formatPhone(item.client_phone)}</div>
-        <div className="truncate">{item.client_email || "Sem e-mail"}</div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {isQueue ? (
-          <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-300">
-            Na fila
-          </span>
-        ) : (
-          <span
-            className={cn(
-              "rounded-full border px-2.5 py-1 text-[11px] font-medium",
-              getTemperatureBadge(item.temperature)
-            )}
-          >
-            {item.temperature || "Morno"}
-          </span>
-        )}
-
-        {item.assigned_to_name && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300">
-            {item.assigned_to_name}
-          </span>
-        )}
-
-        {!!item.unread_count && item.unread_count > 0 && (
-          <span className="rounded-full bg-cyan-600 px-2.5 py-1 text-[11px] font-bold text-white">
-            {item.unread_count} nova(s)
-          </span>
-        )}
       </div>
     </button>
+  );
+}
+
+function AvatarBubble({
+  name,
+  avatarUrl,
+  size = "md",
+  showWhatsapp = false,
+  agent = false,
+}: {
+  name?: string | null;
+  avatarUrl?: string | null;
+  size?: "sm" | "md" | "lg";
+  showWhatsapp?: boolean;
+  agent?: boolean;
+}) {
+  const sizeClass =
+    size === "lg"
+      ? "h-14 w-14 text-sm"
+      : size === "sm"
+      ? "h-9 w-9 text-[11px]"
+      : "h-11 w-11 text-xs";
+
+  return (
+    <div className="relative shrink-0">
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={name || "avatar"}
+          className={cn(
+            "rounded-full border object-cover shadow-[0_8px_20px_rgba(0,0,0,0.2)]",
+            sizeClass,
+            agent ? "border-cyan-500/30" : "border-white/15"
+          )}
+        />
+      ) : (
+        <div
+          className={cn(
+            "flex items-center justify-center rounded-full border font-bold text-white shadow-[0_8px_20px_rgba(0,0,0,0.2)]",
+            sizeClass,
+            agent
+              ? "border-cyan-500/30 bg-[linear-gradient(180deg,rgba(6,182,212,0.85),rgba(14,116,144,0.95))]"
+              : "border-white/15 bg-[linear-gradient(180deg,rgba(51,65,85,0.95),rgba(30,41,59,0.95))]"
+          )}
+        >
+          {getInitials(name)}
+        </div>
+      )}
+
+      {showWhatsapp && (
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#08111f] bg-emerald-500 text-[9px] text-white shadow">
+          ●
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AttachmentChip({
+  item,
+  onRemove,
+}: {
+  item: AttachmentDraft;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="group relative flex max-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-2.5">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        {item.kind === "image" && item.previewUrl ? (
+          <img
+            src={item.previewUrl}
+            alt={item.file.name}
+            className="h-14 w-14 object-cover"
+          />
+        ) : item.kind === "video" && item.previewUrl ? (
+          <video
+            src={item.previewUrl}
+            className="h-14 w-14 object-cover"
+            muted
+          />
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center">
+            <File className="h-5 w-5 text-slate-400" />
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-white">
+          {item.file.name}
+        </div>
+        <div className="mt-1 text-[11px] capitalize text-slate-400">
+          {item.kind === "image"
+            ? "Imagem"
+            : item.kind === "video"
+            ? "Vídeo"
+            : "Arquivo"}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onRemove}
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/20 text-slate-300 transition hover:bg-white/10"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
@@ -1673,7 +2659,7 @@ function InfoMini({
   accent?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
       <div className="flex items-center gap-2 text-xs text-slate-400">
         {icon}
         <span>{label}</span>
