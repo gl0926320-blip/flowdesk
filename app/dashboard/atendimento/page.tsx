@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CheckCircle2,
   CircleDot,
@@ -142,11 +148,17 @@ function formatPhone(value?: string | null) {
   const digits = normalizePhone(value);
 
   if (digits.length === 13) {
-    return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 9)}-${digits.slice(9)}`;
+    return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(
+      4,
+      9
+    )}-${digits.slice(9)}`;
   }
 
   if (digits.length === 12) {
-    return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 8)}-${digits.slice(8)}`;
+    return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(
+      4,
+      8
+    )}-${digits.slice(8)}`;
   }
 
   if (digits.length === 11) {
@@ -227,6 +239,7 @@ function maskToken(value?: string | null) {
 
 export default function AtendimentoPage() {
   const supabase = useMemo(() => createClient(), []);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -241,11 +254,13 @@ export default function AtendimentoPage() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
-  const [apiOpen, setApiOpen] = useState(true);
+  const [apiOpen, setApiOpen] = useState(false);
   const [pageError, setPageError] = useState<string>("");
   const [pageSuccess, setPageSuccess] = useState<string>("");
 
-  const [connection, setConnection] = useState<WhatsAppConnectionRow | null>(null);
+  const [connection, setConnection] = useState<WhatsAppConnectionRow | null>(
+    null
+  );
   const [connectionForm, setConnectionForm] = useState({
     connection_name: "WhatsApp Principal",
     phone_number: "",
@@ -297,7 +312,8 @@ export default function AtendimentoPage() {
             selectedId &&
             "new" in payload &&
             payload.new &&
-            (payload.new as { conversation_id?: string }).conversation_id === selectedId
+            (payload.new as { conversation_id?: string }).conversation_id ===
+              selectedId
           ) {
             fetchMessages(selectedId);
           }
@@ -318,6 +334,10 @@ export default function AtendimentoPage() {
       setMessages([]);
     }
   }, [selectedId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   function clearNotices() {
     setPageError("");
@@ -362,15 +382,17 @@ export default function AtendimentoPage() {
       );
       setCurrentUserEmail(profile?.email || user.email || "");
 
-const { data: membership, error: membershipError } = await supabase
-  .from("company_users")
-  .select("company_id, user_id, role")
-  .eq("user_id", user.id)
-  .limit(1)
-  .maybeSingle();
+      const { data: membership, error: membershipError } = await supabase
+        .from("company_users")
+        .select("company_id, user_id, role")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
 
       if (membershipError) {
-        setPageError(`Erro ao localizar empresa do usuário: ${membershipError.message}`);
+        setPageError(
+          `Erro ao localizar empresa do usuário: ${membershipError.message}`
+        );
         return;
       }
 
@@ -420,6 +442,12 @@ const { data: membership, error: membershipError } = await supabase
         access_token: row.access_token || "",
         verify_token: row.verify_token || "",
       });
+
+      if (row.status === "connected") {
+        setApiOpen(false);
+      }
+    } else {
+      setApiOpen(true);
     }
   }
 
@@ -432,10 +460,12 @@ const { data: membership, error: membershipError } = await supabase
     clearNotices();
 
     const normalizedPhone = normalizePhone(connectionForm.phone_number);
+
     const payload = {
       company_id: companyId,
       provider: "meta",
-      connection_name: connectionForm.connection_name.trim() || "WhatsApp Principal",
+      connection_name:
+        connectionForm.connection_name.trim() || "WhatsApp Principal",
       phone_number: normalizedPhone ? `+${normalizedPhone}` : null,
       phone_number_id: connectionForm.phone_number_id.trim() || null,
       business_account_id: connectionForm.business_account_id.trim() || null,
@@ -451,7 +481,12 @@ const { data: membership, error: membershipError } = await supabase
       updated_at: new Date().toISOString(),
     };
 
-    if (!payload.phone_number_id || !payload.business_account_id || !payload.access_token || !payload.verify_token) {
+    if (
+      !payload.phone_number_id ||
+      !payload.business_account_id ||
+      !payload.access_token ||
+      !payload.verify_token
+    ) {
       setPageError(
         "Preencha Phone Number ID, Business Account ID, Verify Token e Access Token para conectar a API."
       );
@@ -607,7 +642,9 @@ const { data: membership, error: membershipError } = await supabase
       company_id: target.company_id,
       sender_type: "system",
       sender_name: "Sistema",
-      message: `${currentUserName} (${currentUserEmail || "sem e-mail"}) assumiu este atendimento.`,
+      message: `${
+        currentUserName || "Atendente"
+      } (${currentUserEmail || "sem e-mail"}) assumiu este atendimento.`,
       message_type: "text",
       direction: "outbound",
       status: "sent",
@@ -822,6 +859,16 @@ const { data: membership, error: membershipError } = await supabase
     ? getEffectiveStage(selectedConversation)
     : null;
 
+  const stageTotals = useMemo(() => {
+    return PIPELINE_STAGES.reduce((acc, stage) => {
+      acc[stage] = grouped[stage].reduce(
+        (sum, item) => sum + Number(item.amount || 0),
+        0
+      );
+      return acc;
+    }, {} as Record<ConversationStage, number>);
+  }, [grouped]);
+
   if (loading) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center rounded-3xl border border-white/10 bg-white/5 p-8 text-white">
@@ -831,10 +878,10 @@ const { data: membership, error: membershipError } = await supabase
   }
 
   return (
-    <div className="space-y-6 text-white">
+    <div className="space-y-5 text-white">
       <div className="rounded-[28px] border border-cyan-500/10 bg-[linear-gradient(135deg,rgba(8,15,35,0.98),rgba(20,31,58,0.98))] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_18px_60px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
                 FlowConversa
@@ -866,7 +913,8 @@ const { data: membership, error: membershipError } = await supabase
               ATENDIMENTO
             </h1>
             <p className="mt-2 text-sm text-slate-300">
-              Fila de atendimento + pipeline comercial + WhatsApp em uma única central.
+              Fila de atendimento + pipeline comercial + WhatsApp em uma única
+              central.
             </p>
           </div>
 
@@ -946,8 +994,12 @@ const { data: membership, error: membershipError } = await supabase
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/15"
           >
             <Settings2 className="h-4 w-4" />
-            Configurar API
-            {apiOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {apiOpen ? "Ocultar API" : "Configurar API"}
+            {apiOpen ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
           </button>
         </div>
 
@@ -965,7 +1017,10 @@ const { data: membership, error: membershipError } = await supabase
                 label="Nome da conexão"
                 value={connectionForm.connection_name}
                 onChange={(value) =>
-                  setConnectionForm((prev) => ({ ...prev, connection_name: value }))
+                  setConnectionForm((prev) => ({
+                    ...prev,
+                    connection_name: value,
+                  }))
                 }
                 placeholder="WhatsApp Principal"
               />
@@ -981,7 +1036,10 @@ const { data: membership, error: membershipError } = await supabase
                 label="Phone Number ID"
                 value={connectionForm.phone_number_id}
                 onChange={(value) =>
-                  setConnectionForm((prev) => ({ ...prev, phone_number_id: value }))
+                  setConnectionForm((prev) => ({
+                    ...prev,
+                    phone_number_id: value,
+                  }))
                 }
                 placeholder="123456789012345"
               />
@@ -1018,8 +1076,20 @@ const { data: membership, error: membershipError } = await supabase
             <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
               <StatusMini
                 label="Status"
-                value={isConnectionReady ? "Pronta para salvar" : "Campos obrigatórios pendentes"}
-                tone={isConnectionReady ? "success" : "warning"}
+                value={
+                  connection?.status === "connected"
+                    ? "API conectada"
+                    : isConnectionReady
+                    ? "Pronta para salvar"
+                    : "Campos obrigatórios pendentes"
+                }
+                tone={
+                  connection?.status === "connected"
+                    ? "success"
+                    : isConnectionReady
+                    ? "info"
+                    : "warning"
+                }
               />
               <StatusMini
                 label="Token"
@@ -1056,13 +1126,13 @@ const { data: membership, error: membershipError } = await supabase
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.75fr_1.05fr]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_1.35fr]">
         <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,18,38,0.96),rgba(8,14,30,0.98))] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-white">Kanban de conversas</h2>
               <p className="text-xs text-slate-400">
-                Rolagem horizontal para suportar muitos atendimentos por etapa.
+                Visual comercial com rolagem lateral e totais por etapa.
               </p>
             </div>
 
@@ -1077,6 +1147,10 @@ const { data: membership, error: membershipError } = await supabase
               <StageColumn
                 title="Fila de atendimento"
                 count={queueItems.length}
+                total={queueItems.reduce(
+                  (sum, item) => sum + Number(item.amount || 0),
+                  0
+                )}
                 badgeClass="bg-blue-500/15 text-blue-300 border-blue-500/20"
               >
                 {queueItems.length === 0 ? (
@@ -1098,6 +1172,7 @@ const { data: membership, error: membershipError } = await supabase
                   key={stage}
                   title={STAGE_LABELS[stage]}
                   count={grouped[stage].length}
+                  total={stageTotals[stage]}
                   badgeClass={STAGE_BADGES[stage]}
                 >
                   {grouped[stage].length === 0 ? (
@@ -1125,12 +1200,12 @@ const { data: membership, error: membershipError } = await supabase
             </div>
           ) : (
             <div className="flex h-full flex-col">
-              <div className="border-b border-white/10 p-4">
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
+              <div className="border-b border-white/10 p-5">
+                <div className="flex flex-col gap-5">
+                  <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-xl font-bold text-white">
+                        <h2 className="truncate text-2xl font-bold text-white">
                           {selectedConversation.client_name || "Sem nome"}
                         </h2>
 
@@ -1159,14 +1234,14 @@ const { data: membership, error: membershipError } = await supabase
                         </span>
                       </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                        <span className="inline-flex items-center gap-1">
-                          <Phone className="h-4 w-4" />
+                      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-300">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Phone className="h-4 w-4 text-slate-400" />
                           {formatPhone(selectedConversation.client_phone)}
                         </span>
 
-                        <span className="inline-flex items-center gap-1">
-                          <Mail className="h-4 w-4" />
+                        <span className="inline-flex items-center gap-1.5">
+                          <Mail className="h-4 w-4 text-slate-400" />
                           {selectedConversation.client_email || "Sem e-mail"}
                         </span>
                       </div>
@@ -1177,73 +1252,53 @@ const { data: membership, error: membershipError } = await supabase
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {!selectedConversation.assigned_to && (
+                      {!selectedConversation.assigned_to ? (
                         <button
                           onClick={() => assumeConversation(selectedConversation.id)}
-                          className="rounded-2xl bg-cyan-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
+                          className="rounded-2xl bg-cyan-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700"
                         >
                           Assumir atendimento
                         </button>
-                      )}
-
-                      {!!selectedConversation.assigned_to && (
+                      ) : (
                         <button
                           onClick={() => unassignConversation(selectedConversation.id)}
-                          className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
+                          className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-3.5 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
                         >
                           Voltar para fila
                         </button>
                       )}
 
                       <button
-                        onClick={() => moveStage(selectedConversation.id, "proposta_enviada")}
-                        className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-sm font-medium text-yellow-300 transition hover:bg-yellow-500/15"
-                      >
-                        Proposta enviada
-                      </button>
-
-                      <button
-                        onClick={() => moveStage(selectedConversation.id, "aguardando_cliente")}
-                        className="rounded-2xl border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-300 transition hover:bg-purple-500/15"
-                      >
-                        Aguardando cliente
-                      </button>
-
-                      <button
-                        onClick={() => moveStage(selectedConversation.id, "proposta_validada")}
-                        className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/15"
-                      >
-                        Proposta validada
-                      </button>
-
-                      <button
-                        onClick={() => moveStage(selectedConversation.id, "andamento")}
-                        className="rounded-2xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-sm font-medium text-orange-300 transition hover:bg-orange-500/15"
-                      >
-                        Em andamento
-                      </button>
-
-                      <button
                         onClick={() => finalizeConversation(selectedConversation.id)}
-                        className="rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                        className="rounded-2xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
                       >
                         Concluir
                       </button>
 
                       <button
                         onClick={() => markLost(selectedConversation.id)}
-                        className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/15"
+                        className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/15"
                       >
                         Perder
                       </button>
-
-                      <button
-                        onClick={() => returnToLead(selectedConversation.id)}
-                        className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
-                      >
-                        Voltar p/ lead
-                      </button>
                     </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {PIPELINE_STAGES.map((stage) => (
+                      <button
+                        key={stage}
+                        onClick={() => moveStage(selectedConversation.id, stage)}
+                        className={cn(
+                          "rounded-2xl border px-3 py-2 text-xs font-semibold transition",
+                          selectedStage === stage
+                            ? STAGE_BADGES[stage]
+                            : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                        )}
+                      >
+                        {STAGE_LABELS[stage]}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -1256,7 +1311,11 @@ const { data: membership, error: membershipError } = await supabase
                     <InfoMini
                       icon={<Percent className="h-4 w-4" />}
                       label="Comissão"
-                      value={`${formatCurrency(selectedConversation.commission_value)} • ${formatPercent(selectedConversation.commission_percent)}`}
+                      value={`${formatCurrency(
+                        selectedConversation.commission_value
+                      )} • ${formatPercent(
+                        selectedConversation.commission_percent
+                      )}`}
                       accent="text-yellow-300"
                     />
                     <InfoMini
@@ -1276,121 +1335,106 @@ const { data: membership, error: membershipError } = await supabase
                   <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                     <InfoMini
                       label="Responsável"
-                      value={selectedConversation.assigned_to_name || "Não atribuído"}
+                      value={
+                        selectedConversation.assigned_to_name || "Não atribuído"
+                      }
                     />
-                    <InfoMini
-                      label="Atendente logado"
-                      value={currentUserName}
-                    />
-                    <InfoMini
-                      label="E-mail do atendente"
-                      value={currentUserEmail || "Sem e-mail"}
-                    />
+                    <InfoMini label="Atendente logado" value={currentUserName} />
                     <InfoMini
                       label="Última atividade"
                       value={formatRelative(selectedConversation.last_message_at)}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                    <InfoMini
-                      label="Criado em"
-                      value={formatDateTime(selectedConversation.created_at)}
-                    />
-                    <InfoMini
-                      label="Atualizado em"
-                      value={formatDateTime(selectedConversation.updated_at)}
                     />
                     <InfoMini
                       label="Não lidas"
                       value={String(selectedConversation.unread_count || 0)}
                     />
-                    <InfoMini
-                      label="Telefone"
-                      value={formatPhone(selectedConversation.client_phone)}
-                    />
                   </div>
                 </div>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.06),transparent_28%)] p-5">
                 {messages.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-400">
                     Ainda não há mensagens nesta conversa.
                   </div>
                 ) : (
-                  messages.map((msg) => {
-                    const isAgent = msg.sender_type === "agent";
-                    const isSystem = msg.sender_type === "system";
+                  <div className="space-y-3">
+                    {messages.map((msg) => {
+                      const isAgent = msg.sender_type === "agent";
+                      const isSystem = msg.sender_type === "system";
 
-                    return (
-                      <div
-                        key={msg.id}
-                        className={cn(
-                          "flex",
-                          isSystem
-                            ? "justify-center"
-                            : isAgent
-                            ? "justify-end"
-                            : "justify-start"
-                        )}
-                      >
+                      return (
                         <div
+                          key={msg.id}
                           className={cn(
-                            "max-w-[88%] rounded-2xl px-4 py-3 text-sm shadow-sm",
-                            isSystem &&
-                              "border border-white/10 bg-white/5 text-slate-300",
-                            isAgent &&
-                              "bg-cyan-600 text-white",
-                            !isAgent &&
-                              !isSystem &&
-                              "border border-white/10 bg-slate-800/70 text-white"
+                            "flex",
+                            isSystem
+                              ? "justify-center"
+                              : isAgent
+                              ? "justify-end"
+                              : "justify-start"
                           )}
                         >
-                          {!isSystem && (
-                            <div
-                              className={cn(
-                                "mb-1 text-[11px] font-medium",
-                                isAgent ? "text-cyan-100" : "text-slate-400"
-                              )}
-                            >
-                              {msg.sender_name ||
-                                (msg.sender_type === "client"
-                                  ? selectedConversation.client_name || "Cliente"
-                                  : "Atendente")}
-                            </div>
-                          )}
-
-                          <div className="whitespace-pre-wrap">{msg.message}</div>
-
                           <div
                             className={cn(
-                              "mt-1 text-[11px]",
-                              isAgent ? "text-cyan-100/80" : "text-slate-400"
+                              "max-w-[90%] rounded-[22px] px-4 py-3 text-sm shadow-sm",
+                              isSystem &&
+                                "border border-white/10 bg-white/5 text-slate-300",
+                              isAgent &&
+                                "bg-cyan-600 text-white shadow-[0_10px_30px_rgba(6,182,212,0.18)]",
+                              !isAgent &&
+                                !isSystem &&
+                                "border border-white/10 bg-slate-800/70 text-white"
                             )}
                           >
-                            {formatDateTime(msg.created_at)}
+                            {!isSystem && (
+                              <div
+                                className={cn(
+                                  "mb-1 text-[11px] font-medium",
+                                  isAgent ? "text-cyan-100" : "text-slate-400"
+                                )}
+                              >
+                                {msg.sender_name ||
+                                  (msg.sender_type === "client"
+                                    ? selectedConversation.client_name || "Cliente"
+                                    : "Atendente")}
+                              </div>
+                            )}
+
+                            <div className="whitespace-pre-wrap leading-relaxed">
+                              {msg.message}
+                            </div>
+
+                            <div
+                              className={cn(
+                                "mt-2 text-[11px]",
+                                isAgent ? "text-cyan-100/80" : "text-slate-400"
+                              )}
+                            >
+                              {formatDateTime(msg.created_at)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
                 )}
               </div>
 
-              <div className="border-t border-white/10 p-4">
+              <div className="border-t border-white/10 bg-black/10 p-4">
                 <div className="flex items-end gap-3">
                   <textarea
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
                     placeholder="Digite uma mensagem para o cliente..."
                     rows={3}
-                    className="min-h-[88px] flex-1 resize-none rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
+                    className="min-h-[90px] flex-1 resize-none rounded-[22px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500/40"
                   />
                   <button
                     onClick={sendMessage}
                     disabled={sending || !messageText.trim()}
-                    className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-[54px] items-center justify-center gap-2 rounded-[22px] bg-cyan-600 px-5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {sending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -1466,28 +1510,42 @@ function InputField({
 function StageColumn({
   title,
   count,
+  total,
   badgeClass,
   children,
 }: {
   title: string;
   count: number;
+  total: number;
   badgeClass: string;
   children: ReactNode;
 }) {
   return (
-    <div className="w-[320px] min-w-[320px] rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,27,52,0.94),rgba(12,19,38,0.98))] shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
-        <div className="flex items-center gap-2">
-          <span className={cn("rounded-xl border px-3 py-1 text-[11px] font-bold uppercase", badgeClass)}>
+    <div className="w-[285px] min-w-[285px] rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,27,52,0.94),rgba(12,19,38,0.98))] shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
+      <div className="border-b border-white/10 px-4 py-4">
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              "rounded-xl border px-3 py-1 text-[11px] font-bold uppercase",
+              badgeClass
+            )}
+          >
             {title}
           </span>
           <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-slate-300">
             {count}
           </span>
         </div>
+
+        <div className="mt-3 text-xs text-slate-400">
+          Total da etapa
+          <div className="mt-1 text-sm font-semibold text-white">
+            {formatCurrency(total)}
+          </div>
+        </div>
       </div>
 
-      <div className="max-h-[68vh] space-y-3 overflow-y-auto p-4">
+      <div className="max-h-[67vh] space-y-3 overflow-y-auto p-4">
         {children}
       </div>
     </div>
@@ -1512,7 +1570,8 @@ function ConversationCard({
   onClick: () => void;
 }) {
   const stage = getEffectiveStage(item);
-  const isQueue = !item.assigned_to && (item.status === "queue" || stage === "lead");
+  const isQueue =
+    !item.assigned_to && (item.status === "queue" || stage === "lead");
 
   return (
     <button
@@ -1525,24 +1584,32 @@ function ConversationCard({
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {isQueue && <Inbox className="h-4 w-4 text-blue-300" />}
-            {!isQueue && stage === "lead" && <CircleDot className="h-4 w-4 text-cyan-400" />}
-            {stage === "andamento" && <Clock3 className="h-4 w-4 text-orange-300" />}
-            {stage === "concluido" && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-            {stage === "perdido" && <XCircle className="h-4 w-4 text-red-400" />}
+            {!isQueue && stage === "lead" && (
+              <CircleDot className="h-4 w-4 text-cyan-400" />
+            )}
+            {stage === "andamento" && (
+              <Clock3 className="h-4 w-4 text-orange-300" />
+            )}
+            {stage === "concluido" && (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            )}
+            {stage === "perdido" && (
+              <XCircle className="h-4 w-4 text-red-400" />
+            )}
 
             <h4 className="truncate font-semibold text-white">
               {item.client_name || "Sem nome"}
             </h4>
           </div>
 
-          <div className="mt-1 text-xs text-slate-400">
-            {item.subject || "Sem assunto"}
+          <div className="mt-2 line-clamp-2 text-xs text-slate-400">
+            {item.last_message || item.subject || "Sem mensagem recente"}
           </div>
 
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="mt-2 text-[11px] text-slate-500">
             {item.lead_source || "WhatsApp"}
           </div>
         </div>
@@ -1560,12 +1627,6 @@ function ConversationCard({
       <div className="mt-3 space-y-1 text-xs text-slate-300">
         <div>{formatPhone(item.client_phone)}</div>
         <div className="truncate">{item.client_email || "Sem e-mail"}</div>
-        <div className="text-yellow-300">
-          Comissão: {formatCurrency(item.commission_value)} • {formatPercent(item.commission_percent)}
-        </div>
-        <div className="text-emerald-300">
-          Lucro: {formatCurrency(item.profit_value)}
-        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1644,8 +1705,10 @@ function StatusMini({
 
   return (
     <div className={cn("rounded-2xl border p-3", toneClass)}>
-      <div className="text-[11px] uppercase tracking-wide opacity-80">{label}</div>
-      <div className="mt-1 text-sm font-semibold break-all">{value}</div>
+      <div className="text-[11px] uppercase tracking-wide opacity-80">
+        {label}
+      </div>
+      <div className="mt-1 break-all text-sm font-semibold">{value}</div>
     </div>
   );
 }
