@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3:4b";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
 
 const FLOWDESK_CONTEXT = `
 Você é a FlowIA, assistente oficial do CRM FlowDesk.
@@ -49,6 +49,7 @@ Como responder:
 - Para dúvidas operacionais: explique em passos.
 - Para dúvidas estratégicas: explique e sugira ação prática.
 - Sempre que fizer sentido, organize em tópicos curtos.
+- Evite respostas longas demais.
 `;
 
 type ChatMessage = {
@@ -57,6 +58,9 @@ type ChatMessage = {
 };
 
 export async function POST(req: NextRequest) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+
   try {
     const body = await req.json().catch(() => null);
 
@@ -73,17 +77,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const safeMessages: ChatMessage[] = messages.filter(
+      (msg): msg is ChatMessage =>
+        !!msg &&
+        typeof msg.content === "string" &&
+        ["system", "user", "assistant"].includes(msg.role)
+    );
+
     const finalMessages: ChatMessage[] = [
       {
         role: "system",
         content: FLOWDESK_CONTEXT,
       },
-      ...messages.filter(
-        (msg) =>
-          msg &&
-          typeof msg.content === "string" &&
-          ["system", "user", "assistant"].includes(msg.role)
-      ),
+      ...safeMessages.slice(-10),
     ];
 
     if (userMessage) {
@@ -98,18 +104,21 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
       },
+      signal: controller.signal,
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         messages: finalMessages,
         stream: false,
         options: {
-          temperature: 0.3,
+          temperature: 0.2,
+          num_predict: 220,
         },
       }),
     });
 
     if (!ollamaResponse.ok) {
       const errorText = await ollamaResponse.text().catch(() => "");
+
       return NextResponse.json(
         {
           error:
@@ -123,7 +132,7 @@ export async function POST(req: NextRequest) {
     const data = await ollamaResponse.json();
 
     const content =
-      data?.message?.content ||
+      data?.message?.content?.trim() ||
       "Não consegui gerar uma resposta agora. Tente novamente.";
 
     return NextResponse.json({
@@ -131,11 +140,20 @@ export async function POST(req: NextRequest) {
       model: OLLAMA_MODEL,
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json(
+        { error: "A FlowIA demorou para responder. Tente novamente." },
+        { status: 504 }
+      );
+    }
+
     console.error("Erro na rota /api/flowia/chat:", error);
 
     return NextResponse.json(
       { error: "Erro interno ao processar a FlowIA." },
       { status: 500 }
     );
+  } finally {
+    clearTimeout(timeout);
   }
 }
