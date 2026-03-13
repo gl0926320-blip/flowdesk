@@ -21,6 +21,7 @@ import {
   Megaphone,
   ChevronDown,
   ChevronRight,
+  Headset,
   type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
@@ -192,6 +193,11 @@ export default function DashboardLayout({
       router.replace("/dashboard");
       return;
     }
+
+    if (pathname.startsWith("/dashboard/atendimento") && role === "vendedor") {
+      router.replace("/dashboard");
+      return;
+    }
   }, [pathname, role, loadedMembership, router]);
 
   function toggleMenu(menuName: string) {
@@ -208,6 +214,7 @@ export default function DashboardLayout({
         { name: "Leads", href: "/dashboard/leads", icon: UserPlus },
         { name: "Carteira", href: "/dashboard/carteira", icon: BriefcaseBusiness },
         { name: "Pipeline", href: "/dashboard/pipeline", icon: Kanban },
+        { name: "Atendimento", href: "/dashboard/atendimento", icon: Headset, visible: role !== "vendedor" },
         { name: "Orçamentos", href: "/dashboard/orcamentos", icon: FileText },
         { name: "Vendas", href: "/dashboard/vendas", icon: DollarSign },
         { name: "Comissões", href: "/dashboard/comissoes", icon: Percent },
@@ -330,7 +337,8 @@ export default function DashboardLayout({
               );
             }
 
-            const active = pathname === item.href;
+            const active =
+              pathname === item.href || pathname.startsWith((item.href || "") + "/");
 
             return (
               <Link
