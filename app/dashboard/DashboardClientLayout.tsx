@@ -98,11 +98,8 @@ export default function DashboardLayout({
   const isAdmin = role === "admin";
   const isVendedor = role === "vendedor";
 
-  const hasAtendimentoAccess =
-    isOwner || isAdmin || canAccessAtendimento === true;
-
-  const hasCampanhasAccess =
-    isOwner || isAdmin || canAccessCampanhas === true;
+const hasAtendimentoAccess = canAccessAtendimento === true;
+const hasCampanhasAccess = canAccessCampanhas === true;
 
   async function handleLogout() {
     await supabase.auth.signOut();
