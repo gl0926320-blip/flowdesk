@@ -307,132 +307,132 @@ export default function DashboardLayout({
     ? "md:ml-[92px]"
     : "md:ml-[290px]";
 
-  const sections: MenuSection[] = useMemo(() => {
-    const result: MenuSection[] = [
-      {
-        title: "Visão Geral",
-        items: [
-          {
-            name: "Dashboard",
-            href: "/dashboard",
-            icon: LayoutDashboard,
-          },
-        ],
-      },
-      {
-        title: "Operação Comercial",
-        items: [
-          {
-            name: "Leads",
-            href: "/dashboard/leads",
-            icon: UserPlus,
-          },
-          {
-            name: "Carteira",
-            href: "/dashboard/carteira",
-            icon: BriefcaseBusiness,
-          },
-          {
-            name: "Pipeline",
-            href: "/dashboard/pipeline",
-            icon: Kanban,
-          },
-          {
-            name: "Atendimento",
-            href: "/dashboard/atendimento",
-            icon: Headset,
-            visible: hasAtendimentoAccess,
-          },
-          {
-            name: "Clientes",
-            href: "/dashboard/clientes",
-            icon: Users,
-          },
-        ].filter((item) => item.visible !== false),
-      },
-      {
-        title: "Financeiro",
-        items: [
-          {
-            name: "Orçamentos",
-            href: "/dashboard/orcamentos",
-            icon: FileText,
-          },
-          {
-            name: "Vendas",
-            href: "/dashboard/vendas",
-            icon: DollarSign,
-          },
-          {
-            name: "Comissões",
-            href: "/dashboard/comissoes",
-            icon: Percent,
-          },
-        ],
-      },
-      {
-        title: "Marketing",
-        items: [
-          {
-            name: "Campanhas",
-            icon: Megaphone,
-            visible: hasCampanhasAccess,
-            children: [
-              { name: "Campanhas", href: "/dashboard/campanhas" },
-              { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
-            ],
-          },
-        ].filter((item) => item.visible !== false),
-      },
-      {
-        title: "Administração",
-        items: [
-          {
-            name: "Empresas",
-            href: "/dashboard/empresas",
-            icon: Building2,
-            visible: isOwner,
-          },
-          {
-            name: "Equipe",
-            href: "/dashboard/equipe",
-            icon: Users2,
-            visible: isOwner || isAdmin,
-          },
-          {
-            name: "Assinatura",
-            href: "/dashboard/billing",
-            icon: CreditCard,
-            visible: !isVendedor,
-          },
-          {
-            name: "Configurações",
-            href: "/dashboard/configuracoes",
-            icon: Settings,
-          },
-        ].filter((item) => item.visible !== false),
-      },
-      {
-        title: "Inteligência",
-        items: [
-          {
-            name: "FlowIA",
-            href: "/dashboard/flowia",
-            icon: Bot,
-            visible: !isVendedor,
-          },
-        ].filter((item) => item.visible !== false),
-      },
-    ];
+const sections: MenuSection[] = useMemo(() => {
+  const result: MenuSection[] = [
+    {
+      title: "Visão Geral",
+      items: [
+        {
+          name: "Dashboard",
+          href: "/dashboard",
+          icon: LayoutDashboard,
+        },
+      ],
+    },
+    {
+      title: "Operação Comercial",
+      items: [
+        {
+          name: "Leads",
+          href: "/dashboard/leads",
+          icon: UserPlus,
+        },
+        {
+          name: "Carteira",
+          href: "/dashboard/carteira",
+          icon: BriefcaseBusiness,
+        },
+        {
+          name: "Pipeline",
+          href: "/dashboard/pipeline",
+          icon: Kanban,
+        },
+        {
+          name: "Atendimento",
+          href: "/dashboard/atendimento",
+          icon: Headset,
+          visible: hasAtendimentoAccess,
+        },
+        {
+          name: "Clientes",
+          href: "/dashboard/clientes",
+          icon: Users,
+        },
+      ].filter((item) => item.visible !== false),
+    },
+    {
+      title: "Financeiro",
+      items: [
+        {
+          name: "Orçamentos",
+          href: "/dashboard/orcamentos",
+          icon: FileText,
+        },
+        {
+          name: "Vendas",
+          href: "/dashboard/vendas",
+          icon: DollarSign,
+        },
+        {
+          name: "Comissões",
+          href: "/dashboard/comissoes",
+          icon: Percent,
+        },
+      ],
+    },
+    {
+      title: "Marketing",
+      items: [
+        {
+          name: "Campanhas",
+          icon: Megaphone,
+          visible: hasCampanhasAccess,
+          children: [
+            { name: "Campanhas", href: "/dashboard/campanhas" },
+            { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
+          ],
+        },
+      ].filter((item) => item.visible !== false),
+    },
+    {
+      title: "Administração",
+      items: [
+        {
+          name: "Empresas",
+          href: "/dashboard/empresas",
+          icon: Building2,
+          visible: isOwner,
+        },
+        {
+          name: "Equipe",
+          href: "/dashboard/equipe",
+          icon: Users2,
+          visible: isOwner || isAdmin,
+        },
+        {
+          name: "Assinatura",
+          href: "/dashboard/billing",
+          icon: CreditCard,
+          visible: !isVendedor,
+        },
+        {
+          name: "Configurações",
+          href: "/dashboard/configuracoes",
+          icon: Settings,
+        },
+      ].filter((item) => item.visible !== false),
+    },
+    {
+      title: "Inteligência",
+      items: [
+        {
+          name: "FlowIA",
+          href: "/dashboard/flowia",
+          icon: Bot,
+          visible: !isVendedor,
+        },
+      ].filter((item) => item.visible !== false),
+    },
+  ];
 
-    return result;
-  }, [
-    hasAtendimentoAccess,
-    hasCampanhasAccess,
-    isOwner,
-    isAdmin,
-    isVendedor,
-  ]);
+  return result.filter((section) => section.items.length > 0);
+}, [
+  hasAtendimentoAccess,
+  hasCampanhasAccess,
+  isOwner,
+  isAdmin,
+  isVendedor,
+]);
 
   if (isMasterPage) {
     return (
