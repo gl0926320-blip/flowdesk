@@ -1,7 +1,13 @@
 import { NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL!;
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const SYSTEM_PROMPT = `
 Você é a FlowIA, assistente oficial do FlowDesk.
@@ -15,7 +21,7 @@ Regras:
 - Responda somente ao que o usuário perguntou.
 - Se a pergunta for simples, responda de forma curta e natural.
 - Quando a pergunta for sobre o sistema FlowDesk, explique de forma clara e prática.
-- Quando a pergunta pedir números reais do CRM (ex.: leads, conversão, faturamento, vendas, comissão, pipeline real), diga com clareza que você ainda precisa acessar os dados reais da conta para responder com precisão.
+- Quando a pergunta pedir números reais do CRM (ex.: leads, conversão, faturamento, vendas, comissão, pipeline real), use os dados recebidos da consulta.
 `;
 
 const FLOWDESK_KNOWLEDGE = `
@@ -47,16 +53,20 @@ Pipeline padrão:
 - andamento
 - concluído
 - perdido
-
-Conceitos úteis:
-- CRM é um sistema de gestão de relacionamento com clientes e oportunidades.
-- Leads podem ser classificados, acompanhados e convertidos ao longo do funil.
-- O FlowDesk foi pensado para melhorar organização comercial, produtividade e acompanhamento da operação.
 `;
 
 type FastFaqItem = {
   keys: string[];
   reply: string;
+};
+
+type LeadMetrics = {
+  totalLeads: number;
+  lastLeadDate: string | null;
+  lastLeadClient: string | null;
+  lastLeadTitle: string | null;
+  lastLeadOrigin: string | null;
+  lastLeadStatus: string | null;
 };
 
 const FAST_FAQ: FastFaqItem[] = [
@@ -71,6 +81,8 @@ const FAST_FAQ: FastFaqItem[] = [
       "flowdesk o que é",
       "o que e flowdesk",
       "o que é flowdesk",
+      "oq e flowdesk",
+      "oq é flowdesk",
     ],
     reply:
       "O FlowDesk é um CRM comercial criado para organizar e melhorar a operação de vendas da empresa. Ele reúne módulos como Leads, Pipeline, Atendimento, Orçamentos, Vendas, Comissões, Campanhas e Dashboard para ajudar no controle da operação comercial.",
@@ -97,6 +109,8 @@ const FAST_FAQ: FastFaqItem[] = [
       "oq é lead",
       "lead o que e",
       "lead o que é",
+      "o que e lçead",
+      "o que é lçead",
     ],
     reply:
       "Lead é um potencial cliente que demonstrou interesse no seu produto ou serviço. No FlowDesk, ele pode ser acompanhado ao longo do processo comercial até virar venda ou ser perdido.",
@@ -113,261 +127,6 @@ const FAST_FAQ: FastFaqItem[] = [
     ],
     reply:
       "Pipeline é a visualização das etapas da venda dentro do CRM. No FlowDesk, ele mostra em que fase cada oportunidade está, ajudando a acompanhar melhor o avanço comercial.",
-  },
-  {
-    keys: [
-      "pra que serve pipeline",
-      "para que serve pipeline",
-      "como funciona pipeline",
-      "como funciona o pipeline",
-      "explica pipeline",
-      "me explica pipeline",
-      "aba pipeline",
-      "o que faz a aba pipeline",
-      "pra que serve a aba pipeline",
-      "para que serve a aba pipeline",
-    ],
-    reply:
-      "A aba Pipeline serve para acompanhar visualmente o andamento das oportunidades comerciais. Nela você consegue ver em que etapa cada lead está, organizar prioridades e acompanhar o avanço do funil de vendas.",
-  },
-  {
-    keys: [
-      "o que faz a aba leads",
-      "pra que serve a aba leads",
-      "para que serve a aba leads",
-      "aba leads",
-      "como funciona leads",
-      "como funciona a aba leads",
-    ],
-    reply:
-      "A aba Leads serve para cadastrar, organizar e acompanhar oportunidades comerciais. Ela ajuda a controlar quem entrou no funil, a origem do lead e o potencial de conversão.",
-  },
-  {
-    keys: [
-      "o que faz a aba carteira",
-      "pra que serve a aba carteira",
-      "para que serve a aba carteira",
-      "aba carteira",
-      "o que e carteira",
-      "o que é carteira",
-    ],
-    reply:
-      "A aba Carteira ajuda a organizar e acompanhar a base comercial da empresa. Ela facilita a visualização e o controle das oportunidades e relacionamentos em andamento.",
-  },
-  {
-    keys: [
-      "o que faz a aba atendimento",
-      "pra que serve a aba atendimento",
-      "para que serve a aba atendimento",
-      "aba atendimento",
-      "o que e atendimento",
-      "o que é atendimento",
-    ],
-    reply:
-      "A aba Atendimento ajuda no acompanhamento do contato comercial com leads e clientes. Ela apoia a organização da comunicação e do processo comercial no dia a dia.",
-  },
-  {
-    keys: [
-      "o que faz a aba orcamentos",
-      "o que faz a aba orçamentos",
-      "pra que serve a aba orcamentos",
-      "pra que serve a aba orçamentos",
-      "para que serve a aba orcamentos",
-      "para que serve a aba orçamentos",
-      "aba orcamentos",
-      "aba orçamentos",
-      "o que e orcamento",
-      "o que é orçamento",
-      "o que e orcamentos",
-      "o que é orçamentos",
-    ],
-    reply:
-      "A aba Orçamentos serve para criar, organizar e acompanhar propostas comerciais. Ela ajuda a controlar valores, status e andamento das propostas enviadas aos clientes.",
-  },
-  {
-    keys: [
-      "o que faz a aba vendas",
-      "pra que serve a aba vendas",
-      "para que serve a aba vendas",
-      "aba vendas",
-      "o que e vendas",
-      "o que é vendas",
-    ],
-    reply:
-      "A aba Vendas serve para acompanhar os fechamentos realizados e analisar os resultados comerciais. Ela ajuda a visualizar o que já foi convertido em venda dentro da operação.",
-  },
-  {
-    keys: [
-      "o que faz a aba comissoes",
-      "o que faz a aba comissões",
-      "pra que serve a aba comissoes",
-      "pra que serve a aba comissões",
-      "para que serve a aba comissoes",
-      "para que serve a aba comissões",
-      "aba comissoes",
-      "aba comissões",
-      "o que e comissao",
-      "o que é comissão",
-      "o que e comissoes",
-      "o que é comissões",
-    ],
-    reply:
-      "A aba Comissões serve para acompanhar e controlar as comissões da operação comercial. Ela ajuda a visualizar valores e regras relacionadas ao desempenho de vendas.",
-  },
-  {
-    keys: [
-      "o que faz a aba campanhas",
-      "pra que serve a aba campanhas",
-      "para que serve a aba campanhas",
-      "aba campanhas",
-      "o que e campanhas",
-      "o que é campanhas",
-      "o que e campanha",
-      "o que é campanha",
-    ],
-    reply:
-      "A aba Campanhas serve para organizar e analisar campanhas comerciais e de captação. Ela ajuda a acompanhar ações que trazem leads e oportunidades para o CRM.",
-  },
-  {
-    keys: [
-      "o que faz a aba dashboard",
-      "pra que serve a aba dashboard",
-      "para que serve a aba dashboard",
-      "o que e dashboard",
-      "o que é dashboard",
-      "aba dashboard",
-      "dashboard serve pra que",
-      "dashboard serve para que",
-    ],
-    reply:
-      "O Dashboard é a visão geral da operação comercial. Ele reúne indicadores e resumos importantes para acompanhar desempenho, andamento do funil e produtividade da equipe.",
-  },
-  {
-    keys: [
-      "o que faz a aba clientes",
-      "pra que serve a aba clientes",
-      "para que serve a aba clientes",
-      "aba clientes",
-      "o que e clientes",
-      "o que é clientes",
-    ],
-    reply:
-      "A aba Clientes serve para organizar e acompanhar a base de clientes da empresa. Ela ajuda no histórico, relacionamento e gestão comercial após a entrada no CRM.",
-  },
-  {
-    keys: [
-      "o que faz a aba empresas",
-      "pra que serve a aba empresas",
-      "para que serve a aba empresas",
-      "aba empresas",
-      "o que e empresas",
-      "o que é empresas",
-    ],
-    reply:
-      "A aba Empresas é usada para a gestão administrativa das empresas dentro do sistema. Ela ajuda a organizar a estrutura da operação em cenários multiempresa.",
-  },
-  {
-    keys: [
-      "o que faz a aba equipe",
-      "pra que serve a aba equipe",
-      "para que serve a aba equipe",
-      "aba equipe",
-      "o que e equipe",
-      "o que é equipe",
-    ],
-    reply:
-      "A aba Equipe ajuda a organizar os usuários e papéis dentro do FlowDesk. Ela apoia o controle de acesso e a estrutura da operação comercial.",
-  },
-  {
-    keys: [
-      "o que faz a aba assinatura",
-      "pra que serve a aba assinatura",
-      "para que serve a aba assinatura",
-      "aba assinatura",
-      "o que e assinatura",
-      "o que é assinatura",
-    ],
-    reply:
-      "A aba Assinatura é voltada para a gestão do plano do sistema. Ela ajuda a acompanhar informações de contratação, recursos e situação da conta.",
-  },
-  {
-    keys: [
-      "o que faz a flowia",
-      "o que e flowia",
-      "o que é flowia",
-      "pra que serve a flowia",
-      "para que serve a flowia",
-    ],
-    reply:
-      "A FlowIA é a assistente do FlowDesk. Ela ajuda a explicar módulos, orientar o uso do sistema, responder dúvidas e apoiar a operação comercial.",
-  },
-  {
-    keys: [
-      "quais sao as etapas do pipeline",
-      "quais são as etapas do pipeline",
-      "etapas do pipeline",
-      "pipeline etapas",
-    ],
-    reply:
-      "No FlowDesk, o pipeline padrão é: lead, proposta enviada, aguardando cliente, proposta validada, andamento, concluído e perdido.",
-  },
-  {
-    keys: [
-      "o que significa perdido",
-      "o que e perdido",
-      "o que é perdido",
-      "status perdido",
-    ],
-    reply:
-      'No FlowDesk, "perdido" representa uma oportunidade que não foi convertida em venda. Esse status ajuda a identificar negociações encerradas sem fechamento.',
-  },
-  {
-    keys: [
-      "o que significa concluido",
-      "o que significa concluído",
-      "o que e concluido",
-      "o que é concluído",
-      "status concluido",
-      "status concluído",
-    ],
-    reply:
-      'No FlowDesk, "concluído" representa uma oportunidade que virou venda ou foi finalizada com sucesso dentro do processo comercial.',
-  },
-  {
-    keys: [
-      "o que significa aguardando cliente",
-      "o que e aguardando cliente",
-      "o que é aguardando cliente",
-    ],
-    reply:
-      'No pipeline do FlowDesk, "aguardando cliente" indica que a proposta ou negociação está esperando um retorno do cliente para continuar avançando.',
-  },
-  {
-    keys: [
-      "o que significa proposta enviada",
-      "o que e proposta enviada",
-      "o que é proposta enviada",
-    ],
-    reply:
-      'No pipeline do FlowDesk, "proposta enviada" indica que a proposta comercial já foi encaminhada ao cliente e está em fase de acompanhamento.',
-  },
-  {
-    keys: [
-      "o que significa proposta validada",
-      "o que e proposta validada",
-      "o que é proposta validada",
-    ],
-    reply:
-      'No pipeline do FlowDesk, "proposta validada" indica que a proposta foi aprovada ou validada para seguir no processo comercial.',
-  },
-  {
-    keys: [
-      "o que significa andamento",
-      "o que e andamento",
-      "o que é andamento",
-    ],
-    reply:
-      'No pipeline do FlowDesk, "andamento" indica que a oportunidade já passou das fases iniciais e está em execução, negociação avançada ou etapa operacional.',
   },
 ];
 
@@ -415,6 +174,10 @@ function normalizeText(value: string) {
     .trim();
 }
 
+function includesAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(normalizeText(term)));
+}
+
 function isGreeting(message: string) {
   const text = normalizeText(message);
 
@@ -453,12 +216,147 @@ function getGreetingReply(message: string) {
   return "Olá! Como posso ajudar você com o FlowDesk hoje?";
 }
 
-function isRealDataQuestion(message: string) {
+function getFastFaqReply(message: string) {
+  const text = normalizeText(message);
+
+  for (const item of FAST_FAQ) {
+    if (includesAny(text, item.keys)) {
+      return item.reply;
+    }
+  }
+
+  return null;
+}
+
+function wantsTotalLeads(message: string) {
+  const text = normalizeText(message);
+
+  return includesAny(text, [
+    "quantos leads eu tenho",
+    "quantidade de leads",
+    "total de leads",
+    "meus leads",
+    "quantos leads tem",
+    "total de lead",
+  ]);
+}
+
+function wantsLastLeadDate(message: string) {
+  const text = normalizeText(message);
+
+  return includesAny(text, [
+    "data do ultimo lead",
+    "data do último lead",
+    "quando foi o ultimo lead",
+    "quando foi o último lead",
+    "qual a data do ultimo lead",
+    "qual a data do último lead",
+    "ultimo lead",
+    "último lead",
+  ]);
+}
+
+function wantsLeadMetrics(message: string) {
+  return wantsTotalLeads(message) || wantsLastLeadDate(message);
+}
+
+function formatPtBrDate(value: string | null) {
+  if (!value) return null;
+
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+async function getLeadMetrics(companyId: string): Promise<LeadMetrics> {
+  const { count, error: countError } = await supabaseAdmin
+    .from("servicos")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", companyId);
+
+  if (countError) throw countError;
+
+  const { data: latestLead, error: latestError } = await supabaseAdmin
+    .from("servicos")
+    .select("created_at, cliente, titulo, origem_lead, status")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestError) throw latestError;
+
+  return {
+    totalLeads: count ?? 0,
+    lastLeadDate: latestLead?.created_at ?? null,
+    lastLeadClient: latestLead?.cliente ?? null,
+    lastLeadTitle: latestLead?.titulo ?? null,
+    lastLeadOrigin: latestLead?.origem_lead ?? null,
+    lastLeadStatus: latestLead?.status ?? null,
+  };
+}
+
+function buildLeadMetricsReply(message: string, metrics: LeadMetrics) {
+  const parts: string[] = [];
+  const askTotal = wantsTotalLeads(message);
+  const askLastDate = wantsLastLeadDate(message);
+
+  if (askTotal) {
+    parts.push(
+      `Você possui ${metrics.totalLeads} lead${
+        metrics.totalLeads === 1 ? "" : "s"
+      } cadastrado${metrics.totalLeads === 1 ? "" : "s"} no FlowDesk.`
+    );
+  }
+
+  if (askLastDate) {
+    if (!metrics.lastLeadDate) {
+      parts.push("Ainda não encontrei nenhum lead cadastrado para essa empresa.");
+    } else {
+      const formattedDate = formatPtBrDate(metrics.lastLeadDate);
+
+      let extra = "";
+      if (metrics.lastLeadClient) {
+        extra += ` Cliente: ${metrics.lastLeadClient}.`;
+      } else if (metrics.lastLeadTitle) {
+        extra += ` Lead: ${metrics.lastLeadTitle}.`;
+      }
+
+      if (metrics.lastLeadOrigin) {
+        extra += ` Origem: ${metrics.lastLeadOrigin}.`;
+      }
+
+      parts.push(`O último lead foi registrado em ${formattedDate}.${extra}`);
+    }
+  }
+
+  if (!askTotal && !askLastDate) {
+    if (!metrics.lastLeadDate) {
+      return `Você possui ${metrics.totalLeads} lead${
+        metrics.totalLeads === 1 ? "" : "s"
+      } no FlowDesk. Ainda não encontrei detalhes do último lead.`;
+    }
+
+    return `Você possui ${metrics.totalLeads} lead${
+      metrics.totalLeads === 1 ? "" : "s"
+    } no FlowDesk. O último lead foi registrado em ${formatPtBrDate(
+      metrics.lastLeadDate
+    )}.`;
+  }
+
+  return parts.join("\n\n");
+}
+
+function isOtherRealDataQuestion(message: string) {
   const text = normalizeText(message);
 
   const terms = [
-    "quantos leads eu tenho",
-    "quantidade de leads",
     "minha conversao",
     "taxa de conversao",
     "quanto eu vendi",
@@ -480,25 +378,11 @@ function isRealDataQuestion(message: string) {
     "quantas campanhas eu tenho",
   ];
 
-  return terms.some((term) => text.includes(term));
+  return includesAny(text, terms);
 }
 
 function buildRealDataFallback(message: string) {
-  return `Ainda não tenho acesso aos dados reais da sua conta para responder com precisão sobre "${message}". No momento consigo explicar como o FlowDesk funciona e orientar o uso do sistema. Para responder isso com números reais, preciso ser conectado às consultas do CRM.`;
-}
-
-function getFastFaqReply(message: string) {
-  const text = normalizeText(message);
-
-  for (const item of FAST_FAQ) {
-    for (const key of item.keys) {
-      if (text.includes(normalizeText(key))) {
-        return item.reply;
-      }
-    }
-  }
-
-  return null;
+  return `Ainda não tenho acesso completo aos dados reais da sua conta para responder com precisão sobre "${message}". Neste momento já consigo responder total de leads e data do último lead quando recebo o companyId ativo. Para responder outros números reais, preciso ser conectado às consultas específicas do CRM.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -507,6 +391,15 @@ export async function POST(req: NextRequest) {
 
     const userMessage =
       typeof body?.message === "string" ? body.message.trim() : "";
+
+    const companyId =
+      typeof body?.companyId === "string"
+        ? body.companyId.trim()
+        : typeof body?.company_id === "string"
+        ? body.company_id.trim()
+        : typeof req.headers.get("x-company-id") === "string"
+        ? req.headers.get("x-company-id")!.trim()
+        : "";
 
     if (!userMessage) {
       return Response.json({ error: "Mensagem não enviada." }, { status: 400 });
@@ -521,7 +414,22 @@ export async function POST(req: NextRequest) {
       return Response.json({ reply: fastReply });
     }
 
-    if (isRealDataQuestion(userMessage)) {
+    if (wantsLeadMetrics(userMessage)) {
+      if (!companyId) {
+        return Response.json({
+          reply:
+            "Consigo responder isso com dados reais, mas preciso receber o companyId ativo da empresa para consultar o CRM.",
+        });
+      }
+
+      const metrics = await getLeadMetrics(companyId);
+
+      return Response.json({
+        reply: buildLeadMetricsReply(userMessage, metrics),
+      });
+    }
+
+    if (isOtherRealDataQuestion(userMessage)) {
       return Response.json({
         reply: buildRealDataFallback(userMessage),
       });
