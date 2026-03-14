@@ -1,3 +1,4 @@
+// app/api/flowia/chat/route.ts
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -21,7 +22,8 @@ Regras:
 - Responda somente ao que o usuário perguntou.
 - Se a pergunta for simples, responda de forma curta e natural.
 - Quando a pergunta for sobre o sistema FlowDesk, explique de forma clara e prática.
-- Quando a pergunta pedir números reais do CRM (ex.: leads, conversão, faturamento, vendas, comissão, pipeline real), use os dados recebidos da consulta.
+- Quando a pergunta pedir números reais do CRM, só responda com base nos dados recebidos.
+- Se não houver dados reais suficientes, deixe isso claro.
 `;
 
 const FLOWDESK_KNOWLEDGE = `
@@ -62,6 +64,38 @@ type FastFaqItem = {
 
 type LeadMetrics = {
   totalLeads: number;
+  lastLeadDate: string | null;
+  lastLeadClient: string | null;
+  lastLeadTitle: string | null;
+  lastLeadOrigin: string | null;
+  lastLeadStatus: string | null;
+};
+
+type PeriodPreset = "today" | "7d" | "30d" | "month" | "year" | "all";
+
+type RealDataIntent =
+  | "lead_metrics"
+  | "sales_count"
+  | "sales_revenue"
+  | "sales_profit"
+  | "sales_commission"
+  | "conversion"
+  | "clients_count"
+  | "budgets_count"
+  | "summary";
+
+type ServicoRow = Record<string, any>;
+
+type RealMetrics = {
+  totalLeads: number;
+  totalClientes: number;
+  totalOrcamentos: number;
+  vendasConcluidas: number;
+  faturamento: number;
+  lucro: number;
+  comissao: number;
+  totalOportunidades: number;
+  conversaoPercentual: number;
   lastLeadDate: string | null;
   lastLeadClient: string | null;
   lastLeadTitle: string | null;
@@ -274,6 +308,337 @@ function formatPtBrDate(value: string | null) {
   }
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPercent(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  if (typeof value === "string") {
+    const cleaned = value
+      .replace(/\s/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".")
+      .replace(/[^\d.-]/g, "");
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function getStringField(row: ServicoRow, keys: string[]) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function getDateField(row: ServicoRow, keys: string[]) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function getNumberField(row: ServicoRow, keys: string[]) {
+  for (const key of keys) {
+    if (row && key in row) {
+      return toNumber(row[key]);
+    }
+  }
+  return 0;
+}
+
+function normalizeStatus(value: unknown) {
+  return typeof value === "string" ? normalizeText(value) : "";
+}
+
+function isConcludedStatus(status: unknown) {
+  const s = normalizeStatus(status);
+  return s === "concluido" || s === "concluído";
+}
+
+function isLostStatus(status: unknown) {
+  const s = normalizeStatus(status);
+  return s === "perdido" || s === "cancelado" || s === "recusado";
+}
+
+function resolvePeriodPreset(message: string): PeriodPreset {
+  const text = normalizeText(message);
+
+  if (includesAny(text, ["hoje", "de hoje"])) return "today";
+  if (includesAny(text, ["7 dias", "ultimos 7 dias", "últimos 7 dias"])) return "7d";
+  if (
+    includesAny(text, [
+      "30 dias",
+      "ultimos 30 dias",
+      "últimos 30 dias",
+      "ultimo mes",
+      "último mês",
+    ])
+  ) {
+    return "30d";
+  }
+  if (
+    includesAny(text, [
+      "esse mes",
+      "este mes",
+      "mês",
+      "mes atual",
+      "no mes",
+      "neste mes",
+    ])
+  ) {
+    return "month";
+  }
+  if (includesAny(text, ["esse ano", "este ano", "ano"])) return "year";
+
+  return "all";
+}
+
+function getPeriodRange(preset: PeriodPreset) {
+  const now = new Date();
+  const start = new Date(now);
+
+  if (preset === "today") {
+    start.setHours(0, 0, 0, 0);
+    return { start, end: now };
+  }
+
+  if (preset === "7d") {
+    start.setDate(now.getDate() - 7);
+    return { start, end: now };
+  }
+
+  if (preset === "30d") {
+    start.setDate(now.getDate() - 30);
+    return { start, end: now };
+  }
+
+  if (preset === "month") {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    return { start, end: now };
+  }
+
+  if (preset === "year") {
+    start.setMonth(0, 1);
+    start.setHours(0, 0, 0, 0);
+    return { start, end: now };
+  }
+
+  return null;
+}
+
+function isInsidePeriod(dateValue: string | null, preset: PeriodPreset) {
+  if (preset === "all") return true;
+  if (!dateValue) return false;
+
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  const range = getPeriodRange(preset);
+  if (!range) return true;
+
+  return parsed >= range.start && parsed <= range.end;
+}
+
+function getBestDateForPeriod(row: ServicoRow) {
+  return (
+    getDateField(row, [
+      "concluido_at",
+      "updated_at",
+      "created_at",
+      "data_venda",
+      "data_fechamento",
+      "closed_at",
+    ]) || null
+  );
+}
+
+function getLeadCreatedDate(row: ServicoRow) {
+  return (
+    getDateField(row, ["created_at", "updated_at", "data_criacao", "inserted_at"]) ||
+    null
+  );
+}
+
+function inferCommission(row: ServicoRow) {
+  const direct = getNumberField(row, [
+    "valor_comissao",
+    "comissao_valor",
+    "commission_value",
+  ]);
+
+  if (direct > 0) return direct;
+
+  const percentual = getNumberField(row, [
+    "percentual_comissao",
+    "comissao_percentual",
+    "commission_percent",
+  ]);
+
+  const valor = getNumberField(row, ["valor", "preco", "price", "amount"]);
+
+  if (percentual > 0 && valor > 0) {
+    return valor * (percentual / 100);
+  }
+
+  return 0;
+}
+
+function inferRevenue(row: ServicoRow) {
+  return getNumberField(row, ["valor", "preco", "price", "amount"]);
+}
+
+function inferCost(row: ServicoRow) {
+  return getNumberField(row, ["custo", "cost"]);
+}
+
+function inferProfit(row: ServicoRow) {
+  const direct = getNumberField(row, ["lucro", "profit"]);
+  if (direct !== 0) return direct;
+
+  const receita = inferRevenue(row);
+  const custo = inferCost(row);
+  const comissao = inferCommission(row);
+
+  return receita - custo - comissao;
+}
+
+function detectRealDataIntent(message: string): RealDataIntent | null {
+  const text = normalizeText(message);
+
+  if (wantsLeadMetrics(message)) return "lead_metrics";
+
+  if (
+    includesAny(text, [
+      "conversao",
+      "conversão",
+      "taxa de conversao",
+      "taxa de conversão",
+      "aprovacao",
+      "aprovação",
+    ])
+  ) {
+    return "conversion";
+  }
+
+  if (
+    includesAny(text, [
+      "comissao",
+      "comissão",
+      "total de comissao",
+      "total de comissão",
+      "minha comissao",
+      "minha comissão",
+    ])
+  ) {
+    return "sales_commission";
+  }
+
+  if (
+    includesAny(text, [
+      "lucro",
+      "meu lucro",
+      "lucro total",
+      "total de lucro",
+    ])
+  ) {
+    return "sales_profit";
+  }
+
+  if (
+    includesAny(text, [
+      "faturamento",
+      "receita",
+      "quanto eu vendi",
+      "total vendido",
+      "valor vendido",
+      "total de vendas em valor",
+      "total das vendas",
+      "vendas concluidas em valor",
+      "vendas concluídas em valor",
+    ])
+  ) {
+    return "sales_revenue";
+  }
+
+  if (
+    includesAny(text, [
+      "quantas vendas",
+      "quantidade de vendas",
+      "vendas concluidas",
+      "vendas concluídas",
+      "total de vendas",
+      "total vendas",
+      "vendas realizadas",
+      "fechamentos",
+    ])
+  ) {
+    return "sales_count";
+  }
+
+  if (
+    includesAny(text, [
+      "quantos clientes eu tenho",
+      "quantidade de clientes",
+      "total de clientes",
+      "meus clientes",
+    ])
+  ) {
+    return "clients_count";
+  }
+
+  if (
+    includesAny(text, [
+      "quantos orcamentos eu tenho",
+      "quantos orçamentos eu tenho",
+      "quantidade de orcamentos",
+      "quantidade de orçamentos",
+      "total de orcamentos",
+      "total de orçamentos",
+      "quantas propostas eu tenho",
+      "total de propostas",
+    ])
+  ) {
+    return "budgets_count";
+  }
+
+  if (
+    includesAny(text, [
+      "dados reais",
+      "numeros reais",
+      "números reais",
+      "metricas",
+      "métricas",
+      "resumo da operacao",
+      "resumo da operação",
+      "desempenho real",
+      "painel comercial",
+    ])
+  ) {
+    return "summary";
+  }
+
+  return null;
+}
+
 async function getLeadMetrics(companyId: string): Promise<LeadMetrics> {
   const { count, error: countError } = await supabaseAdmin
     .from("servicos")
@@ -284,7 +649,7 @@ async function getLeadMetrics(companyId: string): Promise<LeadMetrics> {
 
   const { data: latestLead, error: latestError } = await supabaseAdmin
     .from("servicos")
-    .select("created_at, cliente, titulo, origem_lead, status")
+    .select("*")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -294,11 +659,19 @@ async function getLeadMetrics(companyId: string): Promise<LeadMetrics> {
 
   return {
     totalLeads: count ?? 0,
-    lastLeadDate: latestLead?.created_at ?? null,
-    lastLeadClient: latestLead?.cliente ?? null,
-    lastLeadTitle: latestLead?.titulo ?? null,
-    lastLeadOrigin: latestLead?.origem_lead ?? null,
-    lastLeadStatus: latestLead?.status ?? null,
+    lastLeadDate: latestLead ? getLeadCreatedDate(latestLead) : null,
+    lastLeadClient: latestLead
+      ? getStringField(latestLead, ["cliente", "nome_cliente", "client_name"])
+      : null,
+    lastLeadTitle: latestLead
+      ? getStringField(latestLead, ["titulo", "title", "servico"])
+      : null,
+    lastLeadOrigin: latestLead
+      ? getStringField(latestLead, ["origem_lead", "origem", "source"])
+      : null,
+    lastLeadStatus: latestLead
+      ? getStringField(latestLead, ["status", "stage"])
+      : null,
   };
 }
 
@@ -332,6 +705,10 @@ function buildLeadMetricsReply(message: string, metrics: LeadMetrics) {
         extra += ` Origem: ${metrics.lastLeadOrigin}.`;
       }
 
+      if (metrics.lastLeadStatus) {
+        extra += ` Status: ${metrics.lastLeadStatus}.`;
+      }
+
       parts.push(`O último lead foi registrado em ${formattedDate}.${extra}`);
     }
   }
@@ -353,36 +730,170 @@ function buildLeadMetricsReply(message: string, metrics: LeadMetrics) {
   return parts.join("\n\n");
 }
 
-function isOtherRealDataQuestion(message: string) {
-  const text = normalizeText(message);
+async function getAllServicos(companyId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("servicos")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false });
 
-  const terms = [
-    "minha conversao",
-    "taxa de conversao",
-    "quanto eu vendi",
-    "quantas vendas eu tenho",
-    "meu faturamento",
-    "minha receita",
-    "meu lucro",
-    "minha comissao",
-    "meu pipeline",
-    "meus clientes",
-    "dados reais",
-    "numeros reais",
-    "resultado do crm",
-    "metricas",
-    "desempenho real",
-    "quantos clientes eu tenho",
-    "quantos orcamentos eu tenho",
-    "quantos orçamentos eu tenho",
-    "quantas campanhas eu tenho",
-  ];
+  if (error) throw error;
 
-  return includesAny(text, terms);
+  return Array.isArray(data) ? data : [];
 }
 
-function buildRealDataFallback(message: string) {
-  return `Ainda não tenho acesso completo aos dados reais da sua conta para responder com precisão sobre "${message}". Neste momento já consigo responder total de leads e data do último lead quando recebo o companyId ativo. Para responder outros números reais, preciso ser conectado às consultas específicas do CRM.`;
+function buildRealMetrics(rows: ServicoRow[], periodPreset: PeriodPreset): RealMetrics {
+  const rowsInPeriod = rows.filter((row) =>
+    isInsidePeriod(getBestDateForPeriod(row), periodPreset)
+  );
+
+  const allLeadRows = rows.filter((row) =>
+    isInsidePeriod(getLeadCreatedDate(row), periodPreset)
+  );
+
+  const concludedRows = rowsInPeriod.filter((row) => isConcludedStatus(row.status));
+
+  const clientesSet = new Set<string>();
+  const clientesPeriodoSet = new Set<string>();
+
+  for (const row of rows) {
+    const cliente = getStringField(row, ["cliente", "nome_cliente", "client_name"]);
+    if (cliente) clientesSet.add(normalizeText(cliente));
+  }
+
+  for (const row of rowsInPeriod) {
+    const cliente = getStringField(row, ["cliente", "nome_cliente", "client_name"]);
+    if (cliente) clientesPeriodoSet.add(normalizeText(cliente));
+  }
+
+  const faturamento = concludedRows.reduce((acc, row) => acc + inferRevenue(row), 0);
+  const comissao = concludedRows.reduce((acc, row) => acc + inferCommission(row), 0);
+  const lucro = concludedRows.reduce((acc, row) => acc + inferProfit(row), 0);
+
+  const totalOportunidades = rowsInPeriod.filter(
+    (row) => !isLostStatus(row.status)
+  ).length;
+
+  const vendasConcluidas = concludedRows.length;
+  const conversaoPercentual =
+    totalOportunidades > 0 ? (vendasConcluidas / totalOportunidades) * 100 : 0;
+
+  const latestLead = [...allLeadRows].sort((a, b) => {
+    const da = new Date(getLeadCreatedDate(a) || 0).getTime();
+    const db = new Date(getLeadCreatedDate(b) || 0).getTime();
+    return db - da;
+  })[0];
+
+  return {
+    totalLeads: allLeadRows.length,
+    totalClientes: clientesPeriodoSet.size || clientesSet.size,
+    totalOrcamentos: rowsInPeriod.length,
+    vendasConcluidas,
+    faturamento,
+    lucro,
+    comissao,
+    totalOportunidades,
+    conversaoPercentual,
+    lastLeadDate: latestLead ? getLeadCreatedDate(latestLead) : null,
+    lastLeadClient: latestLead
+      ? getStringField(latestLead, ["cliente", "nome_cliente", "client_name"])
+      : null,
+    lastLeadTitle: latestLead
+      ? getStringField(latestLead, ["titulo", "title", "servico"])
+      : null,
+    lastLeadOrigin: latestLead
+      ? getStringField(latestLead, ["origem_lead", "origem", "source"])
+      : null,
+    lastLeadStatus: latestLead
+      ? getStringField(latestLead, ["status", "stage"])
+      : null,
+  };
+}
+
+function getPeriodLabel(preset: PeriodPreset) {
+  switch (preset) {
+    case "today":
+      return "hoje";
+    case "7d":
+      return "nos últimos 7 dias";
+    case "30d":
+      return "nos últimos 30 dias";
+    case "month":
+      return "neste mês";
+    case "year":
+      return "neste ano";
+    default:
+      return "no período total";
+  }
+}
+
+function buildRealMetricsReply(
+  intent: RealDataIntent,
+  metrics: RealMetrics,
+  periodPreset: PeriodPreset
+) {
+  const periodLabel = getPeriodLabel(periodPreset);
+
+  switch (intent) {
+    case "sales_count":
+      return `Você possui ${metrics.vendasConcluidas} venda${
+        metrics.vendasConcluidas === 1 ? "" : "s"
+      } concluída${metrics.vendasConcluidas === 1 ? "" : "s"} ${periodLabel}.`;
+
+    case "sales_revenue":
+      return `O faturamento das vendas concluídas ${periodLabel} é ${formatCurrency(
+        metrics.faturamento
+      )}.`;
+
+    case "sales_profit":
+      return `O lucro total das vendas concluídas ${periodLabel} é ${formatCurrency(
+        metrics.lucro
+      )}.`;
+
+    case "sales_commission":
+      return `A comissão total acumulada nas vendas concluídas ${periodLabel} é ${formatCurrency(
+        metrics.comissao
+      )}.`;
+
+    case "conversion":
+      return `A conversão ${periodLabel} está em ${formatPercent(
+        metrics.conversaoPercentual
+      )}, com ${metrics.vendasConcluidas} venda${
+        metrics.vendasConcluidas === 1 ? "" : "s"
+      } concluída${metrics.vendasConcluidas === 1 ? "" : "s"} de ${
+        metrics.totalOportunidades
+      } oportunidade${metrics.totalOportunidades === 1 ? "" : "s"}.`;
+
+    case "clients_count":
+      return `Você possui ${metrics.totalClientes} cliente${
+        metrics.totalClientes === 1 ? "" : "s"
+      } ${periodLabel}.`;
+
+    case "budgets_count":
+      return `Você possui ${metrics.totalOrcamentos} orçamento${
+        metrics.totalOrcamentos === 1 ? "" : "s"
+      } / proposta${metrics.totalOrcamentos === 1 ? "" : "s"} ${periodLabel}.`;
+
+    case "summary":
+      return [
+        `Resumo real ${periodLabel}:`,
+        `- Leads: ${metrics.totalLeads}`,
+        `- Orçamentos/Propostas: ${metrics.totalOrcamentos}`,
+        `- Clientes: ${metrics.totalClientes}`,
+        `- Vendas concluídas: ${metrics.vendasConcluidas}`,
+        `- Faturamento: ${formatCurrency(metrics.faturamento)}`,
+        `- Lucro: ${formatCurrency(metrics.lucro)}`,
+        `- Comissão: ${formatCurrency(metrics.comissao)}`,
+        `- Conversão: ${formatPercent(metrics.conversaoPercentual)}`,
+      ].join("\n");
+
+    default:
+      return null;
+  }
+}
+
+function isBlockedRealDataQuestion(message: string) {
+  return detectRealDataIntent(message) !== null;
 }
 
 export async function POST(req: NextRequest) {
@@ -429,9 +940,37 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (isOtherRealDataQuestion(userMessage)) {
+    const realIntent = detectRealDataIntent(userMessage);
+
+    if (realIntent) {
+      if (!companyId) {
+        return Response.json({
+          reply:
+            "Consigo responder isso com dados reais, mas preciso receber o companyId ativo da empresa para consultar o CRM.",
+        });
+      }
+
+      const rows = await getAllServicos(companyId);
+      const periodPreset = resolvePeriodPreset(userMessage);
+      const realMetrics = buildRealMetrics(rows, periodPreset);
+
+      const reply = buildRealMetricsReply(realIntent, realMetrics, periodPreset);
+
+      if (reply) {
+        return Response.json({ reply });
+      }
+
       return Response.json({
-        reply: buildRealDataFallback(userMessage),
+        reply:
+          "Ainda não consegui montar essa métrica específica com segurança usando os dados atuais do CRM.",
+      });
+    }
+
+    // Segurança extra: se detectar pergunta de dado real não mapeada, bloqueia o modelo
+    if (isBlockedRealDataQuestion(userMessage)) {
+      return Response.json({
+        reply:
+          "Ainda não tenho dados reais suficientes para responder essa pergunta com segurança.",
       });
     }
 
@@ -470,7 +1009,7 @@ Resposta:
           keep_alive: "30m",
           options: {
             temperature: 0.1,
-            num_predict: 120,
+            num_predict: 140,
             top_p: 0.8,
             repeat_penalty: 1.1,
             stop: [
@@ -510,9 +1049,7 @@ Resposta:
       );
     }
 
-    let reply =
-      typeof parsed?.response === "string" ? parsed.response : "";
-
+    let reply = typeof parsed?.response === "string" ? parsed.response : "";
     reply = cleanReply(reply);
 
     console.log("[FlowIA] Tempo total:", Date.now() - startedAt, "ms");
