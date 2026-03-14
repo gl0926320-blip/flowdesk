@@ -23,13 +23,39 @@ const STATUS_COLUMNS = [
   "perdido",
 ] as const;
 
+type LeadRecord = {
+  id: string;
+  cliente: string | null;
+  titulo: string | null;
+  descricao: string | null;
+  status: string | null;
+  temperatura: string | null;
+  valor_orcamento: number | null;
+  responsavel: string | null;
+  origem_lead: string | null;
+  telefone: string | null;
+  email: string | null;
+  observacoes: string | null;
+  ultimo_contato: string | null;
+  proxima_acao: string | null;
+  updated_at: string | null;
+  created_at: string | null;
+  data_entrada: string | null;
+  data_fechamento: string | null;
+  motivo_perda: string | null;
+  ativo: boolean | null;
+};
+
 type FlowIAContext = {
   companyId: string | null;
+  companyName: string | null;
   metrics: {
     totalLeads: number;
     concluidos: number;
     perdidos: number;
     leadsQuentes: number;
+    leadsMornos: number;
+    leadsFrios: number;
     receitaPotencial: number;
     receitaConfirmada: number;
     receitaRealizada: number;
@@ -42,15 +68,7 @@ type FlowIAContext = {
     concluidos: number;
     receita: number;
   }>;
-  recentLeads: Array<{
-    cliente: string;
-    status: string;
-    temperatura: string | null;
-    valor_orcamento: number;
-    responsavel: string | null;
-    origem_lead: string | null;
-    created_at: string;
-  }>;
+  allLeads: LeadRecord[];
 };
 
 function formatCurrency(value: number) {
@@ -60,61 +78,85 @@ function formatCurrency(value: number) {
   });
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR");
+}
+
 function buildSystemPrompt(dbContext: FlowIAContext) {
+  const allLeadsText = dbContext.allLeads.length
+    ? dbContext.allLeads
+        .map((lead, index) => {
+          return [
+            `${index + 1}. ${lead.cliente || lead.titulo || "Sem nome"}`,
+            `status=${lead.status || "-"}`,
+            `temperatura=${lead.temperatura || "-"}`,
+            `valor=${formatCurrency(Number(lead.valor_orcamento || 0))}`,
+            `responsável=${lead.responsavel || "-"}`,
+            `origem=${lead.origem_lead || "-"}`,
+            `telefone=${lead.telefone || "-"}`,
+            `email=${lead.email || "-"}`,
+            `último_contato=${formatDate(lead.ultimo_contato)}`,
+            `próxima_ação=${lead.proxima_acao || "-"}`,
+            `data_entrada=${formatDate(lead.data_entrada || lead.created_at)}`,
+            `atualizado_em=${formatDate(lead.updated_at)}`,
+            `fechamento=${formatDate(lead.data_fechamento)}`,
+            `motivo_perda=${lead.motivo_perda || "-"}`,
+            `ativo=${lead.ativo === false ? "não" : "sim"}`,
+            `observações=${lead.observacoes || "-"}`,
+          ].join(" | ");
+        })
+        .join("\n")
+    : "- Sem leads";
+
   return `
 Você é a FlowIA, assistente oficial do CRM FlowDesk.
 
 IDENTIDADE
 - Responda sempre em português do Brasil.
-- Seja objetiva, clara, útil e com tom profissional.
-- Não invente dados.
-- Quando não houver dado suficiente, diga isso claramente.
-- Quando o usuário pedir análise, use os dados reais recebidos no contexto.
-- Quando o usuário pedir explicação funcional, ensine com base nas regras do FlowDesk.
+- Seja clara, profissional, útil e objetiva.
+- Nunca invente números, nomes, status ou campos.
+- Use apenas os dados reais fornecidos abaixo.
+- Quando não houver dado suficiente, diga claramente.
+- Quando o usuário pedir detalhes de todos os leads, liste TODOS os leads disponíveis no contexto.
+- Não diga que só tem dados de 8 leads se o contexto trouxer mais do que isso.
+- Não diga que faltam dados se eles estiverem no contexto.
+- Não diga apenas o UUID da empresa se o nome estiver disponível no contexto.
 
 SOBRE O FLOWDESK
 O FlowDesk é um CRM comercial focado em operação de vendas, leads, pipeline, orçamentos, vendas, comissões, equipe, campanhas, atendimento e inteligência comercial.
 
-CONCEITOS IMPORTANTES DO FLOWDESK
-- Lead: contato ou oportunidade comercial ainda não fechada.
-- Temperatura: frio, morno, quente.
-- Status do funil:
-  - lead
-  - proposta_enviada
-  - aguardando_cliente
-  - proposta_validada
-  - andamento
-  - concluido
-  - perdido
-- Receita potencial: soma de leads em lead, proposta_enviada, aguardando_cliente.
-- Receita confirmada: soma de proposta_validada e andamento.
-- Receita realizada: soma de concluido.
-- Conversão: concluídos / base comercial elegível.
-- O sistema pode registrar histórico/follow-up por lead.
-- O sistema possui orçamentos com itens, valor_orcamento, responsável, origem, temperatura e observações.
-- O sistema registra motivo de perda quando um lead é marcado como perdido.
-- O sistema pode gerar relatórios, resumos operacionais e sugestões comerciais.
-
-COMO VOCÊ DEVE RESPONDER
-- Para dúvidas conceituais, explique de forma simples.
-- Para pedidos de análise, use primeiro os dados reais abaixo.
-- Para pedidos de relatório, gere um relatório executivo curto, com insights e próximos passos.
-- Quando fizer análise, sempre que possível organize assim:
+REGRAS DE RESPOSTA
+- Para perguntas simples, responda direto.
+- Para perguntas como “quantos leads eu tenho”, responda só o número e um resumo curto.
+- Para perguntas como “me mostra o detalhe”, liste os leads com nome, status, temperatura, valor, responsável e origem.
+- Para perguntas como “temos leads aguardando mais de 7 dias?”, use data_entrada, updated_at, created_at ou ultimo_contato como referência temporal mais útil disponível.
+- Para perguntas sobre empresa do usuário, use o nome da empresa atual.
+- Para perguntas sobre frio, morno, quente, lead, pipeline, receita potencial etc, explique como funciona no FlowDesk.
+- Para relatórios, use a estrutura:
   1. Resumo
   2. Principais números
   3. Insights
   4. Próximos passos
-- Não diga que acessou tabelas internas; apenas responda como assistente do sistema.
-- Se o usuário pedir algo fora do escopo do contexto recebido, diga que ainda não tem aquele dado específico em tempo real.
+- Evite responder com “posso fazer isso agora?” sem antes entregar o que o usuário pediu.
+- Evite resposta genérica e vaga.
+- Evite despejar texto desnecessário.
+- Se o usuário pedir exportação Excel/CSV, primeiro entregue os dados organizados ou diga exatamente o que pode ser exportado.
 
-DADOS REAIS ATUAIS DO CRM
-Empresa atual: ${dbContext.companyId || "não identificada"}
+DADOS REAIS DO CRM
+Empresa atual:
+- ID: ${dbContext.companyId || "-"}
+- Nome: ${dbContext.companyName || "-"}
 
 Métricas:
 - Total de leads: ${dbContext.metrics.totalLeads}
 - Concluídos: ${dbContext.metrics.concluidos}
 - Perdidos: ${dbContext.metrics.perdidos}
 - Leads quentes: ${dbContext.metrics.leadsQuentes}
+- Leads mornos: ${dbContext.metrics.leadsMornos}
+- Leads frios: ${dbContext.metrics.leadsFrios}
 - Receita potencial: ${formatCurrency(dbContext.metrics.receitaPotencial)}
 - Receita confirmada: ${formatCurrency(dbContext.metrics.receitaConfirmada)}
 - Receita realizada: ${formatCurrency(dbContext.metrics.receitaRealizada)}
@@ -137,39 +179,64 @@ ${
     : "- Sem dados"
 }
 
-Leads recentes:
-${
-  dbContext.recentLeads.length
-    ? dbContext.recentLeads
-        .map(
-          (lead) =>
-            `- ${lead.cliente} | status=${lead.status} | temperatura=${lead.temperatura || "-"} | valor=${formatCurrency(Number(lead.valor_orcamento || 0))} | responsável=${lead.responsavel || "-"} | origem=${lead.origem_lead || "-"}`
-        )
-        .join("\n")
-    : "- Sem leads recentes"
-}
+LISTA COMPLETA DOS LEADS:
+${allLeadsText}
 
-IMPORTANTE
-- Quando o usuário perguntar “o que é lead”, “o que é pipeline”, “o que é receita potencial”, etc, explique como isso funciona no FlowDesk.
-- Quando o usuário pedir “gere um relatório”, “analise meus leads”, “como está minha conversão”, “me dê insights”, use os dados acima.
-- Seja prática, sem enrolar.
+IMPORTANTE FINAL
+- Quando o usuário pedir detalhes dos leads, use a LISTA COMPLETA DOS LEADS.
+- Não esconda leads.
+- Não limite a resposta aos primeiros 8.
+- Se o usuário pedir todos os leads, traga todos.
+- Se o usuário pedir o nome da empresa, responda com o nome.
 `.trim();
 }
 
 async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
-  const { data: leads, error } = await supabaseAdmin
-    .from("servicos")
-    .select(
-      "id, cliente, status, temperatura, valor_orcamento, responsavel, origem_lead, created_at"
-    )
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: false });
+  const [{ data: leads, error: leadsError }, { data: company, error: companyError }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("servicos")
+        .select(`
+          id,
+          cliente,
+          titulo,
+          descricao,
+          status,
+          temperatura,
+          valor_orcamento,
+          responsavel,
+          origem_lead,
+          telefone,
+          email,
+          observacoes,
+          ultimo_contato,
+          proxima_acao,
+          updated_at,
+          created_at,
+          data_entrada,
+          data_fechamento,
+          motivo_perda,
+          ativo
+        `)
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false }),
 
-  if (error) {
-    throw new Error(`Erro ao buscar dados do CRM: ${error.message}`);
+      supabaseAdmin
+        .from("companies")
+        .select("id, nome")
+        .eq("id", companyId)
+        .maybeSingle(),
+    ]);
+
+  if (leadsError) {
+    throw new Error(`Erro ao buscar dados do CRM: ${leadsError.message}`);
   }
 
-  const items = leads || [];
+  if (companyError) {
+    console.error("Erro ao buscar empresa:", companyError.message);
+  }
+
+  const items = (leads || []) as LeadRecord[];
 
   const byStatus: Record<string, number> = {};
   for (const status of STATUS_COLUMNS) {
@@ -181,34 +248,30 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
   const STATUS_REALIZADA = ["concluido"];
 
   const receitaPotencial = items
-    .filter((i) => STATUS_POTENCIAL.includes(i.status))
+    .filter((i) => i.status && STATUS_POTENCIAL.includes(i.status))
     .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
   const receitaConfirmada = items
-    .filter((i) => STATUS_CONFIRMADA.includes(i.status))
+    .filter((i) => i.status && STATUS_CONFIRMADA.includes(i.status))
     .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
   const receitaRealizada = items
-    .filter((i) => STATUS_REALIZADA.includes(i.status))
+    .filter((i) => i.status && STATUS_REALIZADA.includes(i.status))
     .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
   const concluidos = items.filter((i) => i.status === "concluido").length;
   const perdidos = items.filter((i) => i.status === "perdido").length;
   const leadsQuentes = items.filter((i) => i.temperatura === "quente").length;
+  const leadsMornos = items.filter((i) => i.temperatura === "morno").length;
+  const leadsFrios = items.filter((i) => i.temperatura === "frio").length;
 
   const baseConversao = items.filter((i) =>
-    [
-      "lead",
-      "proposta_enviada",
-      "aguardando_cliente",
-      "proposta_validada",
-      "andamento",
-      "concluido",
-    ].includes(i.status)
+    ["lead", "proposta_enviada", "aguardando_cliente", "proposta_validada", "andamento", "concluido"].includes(
+      i.status || ""
+    )
   ).length;
 
-  const conversao =
-    baseConversao > 0 ? (concluidos / baseConversao) * 100 : 0;
+  const conversao = baseConversao > 0 ? (concluidos / baseConversao) * 100 : 0;
 
   const responsavelMap = new Map<
     string,
@@ -240,23 +303,16 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
     .sort((a, b) => b.receita - a.receita || b.total - a.total)
     .slice(0, 5);
 
-  const recentLeads = items.slice(0, 8).map((item) => ({
-    cliente: item.cliente || "Sem nome",
-    status: item.status || "lead",
-    temperatura: item.temperatura || null,
-    valor_orcamento: Number(item.valor_orcamento || 0),
-    responsavel: item.responsavel || null,
-    origem_lead: item.origem_lead || null,
-    created_at: item.created_at,
-  }));
-
   return {
     companyId,
+    companyName: (company as any)?.nome || null,
     metrics: {
       totalLeads: items.length,
       concluidos,
       perdidos,
       leadsQuentes,
+      leadsMornos,
+      leadsFrios,
       receitaPotencial,
       receitaConfirmada,
       receitaRealizada,
@@ -264,7 +320,7 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
     },
     byStatus,
     topResponsaveis,
-    recentLeads,
+    allLeads: items,
   };
 }
 
