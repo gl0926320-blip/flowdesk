@@ -249,11 +249,15 @@ export default function FlowIAPage() {
     setIsTyping(true);
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch("/api/flowia/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           message: text,
           messages: nextMessages.map((msg) => ({
@@ -263,31 +267,50 @@ export default function FlowIAPage() {
         }),
       });
 
-      const result = await response.json().catch(() => null);
+      clearTimeout(timeout);
+
+      let result: any = null;
+
+      try {
+        result = await response.json();
+      } catch (err) {
+        console.error("Erro ao converter JSON:", err);
+      }
 
       if (!response.ok) {
         throw new Error(
-          result?.error || "Não foi possível responder no momento."
+          typeof result?.error === "string"
+            ? result.error
+            : "Não foi possível responder no momento."
         );
+      }
+
+      const reply =
+        typeof result?.reply === "string"
+          ? result.reply.trim()
+          : "";
+
+      if (!reply) {
+        throw new Error("A FlowIA não retornou uma resposta válida.");
       }
 
       const assistantReply: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content:
-          result?.reply ||
-          "Não consegui responder agora. Tente novamente em instantes.",
+        content: reply,
         createdAt: new Date().toISOString(),
       };
 
       updateActiveSessionMessages((prev) => [...prev, assistantReply]);
       setConnected(true);
     } catch (error) {
-      console.error(error);
+      console.error("Erro no handleSend:", error);
 
       const message =
         error instanceof Error
-          ? error.message
+          ? error.name === "AbortError"
+            ? "A FlowIA demorou demais para responder. Tente novamente."
+            : error.message
           : "Não foi possível responder no momento.";
 
       setApiError(message);
