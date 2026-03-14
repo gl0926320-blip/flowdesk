@@ -25,69 +25,25 @@ const STATUS_COLUMNS = [
 
 type LeadRecord = {
   id: string;
-  user_id: string | null;
+  cliente: string | null;
   titulo: string | null;
   descricao: string | null;
   status: string | null;
-  created_at: string | null;
-  numero_os: string | null;
-  cliente: string | null;
-  tipo_servico: string | null;
+  temperatura: string | null;
   valor_orcamento: number | null;
-  custo: number | null;
-  data_abertura: string | null;
-  data_orcamento: string | null;
+  responsavel: string | null;
   origem_lead: string | null;
-  tipo_pessoa: string | null;
-  cpf: string | null;
-  cnpj: string | null;
   telefone: string | null;
   email: string | null;
-  responsavel: string | null;
-  forma_pagamento: string | null;
+  observacoes: string | null;
   ultimo_contato: string | null;
   proxima_acao: string | null;
-  observacoes: string | null;
   updated_at: string | null;
-  entrega: string | null;
-  itens: unknown;
-  ativo: boolean | null;
-  ultima_compra: string | null;
+  created_at: string | null;
   data_entrada: string | null;
-  vendedor_id: string | null;
-  percentual_comissao: number | null;
-  valor_comissao: number | null;
-  comissao_paga: boolean | null;
-  company_id: string | null;
-  temperatura: string | null;
-  campaign_id: string | null;
-  campaign_slug: string | null;
-  tracked_at: string | null;
   data_fechamento: string | null;
-  criado_por: string | null;
-  criado_por_email: string | null;
   motivo_perda: string | null;
-};
-
-type SellerSummary = {
-  responsavel: string;
-  total: number;
-  concluidos: number;
-  perdidos: number;
-  receita: number;
-  comissao: number;
-};
-
-type CampaignSummary = {
-  nome: string;
-  total: number;
-  receita: number;
-};
-
-type PaymentSummary = {
-  forma: string;
-  total: number;
-  receita: number;
+  ativo: boolean | null;
 };
 
 type FlowIAContext = {
@@ -106,21 +62,15 @@ type FlowIAContext = {
     receitaPotencial: number;
     receitaConfirmada: number;
     receitaRealizada: number;
-    custoTotalConcluido: number;
-    lucroRealizado: number;
-    comissaoTotal: number;
-    comissaoPagaTotal: number;
-    ticketMedio: number;
     conversao: number;
-    aguardandoCliente: number;
-    andamento: number;
-    propostaValidada: number;
-    semProximaAcao: number;
   };
   byStatus: Record<string, number>;
-  topResponsaveis: SellerSummary[];
-  topCampanhas: CampaignSummary[];
-  topPagamentos: PaymentSummary[];
+  topResponsaveis: Array<{
+    responsavel: string;
+    total: number;
+    concluidos: number;
+    receita: number;
+  }>;
   allLeads: LeadRecord[];
 };
 
@@ -178,7 +128,7 @@ function formatDate(value?: string | null) {
 }
 
 function getLeadDisplayName(lead: LeadRecord) {
-  return lead.cliente || lead.titulo || lead.numero_os || "Sem nome";
+  return lead.cliente || lead.titulo || "Sem nome";
 }
 
 function getReferenceDate(lead: LeadRecord) {
@@ -199,32 +149,10 @@ function daysSince(value?: string | null) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-function normalizeText(value?: string | null) {
-  return (value || "").trim();
-}
-
-function getCampaignDisplayName(lead: LeadRecord) {
-  return (
-    normalizeText(lead.campaign_slug) ||
-    normalizeText(lead.origem_lead) ||
-    "Sem campanha"
-  );
-}
-
-function getResponsavelDisplayName(lead: LeadRecord) {
-  return (
-    normalizeText(lead.responsavel) ||
-    normalizeText(lead.criado_por_email) ||
-    "Sem responsável"
-  );
-}
-
 async function getAuthenticatedUserFromRequest(
   req: Request
 ): Promise<AuthUserContext> {
-  const authHeader =
-    req.headers.get("authorization") || req.headers.get("Authorization");
-
+  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ")
     ? authHeader.slice("Bearer ".length).trim()
     : null;
@@ -365,8 +293,8 @@ function buildLeadCards(leads: LeadRecord[], limit = 6): LeadCard[] {
     status: lead.status || "-",
     temperatura: lead.temperatura || "-",
     valor: formatCurrency(Number(lead.valor_orcamento || 0)),
-    responsavel: getResponsavelDisplayName(lead),
-    origem: lead.origem_lead || lead.campaign_slug || "-",
+    responsavel: lead.responsavel || "-",
+    origem: lead.origem_lead || "-",
     subtitle:
       lead.proxima_acao ||
       lead.observacoes ||
@@ -432,62 +360,8 @@ function classifyIntent(message: string) {
     return "report";
   }
 
-  if (msg.includes("pipeline")) {
+  if (msg.includes("pipeline") && !msg.includes("o que é pipeline")) {
     return "pipeline_summary";
-  }
-
-  if (msg.includes("assinatura") || msg.includes("plano")) {
-    return "subscription_summary";
-  }
-
-  if (msg.includes("campanha")) {
-    return "campaign_summary";
-  }
-
-  if (msg.includes("comissão") || msg.includes("comissao")) {
-    return "commission_summary";
-  }
-
-  if (msg.includes("cliente") || msg.includes("clientes")) {
-    return "customers_summary";
-  }
-
-  if (
-    msg.includes("equipe") ||
-    msg.includes("vendedor") ||
-    msg.includes("responsável") ||
-    msg.includes("responsavel")
-  ) {
-    return "team_summary";
-  }
-
-  if (
-    msg.includes("forma de pagamento") ||
-    msg.includes("pagamento") ||
-    msg.includes("pix") ||
-    msg.includes("cartão") ||
-    msg.includes("cartao") ||
-    msg.includes("boleto")
-  ) {
-    return "payment_summary";
-  }
-
-  if (
-    msg.includes("perdido") ||
-    msg.includes("perdidos") ||
-    msg.includes("motivo de perda") ||
-    msg.includes("motivos de perda")
-  ) {
-    return "loss_summary";
-  }
-
-  if (
-    msg.includes("comissão paga") ||
-    msg.includes("comissao paga") ||
-    msg.includes("comissão pendente") ||
-    msg.includes("comissao pendente")
-  ) {
-    return "commission_status_summary";
   }
 
   return "llm";
@@ -502,11 +376,8 @@ function buildSystemPrompt(dbContext: FlowIAContext) {
             `status=${lead.status || "-"}`,
             `temperatura=${lead.temperatura || "-"}`,
             `valor=${formatCurrency(Number(lead.valor_orcamento || 0))}`,
-            `custo=${formatCurrency(Number(lead.custo || 0))}`,
-            `responsável=${getResponsavelDisplayName(lead)}`,
+            `responsável=${lead.responsavel || "-"}`,
             `origem=${lead.origem_lead || "-"}`,
-            `campanha=${lead.campaign_slug || "-"}`,
-            `forma_pagamento=${lead.forma_pagamento || "-"}`,
             `telefone=${lead.telefone || "-"}`,
             `email=${lead.email || "-"}`,
             `último_contato=${formatDate(lead.ultimo_contato)}`,
@@ -514,9 +385,6 @@ function buildSystemPrompt(dbContext: FlowIAContext) {
             `data_entrada=${formatDate(lead.data_entrada || lead.created_at)}`,
             `atualizado_em=${formatDate(lead.updated_at)}`,
             `fechamento=${formatDate(lead.data_fechamento)}`,
-            `valor_comissão=${formatCurrency(Number(lead.valor_comissao || 0))}`,
-            `percentual_comissão=${lead.percentual_comissao ?? 0}%`,
-            `comissão_paga=${lead.comissao_paga ? "sim" : "não"}`,
             `motivo_perda=${lead.motivo_perda || "-"}`,
             `ativo=${lead.ativo === false ? "não" : "sim"}`,
             `observações=${lead.observacoes || "-"}`,
@@ -528,24 +396,17 @@ function buildSystemPrompt(dbContext: FlowIAContext) {
   return `
 Você é a FlowIA, assistente oficial do CRM FlowDesk.
 
-REGRAS CRÍTICAS
-- Responda SEMPRE em português do Brasil.
-- Você existe para responder APENAS dentro do contexto do sistema FlowDesk e dos dados reais da empresa atual.
-- Nunca transforme a resposta em explicação genérica de internet.
-- Se o usuário perguntar algo amplo como "o que é assinatura", "o que é pipeline", "o que é campanha", "o que é comissão", "o que é cliente", interprete SEMPRE como funcionalidade, aba, módulo ou contexto do FlowDesk.
-- Se a informação pedida não existir nos dados recebidos, diga isso claramente.
-- Nunca invente nomes, números, métricas, status, planos, cobranças, clientes, equipes, campos ou resultados.
-- Nunca responda como assistente geral.
-- Se a pergunta fugir do escopo do CRM FlowDesk, responda educadamente que você atua no contexto do sistema e da empresa atual.
-- Priorize o nome da empresa. Só cite ID quando realmente for útil.
+IDENTIDADE
+- Responda sempre em português do Brasil.
+- Seja clara, confiante, elegante, útil e objetiva.
+- Nunca invente números, nomes, status ou campos.
+- Use apenas os dados reais fornecidos abaixo.
 - Não esconda leads se o contexto já trouxer todos.
 - Se o usuário pedir detalhes de todos os leads, liste TODOS.
+- Não responda de forma genérica se houver dados suficientes.
 - Não use frases vagas como "posso ajudar com..." antes de responder o pedido principal.
-- Quando houver dados suficientes, responda diretamente.
-- Quando não houver dados suficientes, deixe isso explícito.
 
-ESTILO
-- Seja clara, objetiva, elegante e com cara de copilot premium.
+ESTILO DE RESPOSTA
 - Respostas curtas para perguntas simples.
 - Respostas estruturadas para relatórios e análises.
 - Quando listar leads, use blocos organizados.
@@ -554,6 +415,8 @@ ESTILO
   2. Principais números
   3. Oportunidades
   4. Próximos passos
+- Não despeje texto demais sem necessidade.
+- Use linguagem natural e profissional, estilo copilot de CRM premium.
 
 SOBRE O FLOWDESK
 O FlowDesk é um CRM comercial focado em leads, pipeline, orçamentos, vendas, comissões, campanhas, atendimento e inteligência comercial.
@@ -564,8 +427,8 @@ CONTEXTO DE ACESSO
 
 DADOS REAIS DO CRM
 Empresa atual:
-- Nome: ${dbContext.companyName || "-"}
 - ID: ${dbContext.companyId || "-"}
+- Nome: ${dbContext.companyName || "-"}
 - Plano: ${dbContext.plan}
 
 Métricas:
@@ -578,16 +441,7 @@ Métricas:
 - Receita potencial: ${formatCurrency(dbContext.metrics.receitaPotencial)}
 - Receita confirmada: ${formatCurrency(dbContext.metrics.receitaConfirmada)}
 - Receita realizada: ${formatCurrency(dbContext.metrics.receitaRealizada)}
-- Custo total concluído: ${formatCurrency(dbContext.metrics.custoTotalConcluido)}
-- Lucro realizado: ${formatCurrency(dbContext.metrics.lucroRealizado)}
-- Comissão total: ${formatCurrency(dbContext.metrics.comissaoTotal)}
-- Comissão paga: ${formatCurrency(dbContext.metrics.comissaoPagaTotal)}
-- Ticket médio: ${formatCurrency(dbContext.metrics.ticketMedio)}
 - Conversão atual: ${dbContext.metrics.conversao.toFixed(1)}%
-- Aguardando cliente: ${dbContext.metrics.aguardandoCliente}
-- Em andamento: ${dbContext.metrics.andamento}
-- Proposta validada: ${dbContext.metrics.propostaValidada}
-- Sem próxima ação: ${dbContext.metrics.semProximaAcao}
 
 Leads por status:
 ${Object.entries(dbContext.byStatus)
@@ -600,29 +454,7 @@ ${
     ? dbContext.topResponsaveis
         .map(
           (r) =>
-            `- ${r.responsavel}: ${r.total} leads, ${r.concluidos} concluídos, ${r.perdidos} perdidos, ${formatCurrency(r.receita)} em receita, ${formatCurrency(r.comissao)} em comissão`
-        )
-        .join("\n")
-    : "- Sem dados"
-}
-
-Top campanhas:
-${
-  dbContext.topCampanhas.length
-    ? dbContext.topCampanhas
-        .map(
-          (c) => `- ${c.nome}: ${c.total} lead(s), ${formatCurrency(c.receita)} em receita`
-        )
-        .join("\n")
-    : "- Sem dados"
-}
-
-Formas de pagamento:
-${
-  dbContext.topPagamentos.length
-    ? dbContext.topPagamentos
-        .map(
-          (p) => `- ${p.forma}: ${p.total} registro(s), ${formatCurrency(p.receita)} em receita`
+            `- ${r.responsavel}: ${r.total} leads, ${r.concluidos} concluídos, ${formatCurrency(r.receita)} em receita`
         )
         .join("\n")
     : "- Sem dados"
@@ -637,66 +469,41 @@ async function getCompanyContext(
   companyId: string,
   authUser: AuthUserContext
 ): Promise<FlowIAContext> {
-  const [
-    { data: leads, error: leadsError },
-    { data: company, error: companyError },
-  ] = await Promise.all([
-    supabaseAdmin
-      .from("servicos")
-      .select(`
-        id,
-        user_id,
-        titulo,
-        descricao,
-        status,
-        created_at,
-        numero_os,
-        cliente,
-        tipo_servico,
-        valor_orcamento,
-        custo,
-        data_abertura,
-        data_orcamento,
-        origem_lead,
-        tipo_pessoa,
-        cpf,
-        cnpj,
-        telefone,
-        email,
-        responsavel,
-        forma_pagamento,
-        ultimo_contato,
-        proxima_acao,
-        observacoes,
-        updated_at,
-        entrega,
-        itens,
-        ativo,
-        ultima_compra,
-        data_entrada,
-        vendedor_id,
-        percentual_comissao,
-        valor_comissao,
-        comissao_paga,
-        company_id,
-        temperatura,
-        campaign_id,
-        campaign_slug,
-        tracked_at,
-        data_fechamento,
-        criado_por,
-        criado_por_email,
-        motivo_perda
-      `)
-      .eq("company_id", companyId)
-      .order("created_at", { ascending: false }),
+  const [{ data: leads, error: leadsError }, { data: company, error: companyError }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("servicos")
+        .select(`
+          id,
+          cliente,
+          titulo,
+          descricao,
+          status,
+          temperatura,
+          valor_orcamento,
+          responsavel,
+          origem_lead,
+          telefone,
+          email,
+          observacoes,
+          ultimo_contato,
+          proxima_acao,
+          updated_at,
+          created_at,
+          data_entrada,
+          data_fechamento,
+          motivo_perda,
+          ativo
+        `)
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false }),
 
-    supabaseAdmin
-      .from("companies")
-      .select("id, nome, name")
-      .eq("id", companyId)
-      .maybeSingle(),
-  ]);
+      supabaseAdmin
+        .from("companies")
+        .select("id, nome")
+        .eq("id", companyId)
+        .maybeSingle(),
+    ]);
 
   if (leadsError) {
     throw new Error(`Erro ao buscar dados do CRM: ${leadsError.message}`);
@@ -725,48 +532,15 @@ async function getCompanyContext(
     .filter((i) => i.status && STATUS_CONFIRMADA.includes(i.status))
     .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-  const concluidosItems = items.filter((i) => i.status === "concluido");
+  const receitaRealizada = items
+    .filter((i) => i.status && STATUS_REALIZADA.includes(i.status))
+    .reduce((acc, i) => acc + Number(i.valor_orcamento || 0), 0);
 
-  const receitaRealizada = concluidosItems.reduce(
-    (acc, i) => acc + Number(i.valor_orcamento || 0),
-    0
-  );
-
-  const custoTotalConcluido = concluidosItems.reduce(
-    (acc, i) => acc + Number(i.custo || 0),
-    0
-  );
-
-  const comissaoTotal = items.reduce(
-    (acc, i) => acc + Number(i.valor_comissao || 0),
-    0
-  );
-
-  const comissaoPagaTotal = items
-    .filter((i) => i.comissao_paga === true)
-    .reduce((acc, i) => acc + Number(i.valor_comissao || 0), 0);
-
-  const lucroRealizado =
-    receitaRealizada - custoTotalConcluido - comissaoPagaTotal;
-
-  const concluidos = concluidosItems.length;
+  const concluidos = items.filter((i) => i.status === "concluido").length;
   const perdidos = items.filter((i) => i.status === "perdido").length;
   const leadsQuentes = items.filter((i) => i.temperatura === "quente").length;
   const leadsMornos = items.filter((i) => i.temperatura === "morno").length;
   const leadsFrios = items.filter((i) => i.temperatura === "frio").length;
-  const aguardandoCliente = items.filter(
-    (i) => i.status === "aguardando_cliente"
-  ).length;
-  const andamento = items.filter((i) => i.status === "andamento").length;
-  const propostaValidada = items.filter(
-    (i) => i.status === "proposta_validada"
-  ).length;
-  const semProximaAcao = items.filter(
-    (i) =>
-      !normalizeText(i.proxima_acao) &&
-      i.status !== "concluido" &&
-      i.status !== "perdido"
-  ).length;
 
   const baseConversao = items.filter((i) =>
     [
@@ -780,35 +554,30 @@ async function getCompanyContext(
   ).length;
 
   const conversao = baseConversao > 0 ? (concluidos / baseConversao) * 100 : 0;
-  const ticketMedio = concluidos > 0 ? receitaRealizada / concluidos : 0;
 
-  const responsavelMap = new Map<string, SellerSummary>();
+  const responsavelMap = new Map<
+    string,
+    { responsavel: string; total: number; concluidos: number; receita: number }
+  >();
 
   for (const item of items) {
-    const nome = getResponsavelDisplayName(item);
+    const nome = item.responsavel || "Sem responsável";
 
     if (!responsavelMap.has(nome)) {
       responsavelMap.set(nome, {
         responsavel: nome,
         total: 0,
         concluidos: 0,
-        perdidos: 0,
         receita: 0,
-        comissao: 0,
       });
     }
 
     const current = responsavelMap.get(nome)!;
     current.total += 1;
-    current.comissao += Number(item.valor_comissao || 0);
 
     if (item.status === "concluido") {
       current.concluidos += 1;
       current.receita += Number(item.valor_orcamento || 0);
-    }
-
-    if (item.status === "perdido") {
-      current.perdidos += 1;
     }
   }
 
@@ -816,68 +585,11 @@ async function getCompanyContext(
     .sort((a, b) => b.receita - a.receita || b.total - a.total)
     .slice(0, 5);
 
-  const campaignMap = new Map<string, CampaignSummary>();
-
-  for (const item of items) {
-    const nome = getCampaignDisplayName(item);
-
-    if (!campaignMap.has(nome)) {
-      campaignMap.set(nome, {
-        nome,
-        total: 0,
-        receita: 0,
-      });
-    }
-
-    const current = campaignMap.get(nome)!;
-    current.total += 1;
-
-    if (item.status === "concluido") {
-      current.receita += Number(item.valor_orcamento || 0);
-    }
-  }
-
-  const topCampanhas = Array.from(campaignMap.values())
-    .sort((a, b) => b.receita - a.receita || b.total - a.total)
-    .slice(0, 5);
-
-  const paymentMap = new Map<string, PaymentSummary>();
-
-  for (const item of items) {
-    const forma = normalizeText(item.forma_pagamento) || "Não informado";
-
-    if (!paymentMap.has(forma)) {
-      paymentMap.set(forma, {
-        forma,
-        total: 0,
-        receita: 0,
-      });
-    }
-
-    const current = paymentMap.get(forma)!;
-    current.total += 1;
-
-    if (item.status === "concluido") {
-      current.receita += Number(item.valor_orcamento || 0);
-    }
-  }
-
-  const topPagamentos = Array.from(paymentMap.values())
-    .sort((a, b) => b.receita - a.receita || b.total - a.total)
-    .slice(0, 5);
-
   const plan = await getPlanForUser(authUser.userId, companyId);
-
-  const companyRow = company as
-    | {
-        nome?: string | null;
-        name?: string | null;
-      }
-    | null;
 
   return {
     companyId,
-    companyName: companyRow?.nome || companyRow?.name || null,
+    companyName: (company as { nome?: string } | null)?.nome || null,
     plan,
     userId: authUser.userId,
     userEmail: authUser.userEmail,
@@ -891,21 +603,10 @@ async function getCompanyContext(
       receitaPotencial,
       receitaConfirmada,
       receitaRealizada,
-      custoTotalConcluido,
-      lucroRealizado,
-      comissaoTotal,
-      comissaoPagaTotal,
-      ticketMedio,
       conversao,
-      aguardandoCliente,
-      andamento,
-      propostaValidada,
-      semProximaAcao,
     },
     byStatus,
     topResponsaveis,
-    topCampanhas,
-    topPagamentos,
     allLeads: items,
   };
 }
@@ -946,177 +647,9 @@ function buildDeterministicResponse(
 
   if (intent === "company_name") {
     return {
-      text: `Empresa atual: ${ctx.companyName || "sem nome cadastrado"}.\n\nPlano atual: ${ctx.plan}.\nID da empresa: ${ctx.companyId || "-"}.`,
+      text: `Você faz parte da empresa ${ctx.companyName || "sem nome cadastrado"}.\n\nID da empresa: ${ctx.companyId || "-"}.\nPlano atual: ${ctx.plan}.`,
       actions: buildDefaultActions(ctx.plan),
       insights,
-    };
-  }
-
-  if (intent === "subscription_summary") {
-    return {
-      text: [
-        `A aba Assinatura do seu FlowDesk está vinculada à empresa ${ctx.companyName || "sem nome cadastrado"}.`,
-        "",
-        `Plano atual: ${ctx.plan}`,
-        `ID da empresa: ${ctx.companyId || "-"}`,
-        "",
-        `Nesta rota eu consigo confirmar o plano atual da empresa.`,
-        `Não estou carregando aqui detalhes de cobrança Stripe, renovação automática ou faturas externas.`,
-        "",
-        `O que eu consigo afirmar com segurança agora:`,
-        `- empresa: ${ctx.companyName || "-"}`,
-        `- plano: ${ctx.plan}`,
-        `- leads totais: ${ctx.metrics.totalLeads}`,
-        `- receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "campaign_summary") {
-    const top = ctx.topCampanhas;
-
-    return {
-      text: top.length
-        ? [
-            `Resumo de campanhas/origens da empresa ${ctx.companyName || "-"}.`,
-            "",
-            ...top.map(
-              (c, index) =>
-                `${index + 1}. ${c.nome}\n` +
-                `Leads: ${c.total} • Receita concluída: ${formatCurrency(c.receita)}`
-            ),
-            "",
-            `Observação: esse resumo foi gerado com base em campaign_slug e origem_lead da tabela servicos.`,
-          ].join("\n")
-        : `Não encontrei dados suficientes de campanhas na empresa ${ctx.companyName || "-"}.`,
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "commission_summary") {
-    return {
-      text: [
-        `Resumo de comissão — ${ctx.companyName || "-"}`,
-        "",
-        `Comissão total registrada: ${formatCurrency(ctx.metrics.comissaoTotal)}`,
-        `Comissão marcada como paga: ${formatCurrency(ctx.metrics.comissaoPagaTotal)}`,
-        `Receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
-        `Lucro realizado estimado após custo e comissão paga: ${formatCurrency(ctx.metrics.lucroRealizado)}`,
-        "",
-        `Top responsáveis por comissão:`,
-        ...ctx.topResponsaveis.slice(0, 5).map(
-          (r) =>
-            `- ${r.responsavel}: ${formatCurrency(r.comissao)} em comissão`
-        ),
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "commission_status_summary") {
-    const pendente = ctx.metrics.comissaoTotal - ctx.metrics.comissaoPagaTotal;
-
-    return {
-      text: [
-        `Status de comissão — ${ctx.companyName || "-"}`,
-        "",
-        `Comissão total: ${formatCurrency(ctx.metrics.comissaoTotal)}`,
-        `Comissão paga: ${formatCurrency(ctx.metrics.comissaoPagaTotal)}`,
-        `Comissão pendente estimada: ${formatCurrency(pendente)}`,
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "customers_summary") {
-    const uniqueCustomers = new Set(
-      allLeads
-        .map((lead) => normalizeText(lead.cliente) || normalizeText(lead.telefone))
-        .filter(Boolean)
-    ).size;
-
-    return {
-      text: [
-        `Resumo de clientes — ${ctx.companyName || "-"}`,
-        "",
-        `Base aproximada de clientes/leads únicos: ${uniqueCustomers}`,
-        `Leads totais registrados: ${ctx.metrics.totalLeads}`,
-        `Concluídos: ${ctx.metrics.concluidos}`,
-        `Perdidos: ${ctx.metrics.perdidos}`,
-        "",
-        `Observação: este resumo usa os registros existentes em servicos.`,
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "team_summary") {
-    const responsaveis = ctx.topResponsaveis;
-
-    return {
-      text: responsaveis.length
-        ? [
-            `Resumo de equipe/responsáveis da empresa ${ctx.companyName || "-"}.`,
-            "",
-            ...responsaveis.map(
-              (r, index) =>
-                `${index + 1}. ${r.responsavel}\n` +
-                `Total de leads: ${r.total} • Concluídos: ${r.concluidos} • Perdidos: ${r.perdidos} • Receita: ${formatCurrency(r.receita)} • Comissão: ${formatCurrency(r.comissao)}`
-            ),
-          ].join("\n")
-        : `Não encontrei dados suficientes de responsáveis/equipe no contexto atual da empresa ${ctx.companyName || "-"}.`,
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "payment_summary") {
-    return {
-      text: [
-        `Resumo de formas de pagamento — ${ctx.companyName || "-"}`,
-        "",
-        ...ctx.topPagamentos.map(
-          (p, index) =>
-            `${index + 1}. ${p.forma}\n` +
-            `Registros: ${p.total} • Receita concluída: ${formatCurrency(p.receita)}`
-        ),
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-    };
-  }
-
-  if (intent === "loss_summary") {
-    const lost = allLeads.filter((lead) => lead.status === "perdido");
-    const reasonMap = new Map<string, number>();
-
-    for (const lead of lost) {
-      const reason = normalizeText(lead.motivo_perda) || "Sem motivo informado";
-      reasonMap.set(reason, (reasonMap.get(reason) || 0) + 1);
-    }
-
-    const reasons = Array.from(reasonMap.entries()).sort((a, b) => b[1] - a[1]);
-
-    return {
-      text: [
-        `Resumo de perdas — ${ctx.companyName || "-"}`,
-        "",
-        `Total de perdidos: ${ctx.metrics.perdidos}`,
-        "",
-        `Principais motivos:`,
-        ...(reasons.length
-          ? reasons.map(([reason, total]) => `- ${reason}: ${total}`)
-          : ["- Nenhum motivo informado"]),
-      ].join("\n"),
-      actions: buildDefaultActions(ctx.plan),
-      insights,
-      leadCards: buildLeadCards(lost, 6),
     };
   }
 
@@ -1131,8 +664,7 @@ function buildDeterministicResponse(
             (lead, index) =>
               `${index + 1}. ${getLeadDisplayName(lead)}\n` +
               `Status: ${lead.status || "-"} • Temperatura: ${lead.temperatura || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
-              `Responsável: ${getResponsavelDisplayName(lead)} • Origem: ${lead.origem_lead || "-"}\n` +
-              `Campanha: ${lead.campaign_slug || "-"} • Forma pagamento: ${lead.forma_pagamento || "-"}\n` +
+              `Responsável: ${lead.responsavel || "-"} • Origem: ${lead.origem_lead || "-"}\n` +
               `Telefone: ${lead.telefone || "-"} • Email: ${lead.email || "-"}\n` +
               `Próxima ação: ${lead.proxima_acao || "-"}`
           )
@@ -1191,7 +723,7 @@ function buildDeterministicResponse(
         const diff = daysSince(ref);
         return (
           `${index + 1}. ${getLeadDisplayName(lead)}\n` +
-          `Responsável: ${getResponsavelDisplayName(lead)} • Temperatura: ${lead.temperatura || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
+          `Responsável: ${lead.responsavel || "-"} • Temperatura: ${lead.temperatura || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
           `Referência de data: ${formatDate(ref)} • Há ${diff} dias`
         );
       }),
@@ -1205,8 +737,7 @@ function buildDeterministicResponse(
         {
           id: "create-followup",
           label: "Gerar plano de follow-up",
-          prompt:
-            "Gere um plano de follow-up para os leads aguardando_cliente há mais de 7 dias.",
+          prompt: "Gere um plano de follow-up para os leads aguardando_cliente há mais de 7 dias.",
           variant: "primary",
         },
       ],
@@ -1226,7 +757,7 @@ function buildDeterministicResponse(
             (lead, index) =>
               `${index + 1}. ${getLeadDisplayName(lead)}\n` +
               `Status: ${lead.status || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
-              `Responsável: ${getResponsavelDisplayName(lead)} • Origem: ${lead.origem_lead || "-"}\n` +
+              `Responsável: ${lead.responsavel || "-"} • Origem: ${lead.origem_lead || "-"}\n` +
               `Próxima ação: ${lead.proxima_acao || "-"}`
           ),
           "",
@@ -1268,7 +799,6 @@ function buildDeterministicResponse(
         `Receita confirmada: ${formatCurrency(ctx.metrics.receitaConfirmada)}`,
         `Receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
         `Conversão: ${ctx.metrics.conversao.toFixed(1)}%`,
-        `Sem próxima ação: ${ctx.metrics.semProximaAcao}`,
       ].join("\n"),
       actions: [
         {
@@ -1306,16 +836,13 @@ function buildDeterministicResponse(
         `- Receita potencial: ${formatCurrency(ctx.metrics.receitaPotencial)}`,
         `- Receita confirmada: ${formatCurrency(ctx.metrics.receitaConfirmada)}`,
         `- Receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
-        `- Lucro realizado: ${formatCurrency(ctx.metrics.lucroRealizado)}`,
-        `- Comissão total: ${formatCurrency(ctx.metrics.comissaoTotal)}`,
-        `- Ticket médio: ${formatCurrency(ctx.metrics.ticketMedio)}`,
         `- Leads quentes: ${ctx.metrics.leadsQuentes}`,
         `- Leads mornos: ${ctx.metrics.leadsMornos}`,
         `- Leads frios: ${ctx.metrics.leadsFrios}`,
         "",
         `3. Oportunidades`,
         `- ${awaiting} lead(s) em aguardando_cliente merecem follow-up prioritário`,
-        `- ${ctx.metrics.semProximaAcao} lead(s) estão sem próxima ação definida`,
+        `- Receita potencial ainda está baixa frente ao total da base`,
         `- Vale acelerar leads quentes e revisar perdidos`,
         "",
         `4. Próximos passos`,
@@ -1341,8 +868,7 @@ function buildDeterministicResponse(
       leadCards: buildLeadCards(
         allLeads.filter(
           (lead) =>
-            lead.status === "aguardando_cliente" ||
-            lead.temperatura === "quente"
+            lead.status === "aguardando_cliente" || lead.temperatura === "quente"
         ),
         6
       ),
