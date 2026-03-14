@@ -4,24 +4,12 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL!;
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
 
 const FLOWDESK_CONTEXT = `
-Você é a FlowIA, assistente oficial do CRM FlowDesk.
-
-Regras:
-- Responda em português do Brasil.
-- Seja clara, objetiva e profissional.
-- Nunca invente dados do CRM.
-- Prefira respostas curtas e úteis.
-- Se a pergunta for simples, responda de forma simples.
-
-Sobre o FlowDesk:
-CRM comercial focado em vendas, pipeline, atendimento e inteligência comercial.
-
-Módulos:
-Dashboard, Leads, Carteira, Pipeline, Atendimento, Orçamentos, Vendas,
-Comissões, Campanhas, Clientes, Empresas, Equipe, Assinatura e FlowIA.
-
-Pipeline:
-lead → proposta enviada → aguardando cliente → proposta validada → andamento → concluído → perdido.
+Você é a FlowIA, assistente do FlowDesk.
+Responda em português do Brasil.
+Seja objetiva, útil e profissional.
+Nunca invente dados.
+Ajude com dúvidas sobre CRM, pipeline, vendas, atendimento e módulos do sistema.
+Se a pergunta for simples, responda de forma curta.
 `;
 
 type ChatMessage = {
@@ -37,7 +25,10 @@ export async function POST(req: NextRequest) {
       ? (body.messages as ChatMessage[])
       : [];
 
-    if (!messages.length) {
+    const userMessage =
+      typeof body?.message === "string" ? body.message.trim() : "";
+
+    if (!userMessage && !messages.length) {
       return Response.json({ error: "Mensagem não enviada." }, { status: 400 });
     }
 
@@ -48,27 +39,42 @@ export async function POST(req: NextRequest) {
         ["system", "user", "assistant"].includes(m.role)
     );
 
-    const finalMessages: ChatMessage[] = [
-      {
-        role: "system",
-        content: FLOWDESK_CONTEXT,
-      },
-      ...safeMessages.slice(-4),
-    ];
+    const recentMessages = safeMessages.slice(-2);
+
+    const conversationContext = recentMessages
+      .map((msg) => {
+        if (msg.role === "user") return `Usuário: ${msg.content}`;
+        if (msg.role === "assistant") return `FlowIA: ${msg.content}`;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    const prompt = `
+${FLOWDESK_CONTEXT}
+
+Contexto recente:
+${conversationContext || "Sem contexto anterior."}
+
+Pergunta atual do usuário:
+${userMessage || recentMessages.at(-1)?.content || ""}
+
+Responda agora:
+`.trim();
 
     console.log("[FlowIA] Conectando em:", OLLAMA_BASE_URL);
     console.log("[FlowIA] Modelo:", OLLAMA_MODEL);
-    console.log("[FlowIA] Histórico enviado:", finalMessages.length);
+    console.log("[FlowIA] Histórico usado:", recentMessages.length);
 
     const startedAt = Date.now();
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     let ollamaResponse: Response;
 
     try {
-      ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -76,12 +82,13 @@ export async function POST(req: NextRequest) {
         signal: controller.signal,
         body: JSON.stringify({
           model: OLLAMA_MODEL,
-          messages: finalMessages,
+          prompt,
           stream: false,
+          keep_alive: "30m",
           options: {
-            temperature: 0.2,
-            num_predict: 120,
-            top_p: 0.9,
+            temperature: 0.1,
+            num_predict: 60,
+            top_p: 0.8,
           },
         }),
       });
@@ -113,7 +120,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const reply = parsed?.message?.content?.trim();
+    const reply =
+      typeof parsed?.response === "string" ? parsed.response.trim() : "";
 
     console.log("[FlowIA] Tempo total:", Date.now() - startedAt, "ms");
 
