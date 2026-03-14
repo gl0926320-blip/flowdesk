@@ -6,12 +6,12 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
 const FLOWDESK_CONTEXT = `
 Você é a FlowIA, assistente oficial do CRM FlowDesk.
 
-Identidade:
-- Seu nome é FlowIA.
-- Você responde em português do Brasil.
-- Seu papel é ajudar usuários a usar o FlowDesk.
+Regras:
+- Responda em português do Brasil.
 - Seja clara, objetiva e profissional.
 - Nunca invente dados do CRM.
+- Prefira respostas curtas e úteis.
+- Se a pergunta for simples, responda de forma simples.
 
 Sobre o FlowDesk:
 CRM comercial focado em vendas, pipeline, atendimento e inteligência comercial.
@@ -20,10 +20,8 @@ Módulos:
 Dashboard, Leads, Carteira, Pipeline, Atendimento, Orçamentos, Vendas,
 Comissões, Campanhas, Clientes, Empresas, Equipe, Assinatura e FlowIA.
 
-Regras:
-- Leads podem ser: frio, morno ou quente.
-- Pipeline: lead → proposta enviada → aguardando cliente → proposta validada → andamento → concluído → perdido.
-- Evite respostas muito longas.
+Pipeline:
+lead → proposta enviada → aguardando cliente → proposta validada → andamento → concluído → perdido.
 `;
 
 type ChatMessage = {
@@ -40,13 +38,7 @@ export async function POST(req: NextRequest) {
       : [];
 
     if (!messages.length) {
-      return new Response(
-        JSON.stringify({ error: "Mensagem não enviada." }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      return Response.json({ error: "Mensagem não enviada." }, { status: 400 });
     }
 
     const safeMessages = messages.filter(
@@ -61,7 +53,7 @@ export async function POST(req: NextRequest) {
         role: "system",
         content: FLOWDESK_CONTEXT,
       },
-      ...safeMessages.slice(-8),
+      ...safeMessages.slice(-4),
     ];
 
     console.log("[FlowIA] Conectando em:", OLLAMA_BASE_URL);
@@ -70,36 +62,41 @@ export async function POST(req: NextRequest) {
 
     const startedAt = Date.now();
 
-    const ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages: finalMessages,
-        stream: false,
-        options: {
-          temperature: 0.2,
-          num_predict: 200,
-          top_p: 0.9,
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let ollamaResponse: Response;
+
+    try {
+      ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: OLLAMA_MODEL,
+          messages: finalMessages,
+          stream: false,
+          options: {
+            temperature: 0.2,
+            num_predict: 120,
+            top_p: 0.9,
+          },
+        }),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const rawText = await ollamaResponse.text();
 
     if (!ollamaResponse.ok) {
       console.error("[FlowIA] Erro Ollama:", rawText);
 
-      return new Response(
-        JSON.stringify({
-          error: "Não foi possível conectar a FlowIA ao Ollama.",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        }
+      return Response.json(
+        { error: "Não foi possível conectar a FlowIA ao Ollama." },
+        { status: 500 }
       );
     }
 
@@ -107,16 +104,12 @@ export async function POST(req: NextRequest) {
 
     try {
       parsed = JSON.parse(rawText);
-    } catch (err) {
+    } catch {
       console.error("[FlowIA] Falha ao converter resposta do Ollama:", rawText);
-      return new Response(
-        JSON.stringify({
-          error: "Resposta inválida recebida da FlowIA.",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        }
+
+      return Response.json(
+        { error: "Resposta inválida recebida da FlowIA." },
+        { status: 500 }
       );
     }
 
@@ -125,37 +118,21 @@ export async function POST(req: NextRequest) {
     console.log("[FlowIA] Tempo total:", Date.now() - startedAt, "ms");
 
     if (!reply) {
-      return new Response(
-        JSON.stringify({
-          error: "A FlowIA não retornou conteúdo.",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        }
+      return Response.json(
+        { error: "A FlowIA não retornou conteúdo." },
+        { status: 500 }
       );
     }
 
-    return new Response(
-      JSON.stringify({
-        reply,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return Response.json({ reply });
   } catch (error) {
     console.error("[FlowIA] Erro interno:", error);
 
-    return new Response(
-      JSON.stringify({
-        error: "Erro interno ao processar a FlowIA.",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? "A FlowIA demorou demais para responder."
+        : "Erro interno ao processar a FlowIA.";
+
+    return Response.json({ error: message }, { status: 500 });
   }
 }

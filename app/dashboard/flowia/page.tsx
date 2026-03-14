@@ -229,106 +229,103 @@ export default function FlowIAPage() {
     }
   }
 
-  async function handleSend(customText?: string) {
-    const text = (customText ?? input).trim();
-    if (!text || isTyping || !activeSession) return;
+async function handleSend(customText?: string) {
+  const text = (customText ?? input).trim();
+  if (!text || isTyping || !activeSession) return;
 
-    setApiError("");
+  setApiError("");
 
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: text,
+  const userMessage: ChatMessage = {
+    id: `user-${Date.now()}`,
+    role: "user",
+    content: text,
+    createdAt: new Date().toISOString(),
+  };
+
+  const nextMessages = [...activeSession.messages, userMessage];
+
+  updateActiveSessionMessages(() => nextMessages);
+  setInput("");
+  setIsTyping(true);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch("/api/flowia/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        message: text,
+        messages: nextMessages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      }),
+    });
+
+    let result: any = null;
+
+    try {
+      result = await response.json();
+    } catch (err) {
+      console.error("Erro ao converter JSON:", err);
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        typeof result?.error === "string"
+          ? result.error
+          : "Não foi possível responder no momento."
+      );
+    }
+
+    const reply =
+      typeof result?.reply === "string" ? result.reply.trim() : "";
+
+    if (!reply) {
+      throw new Error("A FlowIA não retornou uma resposta válida.");
+    }
+
+    const assistantReply: ChatMessage = {
+      id: `assistant-${Date.now()}`,
+      role: "assistant",
+      content: reply,
       createdAt: new Date().toISOString(),
     };
 
-    const nextMessages = [...activeSession.messages, userMessage];
+    updateActiveSessionMessages((prev) => [...prev, assistantReply]);
+    setConnected(true);
+  } catch (error) {
+    console.error("Erro no handleSend:", error);
 
-    updateActiveSessionMessages(() => nextMessages);
-    setInput("");
-    setIsTyping(true);
+    const message =
+      error instanceof Error
+        ? error.name === "AbortError"
+          ? "A FlowIA demorou demais para responder. Tente novamente."
+          : error.message
+        : "Não foi possível responder no momento.";
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+    setApiError(message);
 
-      const response = await fetch("/api/flowia/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          message: text,
-          messages: nextMessages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-        }),
-      });
-
-      clearTimeout(timeout);
-
-      let result: any = null;
-
-      try {
-        result = await response.json();
-      } catch (err) {
-        console.error("Erro ao converter JSON:", err);
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          typeof result?.error === "string"
-            ? result.error
-            : "Não foi possível responder no momento."
-        );
-      }
-
-      const reply =
-        typeof result?.reply === "string"
-          ? result.reply.trim()
-          : "";
-
-      if (!reply) {
-        throw new Error("A FlowIA não retornou uma resposta válida.");
-      }
-
-      const assistantReply: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+    updateActiveSessionMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-error-${Date.now()}`,
         role: "assistant",
-        content: reply,
+        content:
+          "Tive um problema para responder agora. Tente novamente em instantes.",
         createdAt: new Date().toISOString(),
-      };
-
-      updateActiveSessionMessages((prev) => [...prev, assistantReply]);
-      setConnected(true);
-    } catch (error) {
-      console.error("Erro no handleSend:", error);
-
-      const message =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "A FlowIA demorou demais para responder. Tente novamente."
-            : error.message
-          : "Não foi possível responder no momento.";
-
-      setApiError(message);
-
-      updateActiveSessionMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: "assistant",
-          content:
-            "Tive um problema para responder agora. Tente novamente em instantes.",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setIsTyping(false);
-    }
+      },
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+    setIsTyping(false);
   }
+}
 
   function handleTextareaKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
