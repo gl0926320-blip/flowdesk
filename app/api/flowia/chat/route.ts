@@ -1,50 +1,47 @@
-import { NextResponse } from "next/server"
-import OpenAI from "openai"
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-})
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
-
   try {
-
-    const body = await req.json()
+    const body = await req.json();
 
     if (!body.message) {
       return NextResponse.json(
-        { error: "Message is required" },
+        { error: "Mensagem é obrigatória" },
         { status: 400 }
-      )
+      );
     }
 
-    const completion = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: "gpt-5-mini",
-      messages: [
+      input: [
         {
           role: "system",
-          content: "Você é a FlowIA, assistente do CRM FlowDesk."
+          content:
+            "Você é a FlowIA, assistente inteligente do CRM FlowDesk. Ajude usuários a entender vendas, leads, pipeline e funcionamento do sistema.",
         },
         {
           role: "user",
-          content: body.message
-        }
-      ]
-    })
+          content: body.message,
+        },
+      ],
+    });
 
-    const reply = completion.choices[0].message.content
+    const reply = response.output_text;
 
     return NextResponse.json({
-      reply
-    })
-
+      reply,
+    });
   } catch (error) {
-
-    console.error("FlowIA error:", error)
+    console.error("FlowIA error:", error);
 
     return NextResponse.json(
       { error: "Erro interno da FlowIA" },
       { status: 500 }
-    )
+    );
   }
 }
