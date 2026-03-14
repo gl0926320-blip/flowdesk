@@ -128,6 +128,7 @@ export default function FlowIAPage() {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   const [activeCompanyId, setActiveCompanyId] = useState<string>("");
 
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -210,7 +211,17 @@ export default function FlowIAPage() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const raf = requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "smooth",
+      });
+    });
+
+    return () => cancelAnimationFrame(raf);
   }, [activeSessionId, sessions, isTyping]);
 
   const activeSession = useMemo(() => {
@@ -532,9 +543,9 @@ export default function FlowIAPage() {
             </div>
           </div>
 
-          <div className="grid min-h-[680px] grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)]">
+          <div className="grid h-[760px] min-h-0 grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)]">
             {historyOpen && (
-              <aside className="border-b border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] xl:border-b-0 xl:border-r">
+              <aside className="min-h-0 border-b border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] xl:border-b-0 xl:border-r">
                 <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
                   <div>
                     <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -547,73 +558,75 @@ export default function FlowIAPage() {
                   </div>
                 </div>
 
-                <div className="max-h-[680px] space-y-2 overflow-y-auto p-3">
-                  {sessions.map((session) => {
-                    const isActive = session.id === activeSessionId;
-                    const preview =
-                      session.messages
-                        .filter((m) => m.role === "user")
-                        .at(-1)?.content || "Nova conversa";
+                <div className="h-[calc(100%-73px)] overflow-y-auto p-3">
+                  <div className="space-y-2">
+                    {sessions.map((session) => {
+                      const isActive = session.id === activeSessionId;
+                      const preview =
+                        session.messages
+                          .filter((m) => m.role === "user")
+                          .at(-1)?.content || "Nova conversa";
 
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveSessionId(session.id);
-                          setApiError("");
-                        }}
-                        className={cn(
-                          "group w-full rounded-2xl border p-3 text-left transition",
-                          isActive
-                            ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
-                            : "border-white/10 bg-white/5 hover:bg-white/10"
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div
-                              className={cn(
-                                "truncate text-sm font-semibold",
-                                isActive ? "text-cyan-200" : "text-white"
-                              )}
+                      return (
+                        <button
+                          key={session.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveSessionId(session.id);
+                            setApiError("");
+                          }}
+                          className={cn(
+                            "group w-full rounded-2xl border p-3 text-left transition",
+                            isActive
+                              ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className={cn(
+                                  "truncate text-sm font-semibold",
+                                  isActive ? "text-cyan-200" : "text-white"
+                                )}
+                              >
+                                {session.title}
+                              </div>
+
+                              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
+                                {preview}
+                              </p>
+
+                              <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                                <Clock3 className="h-3.5 w-3.5" />
+                                {formatDateLabel(session.updatedAt)} ·{" "}
+                                {formatTime(session.updatedAt)}
+                              </div>
+                            </div>
+
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteChat(session.id);
+                              }}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/10 text-slate-400 opacity-100 transition hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-300 xl:opacity-0 xl:group-hover:opacity-100"
                             >
-                              {session.title}
-                            </div>
-
-                            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
-                              {preview}
-                            </p>
-
-                            <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-                              <Clock3 className="h-3.5 w-3.5" />
-                              {formatDateLabel(session.updatedAt)} ·{" "}
-                              {formatTime(session.updatedAt)}
-                            </div>
+                              <Trash2 className="h-4 w-4" />
+                            </span>
                           </div>
-
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteChat(session.id);
-                            }}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/10 text-slate-400 opacity-100 transition hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-300 xl:opacity-0 xl:group-hover:opacity-100"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </aside>
             )}
 
-            <div className="relative min-h-[680px] bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.06),transparent_28%)]">
+            <div className="relative min-h-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.06),transparent_28%)]">
               <div className="absolute inset-0 opacity-[0.035] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
 
-              <div className="relative flex h-full min-h-[680px] flex-col">
-                <div className="border-b border-white/10 px-4 py-4 md:px-5">
+              <div className="relative flex h-full min-h-0 flex-col">
+                <div className="shrink-0 border-b border-white/10 px-4 py-4 md:px-5">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -641,7 +654,10 @@ export default function FlowIAPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 md:p-5">
+                <div
+                  ref={messagesContainerRef}
+                  className="flex-1 overflow-y-auto p-4 md:p-5 scroll-smooth"
+                >
                   <div className="mx-auto max-w-4xl space-y-5">
                     {messages.map((message) => {
                       const isAssistant = message.role === "assistant";
@@ -742,7 +758,7 @@ export default function FlowIAPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.08))] p-4">
+                <div className="shrink-0 border-t border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.08))] p-4">
                   <div className="mx-auto max-w-4xl rounded-[30px] border border-white/10 bg-white/5 p-3 shadow-[0_8px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm">
                     <div className="mb-3 flex flex-wrap gap-2">
                       <MiniAction
