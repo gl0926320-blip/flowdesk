@@ -71,6 +71,40 @@ type FlowIAContext = {
   allLeads: LeadRecord[];
 };
 
+type ActionButton = {
+  id: string;
+  label: string;
+  prompt: string;
+  variant?: "primary" | "secondary" | "ghost";
+};
+
+type InsightCard = {
+  id: string;
+  title: string;
+  value: string;
+  tone?: "cyan" | "green" | "yellow" | "red";
+};
+
+type LeadCard = {
+  id: string;
+  leadId: string;
+  title: string;
+  status: string;
+  temperatura: string;
+  valor: string;
+  responsavel: string;
+  origem: string;
+  subtitle?: string;
+  prompt: string;
+};
+
+type AssistantPayload = {
+  text: string;
+  actions?: ActionButton[];
+  insights?: InsightCard[];
+  leadCards?: LeadCard[];
+};
+
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", {
     style: "currency",
@@ -82,15 +116,177 @@ function formatDate(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("pt-BR");
+  return date.toLocaleDateString("pt-BR");
+}
+
+function getLeadDisplayName(lead: LeadRecord) {
+  return lead.cliente || lead.titulo || "Sem nome";
+}
+
+function getReferenceDate(lead: LeadRecord) {
+  return (
+    lead.data_entrada ||
+    lead.updated_at ||
+    lead.ultimo_contato ||
+    lead.created_at ||
+    null
+  );
+}
+
+function daysSince(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const diff = Date.now() - date.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function buildQuickInsights(ctx: FlowIAContext): InsightCard[] {
+  return [
+    {
+      id: "total",
+      title: "Leads totais",
+      value: String(ctx.metrics.totalLeads),
+      tone: "cyan",
+    },
+    {
+      id: "quentes",
+      title: "Leads quentes",
+      value: String(ctx.metrics.leadsQuentes),
+      tone: "yellow",
+    },
+    {
+      id: "conversao",
+      title: "Conversão",
+      value: `${ctx.metrics.conversao.toFixed(1)}%`,
+      tone: "green",
+    },
+    {
+      id: "receita",
+      title: "Receita realizada",
+      value: formatCurrency(ctx.metrics.receitaRealizada),
+      tone: "cyan",
+    },
+  ];
+}
+
+function buildDefaultActions(): ActionButton[] {
+  return [
+    {
+      id: "all-leads",
+      label: "Ver todos os leads",
+      prompt: "Me mostra o detalhe completo de todos os leads.",
+      variant: "primary",
+    },
+    {
+      id: "report",
+      label: "Gerar relatório",
+      prompt: "Gere um relatório executivo completo do meu CRM.",
+      variant: "secondary",
+    },
+    {
+      id: "awaiting",
+      label: "Aguardando cliente",
+      prompt: "Me mostre os leads em aguardando_cliente.",
+      variant: "ghost",
+    },
+    {
+      id: "hot",
+      label: "Leads quentes",
+      prompt: "Me mostre os leads quentes e o que devo fazer com eles.",
+      variant: "ghost",
+    },
+  ];
+}
+
+function buildLeadCards(leads: LeadRecord[], limit = 6): LeadCard[] {
+  return leads.slice(0, limit).map((lead) => ({
+    id: `card-${lead.id}`,
+    leadId: lead.id,
+    title: getLeadDisplayName(lead),
+    status: lead.status || "-",
+    temperatura: lead.temperatura || "-",
+    valor: formatCurrency(Number(lead.valor_orcamento || 0)),
+    responsavel: lead.responsavel || "-",
+    origem: lead.origem_lead || "-",
+    subtitle:
+      lead.proxima_acao ||
+      lead.observacoes ||
+      lead.telefone ||
+      lead.email ||
+      "Sem observações registradas",
+    prompt: `Me mostre detalhes do lead ${getLeadDisplayName(lead)}.`,
+  }));
+}
+
+function classifyIntent(message: string) {
+  const msg = message.toLowerCase().trim();
+
+  if (
+    msg.includes("quantos leads") ||
+    msg === "total de leads" ||
+    msg === "quantos leads eu tenho"
+  ) {
+    return "lead_count";
+  }
+
+  if (
+    msg.includes("nome da empresa") ||
+    msg.includes("qual empresa") ||
+    msg.includes("empresa atual")
+  ) {
+    return "company_name";
+  }
+
+  if (
+    msg.includes("todos os leads") ||
+    msg.includes("detalhe dos leads") ||
+    msg.includes("detalhe completo") ||
+    msg.includes("status de cada um") ||
+    msg.includes("lista completa")
+  ) {
+    return "all_leads";
+  }
+
+  if (
+    msg.includes("aguardando mais de 7") ||
+    msg.includes("há mais de 7 dias") ||
+    msg.includes("mais de 7 dias")
+  ) {
+    return "awaiting_7_days";
+  }
+
+  if (
+    msg.includes("leads quentes") ||
+    msg === "quente" ||
+    msg.includes("quais são os leads quentes")
+  ) {
+    return "hot_leads";
+  }
+
+  if (
+    msg.includes("relatório") ||
+    msg.includes("analise") ||
+    msg.includes("análise") ||
+    msg.includes("o que preciso melhorar") ||
+    msg.includes("insights")
+  ) {
+    return "report";
+  }
+
+  if (msg.includes("pipeline") && !msg.includes("o que é pipeline")) {
+    return "pipeline_summary";
+  }
+
+  return "llm";
 }
 
 function buildSystemPrompt(dbContext: FlowIAContext) {
   const allLeadsText = dbContext.allLeads.length
     ? dbContext.allLeads
-        .map((lead, index) => {
-          return [
-            `${index + 1}. ${lead.cliente || lead.titulo || "Sem nome"}`,
+        .map((lead, index) =>
+          [
+            `${index + 1}. ${getLeadDisplayName(lead)}`,
             `status=${lead.status || "-"}`,
             `temperatura=${lead.temperatura || "-"}`,
             `valor=${formatCurrency(Number(lead.valor_orcamento || 0))}`,
@@ -106,8 +302,8 @@ function buildSystemPrompt(dbContext: FlowIAContext) {
             `motivo_perda=${lead.motivo_perda || "-"}`,
             `ativo=${lead.ativo === false ? "não" : "sim"}`,
             `observações=${lead.observacoes || "-"}`,
-          ].join(" | ");
-        })
+          ].join(" | ")
+        )
         .join("\n")
     : "- Sem leads";
 
@@ -116,34 +312,28 @@ Você é a FlowIA, assistente oficial do CRM FlowDesk.
 
 IDENTIDADE
 - Responda sempre em português do Brasil.
-- Seja clara, profissional, útil e objetiva.
+- Seja clara, confiante, elegante, útil e objetiva.
 - Nunca invente números, nomes, status ou campos.
 - Use apenas os dados reais fornecidos abaixo.
-- Quando não houver dado suficiente, diga claramente.
-- Quando o usuário pedir detalhes de todos os leads, liste TODOS os leads disponíveis no contexto.
-- Não diga que só tem dados de 8 leads se o contexto trouxer mais do que isso.
-- Não diga que faltam dados se eles estiverem no contexto.
-- Não diga apenas o UUID da empresa se o nome estiver disponível no contexto.
+- Não esconda leads se o contexto já trouxer todos.
+- Se o usuário pedir detalhes de todos os leads, liste TODOS.
+- Não responda de forma genérica se houver dados suficientes.
+- Não use frases vagas como "posso ajudar com..." antes de responder o pedido principal.
 
-SOBRE O FLOWDESK
-O FlowDesk é um CRM comercial focado em operação de vendas, leads, pipeline, orçamentos, vendas, comissões, equipe, campanhas, atendimento e inteligência comercial.
-
-REGRAS DE RESPOSTA
-- Para perguntas simples, responda direto.
-- Para perguntas como “quantos leads eu tenho”, responda só o número e um resumo curto.
-- Para perguntas como “me mostra o detalhe”, liste os leads com nome, status, temperatura, valor, responsável e origem.
-- Para perguntas como “temos leads aguardando mais de 7 dias?”, use data_entrada, updated_at, created_at ou ultimo_contato como referência temporal mais útil disponível.
-- Para perguntas sobre empresa do usuário, use o nome da empresa atual.
-- Para perguntas sobre frio, morno, quente, lead, pipeline, receita potencial etc, explique como funciona no FlowDesk.
-- Para relatórios, use a estrutura:
+ESTILO DE RESPOSTA
+- Respostas curtas para perguntas simples.
+- Respostas estruturadas para relatórios e análises.
+- Quando listar leads, use blocos organizados.
+- Quando fizer análise, prefira:
   1. Resumo
   2. Principais números
-  3. Insights
+  3. Oportunidades
   4. Próximos passos
-- Evite responder com “posso fazer isso agora?” sem antes entregar o que o usuário pediu.
-- Evite resposta genérica e vaga.
-- Evite despejar texto desnecessário.
-- Se o usuário pedir exportação Excel/CSV, primeiro entregue os dados organizados ou diga exatamente o que pode ser exportado.
+- Não despeje texto demais sem necessidade.
+- Use linguagem natural e profissional, estilo copilot de CRM premium.
+
+SOBRE O FLOWDESK
+O FlowDesk é um CRM comercial focado em leads, pipeline, orçamentos, vendas, comissões, campanhas, atendimento e inteligência comercial.
 
 DADOS REAIS DO CRM
 Empresa atual:
@@ -181,13 +371,6 @@ ${
 
 LISTA COMPLETA DOS LEADS:
 ${allLeadsText}
-
-IMPORTANTE FINAL
-- Quando o usuário pedir detalhes dos leads, use a LISTA COMPLETA DOS LEADS.
-- Não esconda leads.
-- Não limite a resposta aos primeiros 8.
-- Se o usuário pedir todos os leads, traga todos.
-- Se o usuário pedir o nome da empresa, responda com o nome.
 `.trim();
 }
 
@@ -266,9 +449,14 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
   const leadsFrios = items.filter((i) => i.temperatura === "frio").length;
 
   const baseConversao = items.filter((i) =>
-    ["lead", "proposta_enviada", "aguardando_cliente", "proposta_validada", "andamento", "concluido"].includes(
-      i.status || ""
-    )
+    [
+      "lead",
+      "proposta_enviada",
+      "aguardando_cliente",
+      "proposta_validada",
+      "andamento",
+      "concluido",
+    ].includes(i.status || "")
   ).length;
 
   const conversao = baseConversao > 0 ? (concluidos / baseConversao) * 100 : 0;
@@ -305,7 +493,7 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
 
   return {
     companyId,
-    companyName: (company as any)?.nome || null,
+    companyName: (company as { nome?: string } | null)?.nome || null,
     metrics: {
       totalLeads: items.length,
       concluidos,
@@ -322,6 +510,275 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
     topResponsaveis,
     allLeads: items,
   };
+}
+
+function buildDeterministicResponse(
+  intent: string,
+  ctx: FlowIAContext
+): AssistantPayload | null {
+  const allLeads = ctx.allLeads;
+  const insights = buildQuickInsights(ctx);
+
+  if (intent === "lead_count") {
+    return {
+      text: `Você tem ${ctx.metrics.totalLeads} leads no total.\n\nQuentes: ${ctx.metrics.leadsQuentes} • Mornos: ${ctx.metrics.leadsMornos} • Frios: ${ctx.metrics.leadsFrios}\nConcluídos: ${ctx.metrics.concluidos} • Perdidos: ${ctx.metrics.perdidos}\nReceita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)} • Conversão: ${ctx.metrics.conversao.toFixed(1)}%`,
+      actions: [
+        {
+          id: "show-all",
+          label: "Ver detalhe dos leads",
+          prompt: "Me mostra o detalhe completo de todos os leads.",
+          variant: "primary",
+        },
+        {
+          id: "show-hot",
+          label: "Ver leads quentes",
+          prompt: "Me mostre os leads quentes.",
+          variant: "secondary",
+        },
+        {
+          id: "show-report",
+          label: "Gerar relatório",
+          prompt: "Gere um relatório executivo do meu CRM.",
+          variant: "ghost",
+        },
+      ],
+      insights,
+    };
+  }
+
+  if (intent === "company_name") {
+    return {
+      text: `Você faz parte da empresa ${ctx.companyName || "sem nome cadastrado"}.\n\nID da empresa: ${ctx.companyId || "-"}.`,
+      actions: buildDefaultActions(),
+      insights,
+    };
+  }
+
+  if (intent === "all_leads") {
+    const ordered = [...allLeads].sort((a, b) =>
+      getLeadDisplayName(a).localeCompare(getLeadDisplayName(b), "pt-BR")
+    );
+
+    const text = ordered.length
+      ? ordered
+          .map(
+            (lead, index) =>
+              `${index + 1}. ${getLeadDisplayName(lead)}\n` +
+              `Status: ${lead.status || "-"} • Temperatura: ${lead.temperatura || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
+              `Responsável: ${lead.responsavel || "-"} • Origem: ${lead.origem_lead || "-"}\n` +
+              `Telefone: ${lead.telefone || "-"} • Email: ${lead.email || "-"}\n` +
+              `Próxima ação: ${lead.proxima_acao || "-"}`
+          )
+          .join("\n\n")
+      : "Não há leads cadastrados.";
+
+    return {
+      text,
+      actions: [
+        {
+          id: "awaiting",
+          label: "Só aguardando cliente",
+          prompt: "Me mostre apenas os leads em aguardando_cliente.",
+          variant: "primary",
+        },
+        {
+          id: "lost",
+          label: "Só perdidos",
+          prompt: "Me mostre os leads perdidos e seus motivos.",
+          variant: "secondary",
+        },
+      ],
+      insights,
+      leadCards: buildLeadCards(ordered, 8),
+    };
+  }
+
+  if (intent === "awaiting_7_days") {
+    const delayed = allLeads.filter((lead) => {
+      if (lead.status !== "aguardando_cliente") return false;
+      const ref = getReferenceDate(lead);
+      const diff = daysSince(ref);
+      return diff != null && diff > 7;
+    });
+
+    if (!delayed.length) {
+      return {
+        text: `Não encontrei leads em "aguardando_cliente" há mais de 7 dias com base nas datas disponíveis no CRM.`,
+        actions: [
+          {
+            id: "all-awaiting",
+            label: "Ver aguardando cliente",
+            prompt: "Me mostre todos os leads em aguardando_cliente.",
+            variant: "primary",
+          },
+        ],
+        insights,
+      };
+    }
+
+    const text = [
+      `Encontrei ${delayed.length} lead(s) em "aguardando_cliente" há mais de 7 dias:`,
+      "",
+      ...delayed.map((lead, index) => {
+        const ref = getReferenceDate(lead);
+        const diff = daysSince(ref);
+        return (
+          `${index + 1}. ${getLeadDisplayName(lead)}\n` +
+          `Responsável: ${lead.responsavel || "-"} • Temperatura: ${lead.temperatura || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
+          `Referência de data: ${formatDate(ref)} • Há ${diff} dias`
+        );
+      }),
+      "",
+      "Recomendação: priorize follow-up imediato nesses leads e registre próxima ação para cada um.",
+    ].join("\n");
+
+    return {
+      text,
+      actions: [
+        {
+          id: "create-followup",
+          label: "Gerar plano de follow-up",
+          prompt: "Gere um plano de follow-up para os leads aguardando_cliente há mais de 7 dias.",
+          variant: "primary",
+        },
+      ],
+      insights,
+      leadCards: buildLeadCards(delayed, 6),
+    };
+  }
+
+  if (intent === "hot_leads") {
+    const hot = allLeads.filter((lead) => lead.temperatura === "quente");
+
+    const text = hot.length
+      ? [
+          `Você tem ${hot.length} lead(s) quente(s).`,
+          "",
+          ...hot.map(
+            (lead, index) =>
+              `${index + 1}. ${getLeadDisplayName(lead)}\n` +
+              `Status: ${lead.status || "-"} • Valor: ${formatCurrency(Number(lead.valor_orcamento || 0))}\n` +
+              `Responsável: ${lead.responsavel || "-"} • Origem: ${lead.origem_lead || "-"}\n` +
+              `Próxima ação: ${lead.proxima_acao || "-"}`
+          ),
+          "",
+          "Recomendação: priorize contato imediato e tentativa de avanço de etapa nesses leads.",
+        ].join("\n")
+      : "Você não tem leads quentes no momento.";
+
+    return {
+      text,
+      actions: [
+        {
+          id: "next-steps-hot",
+          label: "O que fazer com eles",
+          prompt: "Me diga o que devo fazer agora com meus leads quentes.",
+          variant: "primary",
+        },
+        {
+          id: "full-report",
+          label: "Gerar análise",
+          prompt: "Analise meus leads quentes e me diga prioridades.",
+          variant: "secondary",
+        },
+      ],
+      insights,
+      leadCards: buildLeadCards(hot, 6),
+    };
+  }
+
+  if (intent === "pipeline_summary") {
+    return {
+      text: [
+        `📊 Pipeline atual da ${ctx.companyName || "empresa"}`,
+        "",
+        ...Object.entries(ctx.byStatus).map(
+          ([status, count]) => `- ${status}: ${count}`
+        ),
+        "",
+        `Receita potencial: ${formatCurrency(ctx.metrics.receitaPotencial)}`,
+        `Receita confirmada: ${formatCurrency(ctx.metrics.receitaConfirmada)}`,
+        `Receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
+        `Conversão: ${ctx.metrics.conversao.toFixed(1)}%`,
+      ].join("\n"),
+      actions: [
+        {
+          id: "awaiting-pipeline",
+          label: "Ver gargalos",
+          prompt: "Me mostre os gargalos do meu pipeline.",
+          variant: "primary",
+        },
+        {
+          id: "report-pipeline",
+          label: "Relatório do pipeline",
+          prompt: "Gere um relatório executivo do meu pipeline.",
+          variant: "secondary",
+        },
+      ],
+      insights,
+    };
+  }
+
+  if (intent === "report") {
+    const awaiting = ctx.byStatus["aguardando_cliente"] || 0;
+
+    return {
+      text: [
+        `Resumo executivo — ${ctx.companyName || "FlowDesk"}`,
+        "",
+        `1. Resumo`,
+        `- ${ctx.metrics.totalLeads} leads no total`,
+        `- ${ctx.metrics.concluidos} concluído(s) e ${ctx.metrics.perdidos} perdido(s)`,
+        `- Conversão atual de ${ctx.metrics.conversao.toFixed(1)}%`,
+        "",
+        `2. Principais números`,
+        `- Receita potencial: ${formatCurrency(ctx.metrics.receitaPotencial)}`,
+        `- Receita confirmada: ${formatCurrency(ctx.metrics.receitaConfirmada)}`,
+        `- Receita realizada: ${formatCurrency(ctx.metrics.receitaRealizada)}`,
+        `- Leads quentes: ${ctx.metrics.leadsQuentes}`,
+        `- Leads mornos: ${ctx.metrics.leadsMornos}`,
+        `- Leads frios: ${ctx.metrics.leadsFrios}`,
+        "",
+        `3. Oportunidades`,
+        `- ${awaiting} lead(s) em aguardando_cliente merecem follow-up prioritário`,
+        `- Receita potencial ainda está baixa frente ao total da base`,
+        `- Vale acelerar leads quentes e revisar perdidos`,
+        "",
+        `4. Próximos passos`,
+        `- Priorizar follow-up dos quentes e aguardando_cliente`,
+        `- Revisar motivos de perda`,
+        `- Aumentar geração de proposta_validada e andamento`,
+      ].join("\n"),
+      actions: [
+        {
+          id: "awaiting-action",
+          label: "Ver leads parados",
+          prompt: "Me mostre os leads que precisam de atenção imediata.",
+          variant: "primary",
+        },
+        {
+          id: "lost-action",
+          label: "Analisar perdidos",
+          prompt: "Analise meus leads perdidos e os motivos.",
+          variant: "secondary",
+        },
+      ],
+      insights,
+      leadCards: buildLeadCards(
+        allLeads.filter(
+          (lead) =>
+            lead.status === "aguardando_cliente" || lead.temperatura === "quente"
+        ),
+        6
+      ),
+    };
+  }
+
+  return null;
+}
+
+function encodeLine(data: unknown) {
+  return `${JSON.stringify(data)}\n`;
 }
 
 export async function POST(req: Request) {
@@ -344,44 +801,82 @@ export async function POST(req: Request) {
       );
     }
 
-    const dbContext = await getCompanyContext(companyId);
-    const systemPrompt = buildSystemPrompt(dbContext);
-
-    const stream = await openai.responses.create({
-      model: "gpt-5-mini",
-      stream: true,
-      input: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-    });
-
+    const ctx = await getCompanyContext(companyId);
+    const intent = classifyIntent(message);
+    const deterministic = buildDeterministicResponse(intent, ctx);
     const encoder = new TextEncoder();
 
     const readable = new ReadableStream({
       async start(controller) {
         try {
+          const meta = {
+            type: "meta",
+            insights: deterministic?.insights || buildQuickInsights(ctx),
+            actions: deterministic?.actions || buildDefaultActions(),
+            leadCards: deterministic?.leadCards || [],
+          };
+
+          controller.enqueue(encoder.encode(encodeLine(meta)));
+
+          if (deterministic) {
+            const chunks = deterministic.text.match(/.{1,80}(\s|$)|.+$/g) || [
+              deterministic.text,
+            ];
+
+            for (const chunk of chunks) {
+              controller.enqueue(
+                encoder.encode(encodeLine({ type: "delta", text: chunk }))
+              );
+              await new Promise((r) => setTimeout(r, 20));
+            }
+
+            controller.enqueue(encoder.encode(encodeLine({ type: "done" })));
+            return;
+          }
+
+          const systemPrompt = buildSystemPrompt(ctx);
+
+          const stream = await openai.responses.create({
+            model: "gpt-5-mini",
+            stream: true,
+            input: [
+              {
+                role: "system",
+                content: systemPrompt,
+              },
+              {
+                role: "user",
+                content: message,
+              },
+            ],
+          });
+
           for await (const event of stream) {
             if (event.type === "response.output_text.delta") {
-              controller.enqueue(encoder.encode(event.delta));
+              controller.enqueue(
+                encoder.encode(encodeLine({ type: "delta", text: event.delta }))
+              );
             }
 
             if (event.type === "response.completed") {
               break;
             }
           }
-        } catch (error: any) {
+
+          controller.enqueue(encoder.encode(encodeLine({ type: "done" })));
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : "erro desconhecido";
+
           controller.enqueue(
             encoder.encode(
-              `\n\n[Erro ao gerar resposta: ${error?.message || "erro desconhecido"}]`
+              encodeLine({
+                type: "delta",
+                text: `Erro ao gerar resposta: ${message}`,
+              })
             )
           );
+          controller.enqueue(encoder.encode(encodeLine({ type: "done" })));
         } finally {
           controller.close();
         }
@@ -390,17 +885,20 @@ export async function POST(req: Request) {
 
     return new Response(readable, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("FlowIA error:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Erro interno da FlowIA.";
 
     return NextResponse.json(
       {
-        error: error?.message || "Erro interno da FlowIA.",
+        error: message,
       },
       { status: 500 }
     );
