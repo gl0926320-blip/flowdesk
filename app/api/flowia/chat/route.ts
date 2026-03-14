@@ -49,6 +49,9 @@ type LeadRecord = {
 type FlowIAContext = {
   companyId: string | null;
   companyName: string | null;
+  plan: string;
+  userId: string | null;
+  userEmail: string | null;
   metrics: {
     totalLeads: number;
     concluidos: number;
@@ -105,6 +108,11 @@ type AssistantPayload = {
   leadCards?: LeadCard[];
 };
 
+type AuthUserContext = {
+  userId: string | null;
+  userEmail: string | null;
+};
+
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", {
     style: "currency",
@@ -141,6 +149,73 @@ function daysSince(value?: string | null) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
+async function getAuthenticatedUserFromRequest(
+  req: Request
+): Promise<AuthUserContext> {
+  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : null;
+
+  if (!token) {
+    return {
+      userId: null,
+      userEmail: null,
+    };
+  }
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !data.user) {
+    return {
+      userId: null,
+      userEmail: null,
+    };
+  }
+
+  return {
+    userId: data.user.id,
+    userEmail: data.user.email || null,
+  };
+}
+
+async function getPlanForUser(userId: string | null, companyId: string | null) {
+  let companyPlan: string | null = null;
+  let profilePlan: string | null = null;
+
+  if (companyId) {
+    const { data: companyData, error: companyError } = await supabaseAdmin
+      .from("companies")
+      .select("plan")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (companyError) {
+      console.error("Erro ao buscar plan da company:", companyError.message);
+    }
+
+    companyPlan =
+      (companyData as { plan?: string | null } | null)?.plan || null;
+  }
+
+  if (userId) {
+    const { data: profileData, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("plan")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("Erro ao buscar plan do profile:", profileError.message);
+    }
+
+    profilePlan =
+      (profileData as { plan?: string | null } | null)?.plan || null;
+  }
+
+  return (companyPlan || profilePlan || "free").toLowerCase();
+}
+
 function buildQuickInsights(ctx: FlowIAContext): InsightCard[] {
   return [
     {
@@ -170,8 +245,8 @@ function buildQuickInsights(ctx: FlowIAContext): InsightCard[] {
   ];
 }
 
-function buildDefaultActions(): ActionButton[] {
-  return [
+function buildDefaultActions(plan: string): ActionButton[] {
+  const actions: ActionButton[] = [
     {
       id: "all-leads",
       label: "Ver todos os leads",
@@ -197,6 +272,17 @@ function buildDefaultActions(): ActionButton[] {
       variant: "ghost",
     },
   ];
+
+  if (plan === "free") {
+    actions.push({
+      id: "upgrade",
+      label: "Ver plano com IA",
+      prompt: "Explique os benefícios da FlowIA nos planos pagos.",
+      variant: "ghost",
+    });
+  }
+
+  return actions;
 }
 
 function buildLeadCards(leads: LeadRecord[], limit = 6): LeadCard[] {
@@ -335,10 +421,15 @@ ESTILO DE RESPOSTA
 SOBRE O FLOWDESK
 O FlowDesk é um CRM comercial focado em leads, pipeline, orçamentos, vendas, comissões, campanhas, atendimento e inteligência comercial.
 
+CONTEXTO DE ACESSO
+- Plano atual: ${dbContext.plan}
+- Empresa atual: ${dbContext.companyName || "-"}
+
 DADOS REAIS DO CRM
 Empresa atual:
 - ID: ${dbContext.companyId || "-"}
 - Nome: ${dbContext.companyName || "-"}
+- Plano: ${dbContext.plan}
 
 Métricas:
 - Total de leads: ${dbContext.metrics.totalLeads}
@@ -374,7 +465,10 @@ ${allLeadsText}
 `.trim();
 }
 
-async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
+async function getCompanyContext(
+  companyId: string,
+  authUser: AuthUserContext
+): Promise<FlowIAContext> {
   const [{ data: leads, error: leadsError }, { data: company, error: companyError }] =
     await Promise.all([
       supabaseAdmin
@@ -491,9 +585,14 @@ async function getCompanyContext(companyId: string): Promise<FlowIAContext> {
     .sort((a, b) => b.receita - a.receita || b.total - a.total)
     .slice(0, 5);
 
+  const plan = await getPlanForUser(authUser.userId, companyId);
+
   return {
     companyId,
     companyName: (company as { nome?: string } | null)?.nome || null,
+    plan,
+    userId: authUser.userId,
+    userEmail: authUser.userEmail,
     metrics: {
       totalLeads: items.length,
       concluidos,
@@ -548,8 +647,8 @@ function buildDeterministicResponse(
 
   if (intent === "company_name") {
     return {
-      text: `Você faz parte da empresa ${ctx.companyName || "sem nome cadastrado"}.\n\nID da empresa: ${ctx.companyId || "-"}.`,
-      actions: buildDefaultActions(),
+      text: `Você faz parte da empresa ${ctx.companyName || "sem nome cadastrado"}.\n\nID da empresa: ${ctx.companyId || "-"}.\nPlano atual: ${ctx.plan}.`,
+      actions: buildDefaultActions(ctx.plan),
       insights,
     };
   }
@@ -726,6 +825,8 @@ function buildDeterministicResponse(
       text: [
         `Resumo executivo — ${ctx.companyName || "FlowDesk"}`,
         "",
+        `Plano atual: ${ctx.plan}`,
+        "",
         `1. Resumo`,
         `- ${ctx.metrics.totalLeads} leads no total`,
         `- ${ctx.metrics.concluidos} concluído(s) e ${ctx.metrics.perdidos} perdido(s)`,
@@ -801,7 +902,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const ctx = await getCompanyContext(companyId);
+    const authUser = await getAuthenticatedUserFromRequest(req);
+    const ctx = await getCompanyContext(companyId, authUser);
     const intent = classifyIntent(message);
     const deterministic = buildDeterministicResponse(intent, ctx);
     const encoder = new TextEncoder();
@@ -812,8 +914,11 @@ export async function POST(req: Request) {
           const meta = {
             type: "meta",
             insights: deterministic?.insights || buildQuickInsights(ctx),
-            actions: deterministic?.actions || buildDefaultActions(),
+            actions: deterministic?.actions || buildDefaultActions(ctx.plan),
             leadCards: deterministic?.leadCards || [],
+            plan: ctx.plan,
+            companyName: ctx.companyName,
+            companyId: ctx.companyId,
           };
 
           controller.enqueue(encoder.encode(encodeLine(meta)));
@@ -865,14 +970,14 @@ export async function POST(req: Request) {
 
           controller.enqueue(encoder.encode(encodeLine({ type: "done" })));
         } catch (error: unknown) {
-          const message =
+          const errorMessage =
             error instanceof Error ? error.message : "erro desconhecido";
 
           controller.enqueue(
             encoder.encode(
               encodeLine({
                 type: "delta",
-                text: `Erro ao gerar resposta: ${message}`,
+                text: `Erro ao gerar resposta: ${errorMessage}`,
               })
             )
           );
@@ -893,12 +998,12 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     console.error("FlowIA error:", error);
 
-    const message =
+    const errorMessage =
       error instanceof Error ? error.message : "Erro interno da FlowIA.";
 
     return NextResponse.json(
       {
-        error: message,
+        error: errorMessage,
       },
       { status: 500 }
     );

@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Flame,
   Clock3,
+  Crown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -80,6 +81,8 @@ export default function FlowIAPage() {
   const [loading, setLoading] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [insights, setInsights] = useState<InsightCard[]>([]);
+  const [plan, setPlan] = useState<string>("free");
+  const [companyName, setCompanyName] = useState<string>("");
   const [quickActions] = useState<ActionButton[]>([
     {
       id: "qa-1",
@@ -111,7 +114,7 @@ export default function FlowIAPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    loadCompany();
+    void loadCompany();
   }, []);
 
   useEffect(() => {
@@ -163,6 +166,10 @@ export default function FlowIAPage() {
       return;
     }
 
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -191,6 +198,9 @@ export default function FlowIAPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
         },
         body: JSON.stringify({
           message: text,
@@ -225,11 +235,26 @@ export default function FlowIAPage() {
               actions?: ActionButton[];
               leadCards?: LeadCard[];
               text?: string;
+              plan?: string;
+              companyName?: string | null;
+              companyId?: string | null;
             };
 
             if (packet.type === "meta") {
               if (packet.insights?.length) {
                 setInsights(packet.insights);
+              }
+
+              if (packet.plan) {
+                setPlan(packet.plan);
+              }
+
+              if (packet.companyName) {
+                setCompanyName(packet.companyName);
+              }
+
+              if (packet.companyId) {
+                setCompanyId(packet.companyId);
               }
 
               setMessages((prev) =>
@@ -292,6 +317,9 @@ export default function FlowIAPage() {
     }
   }
 
+  const planLabel = plan === "pro" ? "Pro" : plan === "scale" ? "Scale" : plan === "growth" ? "Growth" : plan === "starter" ? "Starter" : "Free";
+  const iaLabel = plan === "free" ? "FlowIA com limite do plano Free" : "FlowIA disponível no seu plano";
+
   return (
     <div className="min-h-screen bg-[#07101f] text-white">
       <div className="mx-auto flex h-[calc(100vh-32px)] max-w-[1650px] flex-col px-4 py-4 lg:px-6">
@@ -317,6 +345,22 @@ export default function FlowIAPage() {
                     Assistente inteligente do FlowDesk com análise comercial,
                     relatórios, insights e ações rápidas.
                   </p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full border border-purple-400/20 bg-purple-500/10 px-2.5 py-1 text-purple-300">
+                      Plano {planLabel}
+                    </span>
+
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-300">
+                      {iaLabel}
+                    </span>
+
+                    {companyName && (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-300">
+                        {companyName}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -324,6 +368,7 @@ export default function FlowIAPage() {
                 <TopBadge icon={<Database size={14} />} label="CRM em tempo real" />
                 <TopBadge icon={<BarChart3 size={14} />} label="Relatórios" />
                 <TopBadge icon={<BrainCircuit size={14} />} label="Inteligência" />
+                <TopBadge icon={<Crown size={14} />} label={`Plano ${planLabel}`} />
               </div>
             </div>
           </div>
