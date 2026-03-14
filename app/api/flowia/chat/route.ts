@@ -39,12 +39,13 @@ export async function POST(req: NextRequest) {
       ? (body.messages as ChatMessage[])
       : [];
 
-    const userMessage = String(body?.message || "").trim();
-
-    if (!userMessage && messages.length === 0) {
+    if (!messages.length) {
       return new Response(
         JSON.stringify({ error: "Mensagem não enviada." }),
-        { status: 400 }
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -61,13 +62,13 @@ export async function POST(req: NextRequest) {
         content: FLOWDESK_CONTEXT,
       },
       ...safeMessages.slice(-8),
-      {
-        role: "user",
-        content: userMessage,
-      },
     ];
 
-    console.log("FlowIA conectando em:", OLLAMA_BASE_URL);
+    console.log("[FlowIA] Conectando em:", OLLAMA_BASE_URL);
+    console.log("[FlowIA] Modelo:", OLLAMA_MODEL);
+    console.log("[FlowIA] Histórico enviado:", finalMessages.length);
+
+    const startedAt = Date.now();
 
     const ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         messages: finalMessages,
-        stream: true,
+        stream: false,
         options: {
           temperature: 0.2,
           num_predict: 200,
@@ -86,66 +87,75 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    const rawText = await ollamaResponse.text();
+
     if (!ollamaResponse.ok) {
-      const errorText = await ollamaResponse.text().catch(() => "");
-      console.error("Erro Ollama:", errorText);
+      console.error("[FlowIA] Erro Ollama:", rawText);
 
       return new Response(
         JSON.stringify({
           error: "Não foi possível conectar a FlowIA ao Ollama.",
         }),
-        { status: 500 }
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = ollamaResponse.body!.getReader();
-        const decoder = new TextDecoder();
+    let parsed: any = null;
 
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split("\n").filter(Boolean);
-
-            for (const line of lines) {
-              try {
-                const parsed = JSON.parse(line);
-
-                if (parsed?.message?.content) {
-                  controller.enqueue(
-                    new TextEncoder().encode(parsed.message.content)
-                  );
-                }
-              } catch {}
-            }
-          }
-        } catch (err) {
-          console.error("Erro streaming:", err);
-        } finally {
-          controller.close();
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (err) {
+      console.error("[FlowIA] Falha ao converter resposta do Ollama:", rawText);
+      return new Response(
+        JSON.stringify({
+          error: "Resposta inválida recebida da FlowIA.",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
         }
-      },
-    });
+      );
+    }
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
-      },
-    });
+    const reply = parsed?.message?.content?.trim();
+
+    console.log("[FlowIA] Tempo total:", Date.now() - startedAt, "ms");
+
+    if (!reply) {
+      return new Response(
+        JSON.stringify({
+          error: "A FlowIA não retornou conteúdo.",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        reply,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
-    console.error("Erro FlowIA:", error);
+    console.error("[FlowIA] Erro interno:", error);
 
     return new Response(
       JSON.stringify({
         error: "Erro interno ao processar a FlowIA.",
       }),
-      { status: 500 }
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 }
