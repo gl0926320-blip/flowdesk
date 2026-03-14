@@ -54,6 +54,323 @@ Conceitos úteis:
 - O FlowDesk foi pensado para melhorar organização comercial, produtividade e acompanhamento da operação.
 `;
 
+type FastFaqItem = {
+  keys: string[];
+  reply: string;
+};
+
+const FAST_FAQ: FastFaqItem[] = [
+  {
+    keys: [
+      "o que e o flowdesk",
+      "oque e o flowdesk",
+      "o que é o flowdesk",
+      "me explica o flowdesk",
+      "explica o flowdesk",
+      "flowdesk o que e",
+      "flowdesk o que é",
+      "o que e flowdesk",
+      "o que é flowdesk",
+    ],
+    reply:
+      "O FlowDesk é um CRM comercial criado para organizar e melhorar a operação de vendas da empresa. Ele reúne módulos como Leads, Pipeline, Atendimento, Orçamentos, Vendas, Comissões, Campanhas e Dashboard para ajudar no controle da operação comercial.",
+  },
+  {
+    keys: [
+      "o que e crm",
+      "oque e crm",
+      "o que é crm",
+      "oq e crm",
+      "oq é crm",
+      "crm o que e",
+      "crm o que é",
+    ],
+    reply:
+      "CRM é um sistema de gestão de relacionamento com clientes e oportunidades. Ele ajuda a organizar contatos, leads, propostas, vendas e acompanhamento comercial ao longo do funil.",
+  },
+  {
+    keys: [
+      "o que e lead",
+      "oque e lead",
+      "o que é lead",
+      "oq e lead",
+      "oq é lead",
+      "lead o que e",
+      "lead o que é",
+    ],
+    reply:
+      "Lead é um potencial cliente que demonstrou interesse no seu produto ou serviço. No FlowDesk, ele pode ser acompanhado ao longo do processo comercial até virar venda ou ser perdido.",
+  },
+  {
+    keys: [
+      "o que e pipeline",
+      "oque e pipeline",
+      "o que é pipeline",
+      "oq e pipeline",
+      "oq é pipeline",
+      "pipeline o que e",
+      "pipeline o que é",
+    ],
+    reply:
+      "Pipeline é a visualização das etapas da venda dentro do CRM. No FlowDesk, ele mostra em que fase cada oportunidade está, ajudando a acompanhar melhor o avanço comercial.",
+  },
+  {
+    keys: [
+      "pra que serve pipeline",
+      "para que serve pipeline",
+      "como funciona pipeline",
+      "como funciona o pipeline",
+      "explica pipeline",
+      "me explica pipeline",
+      "aba pipeline",
+      "o que faz a aba pipeline",
+      "pra que serve a aba pipeline",
+      "para que serve a aba pipeline",
+    ],
+    reply:
+      "A aba Pipeline serve para acompanhar visualmente o andamento das oportunidades comerciais. Nela você consegue ver em que etapa cada lead está, organizar prioridades e acompanhar o avanço do funil de vendas.",
+  },
+  {
+    keys: [
+      "o que faz a aba leads",
+      "pra que serve a aba leads",
+      "para que serve a aba leads",
+      "aba leads",
+      "como funciona leads",
+      "como funciona a aba leads",
+    ],
+    reply:
+      "A aba Leads serve para cadastrar, organizar e acompanhar oportunidades comerciais. Ela ajuda a controlar quem entrou no funil, a origem do lead e o potencial de conversão.",
+  },
+  {
+    keys: [
+      "o que faz a aba carteira",
+      "pra que serve a aba carteira",
+      "para que serve a aba carteira",
+      "aba carteira",
+      "o que e carteira",
+      "o que é carteira",
+    ],
+    reply:
+      "A aba Carteira ajuda a organizar e acompanhar a base comercial da empresa. Ela facilita a visualização e o controle das oportunidades e relacionamentos em andamento.",
+  },
+  {
+    keys: [
+      "o que faz a aba atendimento",
+      "pra que serve a aba atendimento",
+      "para que serve a aba atendimento",
+      "aba atendimento",
+      "o que e atendimento",
+      "o que é atendimento",
+    ],
+    reply:
+      "A aba Atendimento ajuda no acompanhamento do contato comercial com leads e clientes. Ela apoia a organização da comunicação e do processo comercial no dia a dia.",
+  },
+  {
+    keys: [
+      "o que faz a aba orcamentos",
+      "o que faz a aba orçamentos",
+      "pra que serve a aba orcamentos",
+      "pra que serve a aba orçamentos",
+      "para que serve a aba orcamentos",
+      "para que serve a aba orçamentos",
+      "aba orcamentos",
+      "aba orçamentos",
+      "o que e orcamento",
+      "o que é orçamento",
+      "o que e orcamentos",
+      "o que é orçamentos",
+    ],
+    reply:
+      "A aba Orçamentos serve para criar, organizar e acompanhar propostas comerciais. Ela ajuda a controlar valores, status e andamento das propostas enviadas aos clientes.",
+  },
+  {
+    keys: [
+      "o que faz a aba vendas",
+      "pra que serve a aba vendas",
+      "para que serve a aba vendas",
+      "aba vendas",
+      "o que e vendas",
+      "o que é vendas",
+    ],
+    reply:
+      "A aba Vendas serve para acompanhar os fechamentos realizados e analisar os resultados comerciais. Ela ajuda a visualizar o que já foi convertido em venda dentro da operação.",
+  },
+  {
+    keys: [
+      "o que faz a aba comissoes",
+      "o que faz a aba comissões",
+      "pra que serve a aba comissoes",
+      "pra que serve a aba comissões",
+      "para que serve a aba comissoes",
+      "para que serve a aba comissões",
+      "aba comissoes",
+      "aba comissões",
+      "o que e comissao",
+      "o que é comissão",
+      "o que e comissoes",
+      "o que é comissões",
+    ],
+    reply:
+      "A aba Comissões serve para acompanhar e controlar as comissões da operação comercial. Ela ajuda a visualizar valores e regras relacionadas ao desempenho de vendas.",
+  },
+  {
+    keys: [
+      "o que faz a aba campanhas",
+      "pra que serve a aba campanhas",
+      "para que serve a aba campanhas",
+      "aba campanhas",
+      "o que e campanhas",
+      "o que é campanhas",
+      "o que e campanha",
+      "o que é campanha",
+    ],
+    reply:
+      "A aba Campanhas serve para organizar e analisar campanhas comerciais e de captação. Ela ajuda a acompanhar ações que trazem leads e oportunidades para o CRM.",
+  },
+  {
+    keys: [
+      "o que faz a aba dashboard",
+      "pra que serve a aba dashboard",
+      "para que serve a aba dashboard",
+      "o que e dashboard",
+      "o que é dashboard",
+      "aba dashboard",
+      "dashboard serve pra que",
+      "dashboard serve para que",
+    ],
+    reply:
+      "O Dashboard é a visão geral da operação comercial. Ele reúne indicadores e resumos importantes para acompanhar desempenho, andamento do funil e produtividade da equipe.",
+  },
+  {
+    keys: [
+      "o que faz a aba clientes",
+      "pra que serve a aba clientes",
+      "para que serve a aba clientes",
+      "aba clientes",
+      "o que e clientes",
+      "o que é clientes",
+    ],
+    reply:
+      "A aba Clientes serve para organizar e acompanhar a base de clientes da empresa. Ela ajuda no histórico, relacionamento e gestão comercial após a entrada no CRM.",
+  },
+  {
+    keys: [
+      "o que faz a aba empresas",
+      "pra que serve a aba empresas",
+      "para que serve a aba empresas",
+      "aba empresas",
+      "o que e empresas",
+      "o que é empresas",
+    ],
+    reply:
+      "A aba Empresas é usada para a gestão administrativa das empresas dentro do sistema. Ela ajuda a organizar a estrutura da operação em cenários multiempresa.",
+  },
+  {
+    keys: [
+      "o que faz a aba equipe",
+      "pra que serve a aba equipe",
+      "para que serve a aba equipe",
+      "aba equipe",
+      "o que e equipe",
+      "o que é equipe",
+    ],
+    reply:
+      "A aba Equipe ajuda a organizar os usuários e papéis dentro do FlowDesk. Ela apoia o controle de acesso e a estrutura da operação comercial.",
+  },
+  {
+    keys: [
+      "o que faz a aba assinatura",
+      "pra que serve a aba assinatura",
+      "para que serve a aba assinatura",
+      "aba assinatura",
+      "o que e assinatura",
+      "o que é assinatura",
+    ],
+    reply:
+      "A aba Assinatura é voltada para a gestão do plano do sistema. Ela ajuda a acompanhar informações de contratação, recursos e situação da conta.",
+  },
+  {
+    keys: [
+      "o que faz a flowia",
+      "o que e flowia",
+      "o que é flowia",
+      "pra que serve a flowia",
+      "para que serve a flowia",
+    ],
+    reply:
+      "A FlowIA é a assistente do FlowDesk. Ela ajuda a explicar módulos, orientar o uso do sistema, responder dúvidas e apoiar a operação comercial.",
+  },
+  {
+    keys: [
+      "quais sao as etapas do pipeline",
+      "quais são as etapas do pipeline",
+      "etapas do pipeline",
+      "pipeline etapas",
+    ],
+    reply:
+      "No FlowDesk, o pipeline padrão é: lead, proposta enviada, aguardando cliente, proposta validada, andamento, concluído e perdido.",
+  },
+  {
+    keys: [
+      "o que significa perdido",
+      "o que e perdido",
+      "o que é perdido",
+      "status perdido",
+    ],
+    reply:
+      'No FlowDesk, "perdido" representa uma oportunidade que não foi convertida em venda. Esse status ajuda a identificar negociações encerradas sem fechamento.',
+  },
+  {
+    keys: [
+      "o que significa concluido",
+      "o que significa concluído",
+      "o que e concluido",
+      "o que é concluído",
+      "status concluido",
+      "status concluído",
+    ],
+    reply:
+      'No FlowDesk, "concluído" representa uma oportunidade que virou venda ou foi finalizada com sucesso dentro do processo comercial.',
+  },
+  {
+    keys: [
+      "o que significa aguardando cliente",
+      "o que e aguardando cliente",
+      "o que é aguardando cliente",
+    ],
+    reply:
+      'No pipeline do FlowDesk, "aguardando cliente" indica que a proposta ou negociação está esperando um retorno do cliente para continuar avançando.',
+  },
+  {
+    keys: [
+      "o que significa proposta enviada",
+      "o que e proposta enviada",
+      "o que é proposta enviada",
+    ],
+    reply:
+      'No pipeline do FlowDesk, "proposta enviada" indica que a proposta comercial já foi encaminhada ao cliente e está em fase de acompanhamento.',
+  },
+  {
+    keys: [
+      "o que significa proposta validada",
+      "o que e proposta validada",
+      "o que é proposta validada",
+    ],
+    reply:
+      'No pipeline do FlowDesk, "proposta validada" indica que a proposta foi aprovada ou validada para seguir no processo comercial.',
+  },
+  {
+    keys: [
+      "o que significa andamento",
+      "o que e andamento",
+      "o que é andamento",
+    ],
+    reply:
+      'No pipeline do FlowDesk, "andamento" indica que a oportunidade já passou das fases iniciais e está em execução, negociação avançada ou etapa operacional.',
+  },
+];
+
 function cleanReply(text: string) {
   let reply = text.trim();
 
@@ -92,7 +409,48 @@ function normalizeText(value: string) {
   return value
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s?]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGreeting(message: string) {
+  const text = normalizeText(message);
+
+  const greetings = [
+    "oi",
+    "ola",
+    "olá",
+    "bom dia",
+    "boa tarde",
+    "boa noite",
+    "e ai",
+    "eae",
+    "opa",
+    "salve",
+    "tudo bem",
+    "tudo bem e voce",
+    "tudo bem e você",
+    "como voce esta",
+    "como você está",
+  ];
+
+  return greetings.includes(text);
+}
+
+function getGreetingReply(message: string) {
+  const text = normalizeText(message);
+
+  if (
+    text.includes("tudo bem") ||
+    text.includes("como voce esta") ||
+    text.includes("como você está")
+  ) {
+    return "Tudo bem! Como posso ajudar você com o FlowDesk hoje?";
+  }
+
+  return "Olá! Como posso ajudar você com o FlowDesk hoje?";
 }
 
 function isRealDataQuestion(message: string) {
@@ -116,6 +474,10 @@ function isRealDataQuestion(message: string) {
     "resultado do crm",
     "metricas",
     "desempenho real",
+    "quantos clientes eu tenho",
+    "quantos orcamentos eu tenho",
+    "quantos orçamentos eu tenho",
+    "quantas campanhas eu tenho",
   ];
 
   return terms.some((term) => text.includes(term));
@@ -123,6 +485,20 @@ function isRealDataQuestion(message: string) {
 
 function buildRealDataFallback(message: string) {
   return `Ainda não tenho acesso aos dados reais da sua conta para responder com precisão sobre "${message}". No momento consigo explicar como o FlowDesk funciona e orientar o uso do sistema. Para responder isso com números reais, preciso ser conectado às consultas do CRM.`;
+}
+
+function getFastFaqReply(message: string) {
+  const text = normalizeText(message);
+
+  for (const item of FAST_FAQ) {
+    for (const key of item.keys) {
+      if (text.includes(normalizeText(key))) {
+        return item.reply;
+      }
+    }
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -134,6 +510,15 @@ export async function POST(req: NextRequest) {
 
     if (!userMessage) {
       return Response.json({ error: "Mensagem não enviada." }, { status: 400 });
+    }
+
+    if (isGreeting(userMessage)) {
+      return Response.json({ reply: getGreetingReply(userMessage) });
+    }
+
+    const fastReply = getFastFaqReply(userMessage);
+    if (fastReply) {
+      return Response.json({ reply: fastReply });
     }
 
     if (isRealDataQuestion(userMessage)) {
