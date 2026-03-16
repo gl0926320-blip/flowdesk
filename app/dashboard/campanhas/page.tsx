@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import {
   Copy,
@@ -12,6 +12,7 @@ import {
   Download,
   Trash2,
   Power,
+  Mail,
 } from "lucide-react";
 
 type Campaign = {
@@ -22,6 +23,7 @@ type Campaign = {
   slug: string;
   target_type: string;
   target_value: string | null;
+  responsavel_email: string | null;
   is_active: boolean;
   created_at: string;
   campaign_clicks?: { count: number }[];
@@ -82,8 +84,14 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
+function isValidEmail(email: string) {
+  if (!email.trim()) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function CampanhasPage() {
   const supabase = createClient();
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -96,71 +104,94 @@ export default function CampanhasPage() {
   const [targetType, setTargetType] = useState("whatsapp");
   const [targetValue, setTargetValue] = useState("");
   const [slug, setSlug] = useState("");
+  const [responsavelEmail, setResponsavelEmail] = useState("");
 
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState("todos");
   const [filterStatus, setFilterStatus] = useState("todos");
+  const [toast, setToast] = useState<string | null>(null);
 
   const baseUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return window.location.origin;
   }, []);
 
-async function loadCampaigns() {
-  try {
-    setLoading(true);
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setLoading(false);
-      return;
+  function showToast(message: string) {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
     }
 
-    const { data: companyUser, error: companyError } = await supabase
-      .from("company_users")
-      .select("company_id, role, status")
-      .eq("user_id", user.id)
-      .eq("status", "ativo")
-      .limit(1)
-      .maybeSingle();
+    setToast(message);
 
-    if (companyError) {
-      console.error("Erro ao buscar company_id:", companyError.message);
-      setLoading(false);
-      return;
-    }
-
-    if (!companyUser?.company_id) {
-      console.error("Usuário sem vínculo ativo com empresa.");
-      setLoading(false);
-      return;
-    }
-
-    setCompanyId(companyUser.company_id);
-
-    const { data, error } = await supabase
-      .from("campaigns")
-      .select(`
-        *,
-        campaign_clicks(count)
-      `)
-      .eq("company_id", companyUser.company_id)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Erro ao carregar campanhas:", error.message);
-    } else {
-      setCampaigns(data || []);
-    }
-  } catch (error) {
-    console.error("Erro inesperado ao carregar campanhas:", error);
-  } finally {
-    setLoading(false);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3000);
   }
-}
+
+  async function loadCampaigns() {
+    try {
+      setLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: companyUser, error: companyError } = await supabase
+        .from("company_users")
+        .select("company_id, role, status")
+        .eq("user_id", user.id)
+        .eq("status", "ativo")
+        .limit(1)
+        .maybeSingle();
+
+      if (companyError) {
+        console.error("Erro ao buscar company_id:", companyError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!companyUser?.company_id) {
+        console.error("Usuário sem vínculo ativo com empresa.");
+        setLoading(false);
+        return;
+      }
+
+      setCompanyId(companyUser.company_id);
+
+      const { data, error } = await supabase
+        .from("campaigns")
+        .select(`
+          *,
+          campaign_clicks(count)
+        `)
+        .eq("company_id", companyUser.company_id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao carregar campanhas:", error.message);
+      } else {
+        setCampaigns((data || []) as Campaign[]);
+      }
+    } catch (error) {
+      console.error("Erro inesperado ao carregar campanhas:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadCampaigns();
   }, []);
@@ -196,15 +227,20 @@ async function loadCampaigns() {
       return;
     }
 
+    if (!isValidEmail(responsavelEmail)) {
+      alert("Digite um e-mail válido para o responsável.");
+      return;
+    }
+
     try {
       setSaving(true);
 
-const { data: existingSlug } = await supabase
-  .from("campaigns")
-  .select("id")
-  .eq("company_id", companyId)
-  .eq("slug", slug)
-  .maybeSingle();
+      const { data: existingSlug } = await supabase
+        .from("campaigns")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("slug", slug)
+        .maybeSingle();
 
       if (existingSlug) {
         alert("Já existe uma campanha com esse slug. Altere o nome ou slug.");
@@ -212,19 +248,24 @@ const { data: existingSlug } = await supabase
         return;
       }
 
-      const { error } = await supabase.from("campaigns").insert({
+      const payload = {
         company_id: companyId,
         name: name.trim(),
         source,
         slug: slug.trim(),
         target_type: targetType,
         target_value: targetValue.trim(),
+        responsavel_email: responsavelEmail.trim() || null,
         is_active: true,
-      });
+      };
+
+      const { error } = await supabase.from("campaigns").insert(payload);
 
       if (error) {
         console.error("Erro ao criar campanha:", error.message);
-        alert("Erro ao criar campanha.");
+        alert(
+          "Erro ao criar campanha. Verifique se a coluna responsavel_email foi criada na tabela campaigns."
+        );
         setSaving(false);
         return;
       }
@@ -234,8 +275,10 @@ const { data: existingSlug } = await supabase
       setTargetType("whatsapp");
       setTargetValue("");
       setSlug("");
+      setResponsavelEmail("");
 
       await loadCampaigns();
+      showToast("Campanha criada com sucesso.");
     } catch (error) {
       console.error("Erro inesperado ao criar campanha:", error);
       alert("Erro inesperado ao criar campanha.");
@@ -263,6 +306,11 @@ const { data: existingSlug } = await supabase
       }
 
       await loadCampaigns();
+      showToast(
+        campaign.is_active
+          ? "Campanha inativada com sucesso."
+          : "Campanha ativada com sucesso."
+      );
     } catch (error) {
       console.error("Erro inesperado ao alterar status:", error);
       alert("Erro inesperado ao alterar status.");
@@ -301,6 +349,7 @@ const { data: existingSlug } = await supabase
       }
 
       await loadCampaigns();
+      showToast("Campanha excluída com sucesso.");
     } catch (error) {
       console.error("Erro inesperado ao excluir campanha:", error);
       alert("Erro inesperado ao excluir campanha.");
@@ -312,9 +361,9 @@ const { data: existingSlug } = await supabase
   async function copyToClipboard(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      alert("Link copiado.");
+      showToast("Link copiado para a área de transferência.");
     } catch {
-      alert("Não foi possível copiar o link.");
+      showToast("Não foi possível copiar o link.");
     }
   }
 
@@ -323,6 +372,7 @@ const { data: existingSlug } = await supabase
       [
         "Nome",
         "Origem",
+        "Responsável",
         "Slug",
         "Tipo de destino",
         "Destino",
@@ -334,6 +384,7 @@ const { data: existingSlug } = await supabase
       ...filteredCampaigns.map((campaign) => [
         campaign.name,
         campaign.source,
+        campaign.responsavel_email || "",
         campaign.slug,
         campaign.target_type,
         campaign.target_value || "",
@@ -345,15 +396,19 @@ const { data: existingSlug } = await supabase
     ];
 
     downloadCsv("campanhas-flowdesk.csv", rows);
+    showToast("CSV exportado com sucesso.");
   }
 
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((campaign) => {
+      const term = search.toLowerCase().trim();
+
       const matchesSearch =
-        !search.trim() ||
-        campaign.name.toLowerCase().includes(search.toLowerCase()) ||
-        campaign.slug.toLowerCase().includes(search.toLowerCase()) ||
-        campaign.target_value?.toLowerCase().includes(search.toLowerCase());
+        !term ||
+        campaign.name.toLowerCase().includes(term) ||
+        campaign.slug.toLowerCase().includes(term) ||
+        campaign.target_value?.toLowerCase().includes(term) ||
+        campaign.responsavel_email?.toLowerCase().includes(term);
 
       const matchesSource =
         filterSource === "todos" || campaign.source === filterSource;
@@ -508,6 +563,29 @@ const { data: existingSlug } = await supabase
               </div>
 
               <div>
+                <label className="text-sm text-gray-300 block mb-2">
+                  Responsável (e-mail)
+                </label>
+                <div className="relative">
+                  <Mail
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                  />
+                  <input
+                    type="email"
+                    value={responsavelEmail}
+                    onChange={(e) => setResponsavelEmail(e.target.value)}
+                    placeholder="Ex: vendedor@empresa.com"
+                    className="w-full rounded-xl bg-white/5 border border-white/10 pl-10 pr-4 py-3 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Esse responsável ficará vinculado à campanha para rastrear os
+                  leads dela.
+                </p>
+              </div>
+
+              <div>
                 <label className="text-sm text-gray-300 block mb-2">Slug</label>
                 <input
                   value={slug}
@@ -548,7 +626,7 @@ const { data: existingSlug } = await supabase
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Nome, slug ou destino"
+                    placeholder="Nome, slug, destino ou responsável"
                     className="w-full rounded-xl bg-white/5 border border-white/10 pl-10 pr-4 py-3 text-white outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -673,6 +751,13 @@ const { data: existingSlug } = await supabase
                                 {formatDate(campaign.created_at)}
                               </span>
                             </div>
+
+                            <div className="text-gray-400 break-all md:col-span-2">
+                              Responsável:{" "}
+                              <span className="text-gray-200">
+                                {campaign.responsavel_email || "-"}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="text-sm text-gray-400 break-all">
@@ -725,15 +810,23 @@ const { data: existingSlug } = await supabase
             </h2>
 
             <div className="text-sm text-gray-400 space-y-2">
-              <p>1. Crie a campanha com nome, origem e destino.</p>
+              <p>1. Crie a campanha com nome, origem, destino e responsável.</p>
               <p>2. Copie o link rastreável gerado pelo FlowDesk.</p>
               <p>3. Use esse link no anúncio, bio, botão ou campanha.</p>
               <p>4. Cada clique no link será contabilizado automaticamente.</p>
-              <p>5. Para exclusão, primeiro inative a campanha.</p>
+              <p>5. Os leads dessa campanha poderão ser vinculados ao responsável.</p>
+              <p>6. Para exclusão, primeiro inative a campanha.</p>
             </div>
           </div>
         </div>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg z-50">
+          {toast}
+        </div>
+      )}
     </div>
+
   );
 }
