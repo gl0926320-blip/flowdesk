@@ -7,6 +7,10 @@ import { motion } from "framer-motion";
 
 type AuthMode = "login" | "register" | "reset" | "update";
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function Login() {
   const router = useRouter();
   const supabase = createClient();
@@ -24,6 +28,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
+  const [bootMessage, setBootMessage] = useState("Validando sua sessão e preparando seu painel...");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -56,6 +61,22 @@ export default function Login() {
     setMode(newMode);
   }
 
+  async function getSessionWithRetry(attempts = 4, delay = 350) {
+    for (let i = 0; i < attempts; i++) {
+      const { data } = await supabase.auth.getSession();
+
+      if (data.session) {
+        return data.session;
+      }
+
+      if (i < attempts - 1) {
+        await wait(delay);
+      }
+    }
+
+    return null;
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -72,36 +93,37 @@ export default function Login() {
         const hashType = hashParams.get("type");
 
         if (recoveryHandledRef.current) {
-          setBootLoading(false);
+          if (mounted) setBootLoading(false);
           return;
         }
 
         if (code) {
+          setBootMessage("Concluindo seu acesso com Google...");
+
           recoveryHandledRef.current = true;
 
           const { error } = await supabase.auth.exchangeCodeForSession(code);
 
           if (!mounted) return;
 
-          if (error) {
-            const { data: sessionData } = await supabase.auth.getSession();
+          window.history.replaceState({}, document.title, currentUrl.pathname);
 
-            if (sessionData.session && type === "recovery") {
+          const confirmedSession = await getSessionWithRetry(5, 400);
+
+          if (!mounted) return;
+
+          if (confirmedSession) {
+            if (type === "recovery") {
               clearSensitiveFields();
               setMode("update");
-              window.history.replaceState({}, document.title, currentUrl.pathname);
               setBootLoading(false);
               return;
             }
 
-            setErrorMsg("Não foi possível concluir o acesso. Tente novamente.");
-            setMode("login");
-            window.history.replaceState({}, document.title, currentUrl.pathname);
-            setBootLoading(false);
+            router.replace("/dashboard");
+            router.refresh();
             return;
           }
-
-          window.history.replaceState({}, document.title, currentUrl.pathname);
 
           if (type === "recovery") {
             clearSensitiveFields();
@@ -110,8 +132,15 @@ export default function Login() {
             return;
           }
 
-          router.replace("/dashboard");
-          router.refresh();
+          if (error) {
+            setErrorMsg("Não foi possível concluir o acesso com Google. Tente novamente.");
+          } else {
+            setErrorMsg("Seu acesso demorou mais do que o esperado. Tente novamente.");
+          }
+
+          setMode("login");
+          setGoogleLoading(false);
+          setBootLoading(false);
           return;
         }
 
@@ -131,11 +160,13 @@ export default function Login() {
           return;
         }
 
-        const { data } = await supabase.auth.getSession();
+        setBootMessage("Validando sua sessão e preparando seu painel...");
+
+        const confirmedSession = await getSessionWithRetry(3, 250);
 
         if (!mounted) return;
 
-        if (data.session) {
+        if (confirmedSession) {
           router.replace("/dashboard");
           router.refresh();
           return;
@@ -146,6 +177,7 @@ export default function Login() {
         if (!mounted) return;
         setErrorMsg("Não foi possível validar o acesso.");
         setMode("login");
+        setGoogleLoading(false);
         setBootLoading(false);
       }
     }
@@ -161,9 +193,12 @@ export default function Login() {
         resetMessages();
         clearSensitiveFields();
         setMode("update");
+        setBootLoading(false);
       }
 
       if (event === "SIGNED_IN") {
+        setBootMessage("Acesso confirmado. Entrando no painel...");
+        setBootLoading(true);
         router.replace("/dashboard");
         router.refresh();
       }
@@ -198,7 +233,7 @@ export default function Login() {
       return;
     }
 
-    router.push("/dashboard");
+    router.replace("/dashboard");
     router.refresh();
   }
 
@@ -313,6 +348,7 @@ export default function Login() {
   async function handleGoogleLogin() {
     resetMessages();
     setGoogleLoading(true);
+    setBootMessage("Redirecionando para o Google...");
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -328,41 +364,39 @@ export default function Login() {
     }
   }
 
-if (bootLoading) {
-  return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-700/25 via-purple-700/20 to-blue-700/25" />
-      <div className="absolute inset-0 backdrop-blur-sm" />
+  if (bootLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-700/25 via-purple-700/20 to-blue-700/25" />
+        <div className="absolute inset-0 backdrop-blur-sm" />
 
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_0_60px_rgba(99,102,241,0.18)] p-8 text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg">
-            <div className="h-7 w-7 rounded-md bg-white/90" />
-          </div>
+        <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_0_60px_rgba(99,102,241,0.18)] p-8 text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg">
+              <div className="h-7 w-7 rounded-md bg-white/90" />
+            </div>
 
-          <h2 className="text-2xl font-bold">Entrando no FlowDesk</h2>
-          <p className="mt-2 text-sm text-zinc-400">
-            Validando sua sessão e preparando seu painel...
-          </p>
+            <h2 className="text-2xl font-bold">Entrando no FlowDesk</h2>
+            <p className="mt-2 text-sm text-zinc-400">{bootMessage}</p>
 
-          <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-white/10">
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500"
-              initial={{ x: "-100%" }}
-              animate={{ x: "100%" }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-            />
-          </div>
+            <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500"
+                initial={{ x: "-100%" }}
+                animate={{ x: "100%" }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+              />
+            </div>
 
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-zinc-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Autenticando com segurança
+            <div className="mt-6 flex items-center justify-center gap-2 text-xs text-zinc-500">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              Autenticando com segurança
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
     <div className="min-h-screen flex bg-black text-white">
@@ -624,12 +658,12 @@ if (bootLoading) {
                 {loading
                   ? "Processando..."
                   : mode === "login"
-                  ? "Entrar"
-                  : mode === "register"
-                  ? "Criar conta"
-                  : mode === "reset"
-                  ? "Enviar email"
-                  : "Atualizar senha"}
+                    ? "Entrar"
+                    : mode === "register"
+                      ? "Criar conta"
+                      : mode === "reset"
+                        ? "Enviar email"
+                        : "Atualizar senha"}
               </button>
             </form>
 
