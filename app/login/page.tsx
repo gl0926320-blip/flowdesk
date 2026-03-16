@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
 type AuthMode = "login" | "register" | "reset" | "update";
@@ -12,9 +11,9 @@ function wait(ms: number) {
 }
 
 export default function Login() {
-  const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const recoveryHandledRef = useRef(false);
+  const redirectingRef = useRef(false);
 
   const [mode, setMode] = useState<AuthMode>("login");
 
@@ -28,7 +27,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
-  const [bootMessage, setBootMessage] = useState("Validando sua sessão e preparando seu painel...");
+  const [bootMessage, setBootMessage] = useState(
+    "Validando sua sessão e preparando seu painel..."
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -61,13 +62,21 @@ export default function Login() {
     setMode(newMode);
   }
 
-  async function getSessionWithRetry(attempts = 4, delay = 350) {
-    for (let i = 0; i < attempts; i++) {
-      const { data } = await supabase.auth.getSession();
+  function goToDashboard() {
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
+    setBootMessage("Acesso confirmado. Entrando no painel...");
+    setBootLoading(true);
+    window.location.replace("/dashboard");
+  }
 
-      if (data.session) {
-        return data.session;
-      }
+  async function getSessionQuickRetry(attempts = 2, delay = 120) {
+    for (let i = 0; i < attempts; i++) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session) return session;
 
       if (i < attempts - 1) {
         await wait(delay);
@@ -100,42 +109,39 @@ export default function Login() {
         if (code) {
           setBootMessage("Concluindo seu acesso com Google...");
 
-          recoveryHandledRef.current = true;
-
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
           if (!mounted) return;
 
           window.history.replaceState({}, document.title, currentUrl.pathname);
 
-          const confirmedSession = await getSessionWithRetry(5, 400);
-
-          if (!mounted) return;
-
-          if (confirmedSession) {
-            if (type === "recovery") {
-              clearSensitiveFields();
-              setMode("update");
-              setBootLoading(false);
-              return;
-            }
-
-            router.replace("/dashboard");
-            router.refresh();
+          if (type === "recovery") {
+            recoveryHandledRef.current = true;
+            clearSensitiveFields();
+            setMode("update");
+            setGoogleLoading(false);
+            setBootLoading(false);
             return;
           }
 
-          if (type === "recovery") {
-            clearSensitiveFields();
-            setMode("update");
-            setBootLoading(false);
+          if (data.session) {
+            goToDashboard();
+            return;
+          }
+
+          const fallbackSession = await getSessionQuickRetry();
+
+          if (!mounted) return;
+
+          if (fallbackSession) {
+            goToDashboard();
             return;
           }
 
           if (error) {
             setErrorMsg("Não foi possível concluir o acesso com Google. Tente novamente.");
           } else {
-            setErrorMsg("Seu acesso demorou mais do que o esperado. Tente novamente.");
+            setErrorMsg("Seu acesso não foi confirmado. Tente novamente.");
           }
 
           setMode("login");
@@ -144,31 +150,25 @@ export default function Login() {
           return;
         }
 
-        if (type === "recovery") {
+        if (type === "recovery" || hashType === "recovery") {
           recoveryHandledRef.current = true;
           clearSensitiveFields();
           setMode("update");
+          setGoogleLoading(false);
           setBootLoading(false);
           return;
         }
 
-        if (hashType === "recovery") {
-          recoveryHandledRef.current = true;
-          clearSensitiveFields();
-          setMode("update");
-          setBootLoading(false);
-          return;
-        }
+        setBootMessage("Validando sua sessão...");
 
-        setBootMessage("Validando sua sessão e preparando seu painel...");
-
-        const confirmedSession = await getSessionWithRetry(3, 250);
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (!mounted) return;
 
-        if (confirmedSession) {
-          router.replace("/dashboard");
-          router.refresh();
+        if (session) {
+          goToDashboard();
           return;
         }
 
@@ -186,21 +186,21 @@ export default function Login() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       if (event === "PASSWORD_RECOVERY") {
+        recoveryHandledRef.current = true;
         resetMessages();
         clearSensitiveFields();
         setMode("update");
+        setGoogleLoading(false);
         setBootLoading(false);
+        return;
       }
 
-      if (event === "SIGNED_IN") {
-        setBootMessage("Acesso confirmado. Entrando no painel...");
-        setBootLoading(true);
-        router.replace("/dashboard");
-        router.refresh();
+      if (event === "SIGNED_IN" && session && !redirectingRef.current) {
+        goToDashboard();
       }
     });
 
@@ -208,7 +208,7 @@ export default function Login() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router, supabase]);
+  }, [supabase]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -226,15 +226,13 @@ export default function Login() {
       password,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       setErrorMsg("Email ou senha incorretos.");
       return;
     }
 
-    router.replace("/dashboard");
-    router.refresh();
+    goToDashboard();
   }
 
   async function handleRegister(e: React.FormEvent) {
@@ -340,9 +338,8 @@ export default function Login() {
       await supabase.auth.signOut();
       clearSensitiveFields();
       setMode("login");
-      router.replace("/login");
-      router.refresh();
-    }, 1800);
+      window.location.replace("/login");
+    }, 1500);
   }
 
   async function handleGoogleLogin() {
@@ -360,7 +357,6 @@ export default function Login() {
     if (error) {
       setGoogleLoading(false);
       setErrorMsg("Não foi possível iniciar o login com Google.");
-      return;
     }
   }
 
@@ -596,10 +592,10 @@ export default function Login() {
                 mode === "login"
                   ? handleLogin
                   : mode === "register"
-                  ? handleRegister
-                  : mode === "reset"
-                  ? handleReset
-                  : handleUpdatePassword
+                    ? handleRegister
+                    : mode === "reset"
+                      ? handleReset
+                      : handleUpdatePassword
               }
               className="space-y-4"
             >
