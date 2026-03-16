@@ -22,6 +22,7 @@ export default function Login() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export default function Login() {
           if (error) {
             const { data: sessionData } = await supabase.auth.getSession();
 
-            if (sessionData.session) {
+            if (sessionData.session && type === "recovery") {
               clearSensitiveFields();
               setMode("update");
               window.history.replaceState({}, document.title, currentUrl.pathname);
@@ -93,16 +94,24 @@ export default function Login() {
               return;
             }
 
-            setErrorMsg("O link de recuperação é inválido ou expirou.");
+            setErrorMsg("Não foi possível concluir o acesso. Tente novamente.");
             setMode("login");
+            window.history.replaceState({}, document.title, currentUrl.pathname);
             setBootLoading(false);
             return;
           }
 
-          clearSensitiveFields();
-          setMode("update");
           window.history.replaceState({}, document.title, currentUrl.pathname);
-          setBootLoading(false);
+
+          if (type === "recovery") {
+            clearSensitiveFields();
+            setMode("update");
+            setBootLoading(false);
+            return;
+          }
+
+          router.replace("/dashboard");
+          router.refresh();
           return;
         }
 
@@ -122,10 +131,20 @@ export default function Login() {
           return;
         }
 
+        const { data } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (data.session) {
+          router.replace("/dashboard");
+          router.refresh();
+          return;
+        }
+
         setBootLoading(false);
       } catch {
         if (!mounted) return;
-        setErrorMsg("Não foi possível validar o link de recuperação.");
+        setErrorMsg("Não foi possível validar o acesso.");
         setMode("login");
         setBootLoading(false);
       }
@@ -143,13 +162,18 @@ export default function Login() {
         clearSensitiveFields();
         setMode("update");
       }
+
+      if (event === "SIGNED_IN") {
+        router.replace("/dashboard");
+        router.refresh();
+      }
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [router, supabase]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -286,13 +310,59 @@ export default function Login() {
     }, 1800);
   }
 
-  if (bootLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div className="text-sm text-zinc-400">Validando acesso...</div>
-      </div>
-    );
+  async function handleGoogleLogin() {
+    resetMessages();
+    setGoogleLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/login`,
+      },
+    });
+
+    if (error) {
+      setGoogleLoading(false);
+      setErrorMsg("Não foi possível iniciar o login com Google.");
+      return;
+    }
   }
+
+if (bootLoading) {
+  return (
+    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-700/25 via-purple-700/20 to-blue-700/25" />
+      <div className="absolute inset-0 backdrop-blur-sm" />
+
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_0_60px_rgba(99,102,241,0.18)] p-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg">
+            <div className="h-7 w-7 rounded-md bg-white/90" />
+          </div>
+
+          <h2 className="text-2xl font-bold">Entrando no FlowDesk</h2>
+          <p className="mt-2 text-sm text-zinc-400">
+            Validando sua sessão e preparando seu painel...
+          </p>
+
+          <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-white/10">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500"
+              initial={{ x: "-100%" }}
+              animate={{ x: "100%" }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+            />
+          </div>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-zinc-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            Autenticando com segurança
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen flex bg-black text-white">
@@ -464,6 +534,29 @@ export default function Login() {
               </div>
             )}
 
+            {(mode === "login" || mode === "register") && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={googleLoading || loading}
+                  className="w-full mb-4 flex items-center justify-center gap-3 rounded-lg border border-white/10 bg-white hover:bg-zinc-100 text-zinc-900 font-semibold p-3 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  <GoogleIcon />
+                  {googleLoading ? "Conectando com Google..." : "Continuar com Google"}
+                </button>
+
+                <div className="relative my-5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/10" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase tracking-[0.2em]">
+                    <span className="bg-[#0a0a0a] px-3 text-zinc-500">ou</span>
+                  </div>
+                </div>
+              </>
+            )}
+
             <form
               onSubmit={
                 mode === "login"
@@ -525,7 +618,7 @@ export default function Login() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || googleLoading}
                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:scale-[1.02] active:scale-[0.98] transition-all p-3 rounded-lg font-semibold shadow-lg disabled:opacity-70"
               >
                 {loading
@@ -617,5 +710,28 @@ function PasswordField({
         {show ? "Ocultar" : "Mostrar"}
       </button>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.4c-.2 1.3-1.5 3.9-5.4 3.9-3.2 0-5.9-2.7-5.9-6s2.7-6 5.9-6c1.8 0 3 .8 3.7 1.4l2.5-2.4C16.6 3.6 14.5 2.7 12 2.7A9.3 9.3 0 0 0 2.7 12 9.3 9.3 0 0 0 12 21.3c5.4 0 9-3.8 9-9.1 0-.6-.1-1.1-.2-1.6H12Z"
+      />
+      <path
+        fill="#34A853"
+        d="M2.7 12c0 1.5.4 2.9 1.2 4.1l3.3-2.5c-.2-.5-.4-1-.4-1.6s.1-1.1.4-1.6L3.9 7.9A9.2 9.2 0 0 0 2.7 12Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M12 21.3c2.5 0 4.6-.8 6.2-2.3l-3-2.3c-.8.6-1.8.9-3.2.9-2.5 0-4.7-1.7-5.4-4l-3.4 2.6A9.3 9.3 0 0 0 12 21.3Z"
+      />
+      <path
+        fill="#4285F4"
+        d="M18.2 19c1.8-1.7 2.8-4.1 2.8-7 0-.6-.1-1.1-.2-1.6H12v3.9h5.4c-.3 1.4-1.1 2.6-2.3 3.4l3.1 2.3Z"
+      />
+    </svg>
   );
 }
