@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { motion } from "framer-motion";
+import { InstallPWA } from "../../components/install-pwa";
 
 type AuthMode = "login" | "register" | "reset" | "update";
 
@@ -661,6 +662,7 @@ export default function Login() {
                         ? "Enviar email"
                         : "Atualizar senha"}
               </button>
+              <InstallPWA />
             </form>
 
             <div className="mt-6 text-center text-sm text-zinc-400 space-y-2">

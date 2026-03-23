@@ -8,6 +8,9 @@ type PageProps = {
   searchParams?: Promise<{
     nome?: string;
     telefone?: string;
+    email?: string;
+    empresa?: string;
+    equipe?: string;
   }>;
 };
 
@@ -39,6 +42,9 @@ export default async function CampaignRedirectPage({
 
   const nome = (resolvedSearchParams?.nome || "").trim();
   const telefone = normalizarWhatsapp(resolvedSearchParams?.telefone || "");
+  const email = (resolvedSearchParams?.email || "").trim().toLowerCase();
+  const empresa = (resolvedSearchParams?.empresa || "").trim();
+  const equipe = (resolvedSearchParams?.equipe || "").trim();
 
   if (!slug) {
     return (
@@ -113,9 +119,15 @@ export default async function CampaignRedirectPage({
       );
     }
 
+    const veioCompletoDaLanding =
+      nome.length >= 2 ||
+      telefone.length >= 10 ||
+      email.length > 3 ||
+      empresa.length > 1;
+
     const formPreenchido = nome.length >= 2 && telefone.length >= 10;
 
-    if (!formPreenchido) {
+    if (!veioCompletoDaLanding && !formPreenchido) {
       return (
         <div
           style={{
@@ -295,14 +307,36 @@ export default async function CampaignRedirectPage({
       slug: campaign.slug,
     });
 
-    const { data: leadExistente } = await supabase
-      .from("servicos")
-      .select("id")
-      .eq("company_id", campaign.company_id)
-      .eq("campaign_id", campaign.id)
-      .eq("telefone", telefone)
-      .limit(1)
-      .maybeSingle();
+    const chaveTelefone = telefone || null;
+    const chaveEmail = email || null;
+
+    let leadExistente = null;
+
+    if (chaveTelefone) {
+      const { data } = await supabase
+        .from("servicos")
+        .select("id")
+        .eq("company_id", campaign.company_id)
+        .eq("campaign_id", campaign.id)
+        .eq("telefone", chaveTelefone)
+        .limit(1)
+        .maybeSingle();
+
+      leadExistente = data;
+    }
+
+    if (!leadExistente && chaveEmail) {
+      const { data } = await supabase
+        .from("servicos")
+        .select("id")
+        .eq("company_id", campaign.company_id)
+        .eq("campaign_id", campaign.id)
+        .ilike("observacoes", `%${chaveEmail}%`)
+        .limit(1)
+        .maybeSingle();
+
+      leadExistente = data;
+    }
 
     if (!leadExistente) {
       const responsavelEmail =
@@ -326,11 +360,25 @@ export default async function CampaignRedirectPage({
         responsavelUserId = companyUser?.user_id || null;
       }
 
+      const descricaoPartes = [
+        `Lead gerado automaticamente ao clicar no link da campanha "${campaign.name}".`,
+        empresa ? `Empresa: ${empresa}` : null,
+        equipe ? `Tamanho da equipe: ${equipe}` : null,
+        email ? `E-mail: ${email}` : null,
+      ].filter(Boolean);
+
+      const observacoesPartes = [
+        email ? `Email: ${email}` : null,
+        empresa ? `Empresa: ${empresa}` : null,
+        equipe ? `Equipe: ${equipe}` : null,
+      ].filter(Boolean);
+
       const leadPayload: any = {
-        cliente: nome,
-        telefone,
+        cliente: nome || empresa || `Lead da campanha ${campaign.name}`,
+        telefone: telefone || null,
         titulo: `Novo lead - ${campaign.name}`,
-        descricao: `Lead gerado automaticamente ao clicar no link da campanha "${campaign.name}".`,
+        descricao: descricaoPartes.join(" "),
+        observacoes: observacoesPartes.join(" | ") || null,
         status: "lead",
         origem_lead: "Campanha WhatsApp",
         campaign_id: campaign.id,
@@ -339,6 +387,7 @@ export default async function CampaignRedirectPage({
         temperatura: "morno",
         ativo: true,
         responsavel: responsavelEmail,
+        tipo_pessoa: "pj",
       };
 
       if (responsavelUserId) {
@@ -354,9 +403,18 @@ export default async function CampaignRedirectPage({
       }
     }
 
-    const mensagem = encodeURIComponent(
-      `Olá! Vim através da campanha ${campaign.name}. Meu nome é ${nome} e meu WhatsApp é ${telefone}.`
-    );
+    const mensagemBase = [
+      "Olá, quero entender como aplicar o FlowDesk no meu negócio.",
+      nome ? `Nome: ${nome}` : null,
+      email ? `Email: ${email}` : null,
+      empresa ? `Empresa: ${empresa}` : null,
+      equipe ? `Tamanho da equipe: ${equipe}` : null,
+      telefone ? `WhatsApp: ${telefone}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const mensagem = encodeURIComponent(mensagemBase);
 
     redirect(`https://wa.me/${numeroDestino}?text=${mensagem}`);
   }
