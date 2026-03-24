@@ -37,6 +37,7 @@ type PlanConfig = {
 const EXTRA_USER_PRICE = 29.9;
 const WHATSAPP_ADDON_PRICE = 149.9;
 const CAMPAIGNS_ADDON_PRICE = 49.9;
+const ESTOQUE_ADDON_PRICE = 79.9;
 
 const PLAN_CONFIGS: PlanConfig[] = [
   {
@@ -153,6 +154,7 @@ export default function BillingPage() {
   const [desiredUsers, setDesiredUsers] = useState(1);
   const [includeWhatsapp, setIncludeWhatsapp] = useState(false);
   const [includeCampaigns, setIncludeCampaigns] = useState(false);
+  const [includeEstoque, setIncludeEstoque] = useState(false);
 
   useEffect(() => {
     async function loadPlan() {
@@ -197,7 +199,8 @@ export default function BillingPage() {
   const extraUsersTotal = extraUsers * EXTRA_USER_PRICE;
   const addonsTotal =
     (includeWhatsapp ? WHATSAPP_ADDON_PRICE : 0) +
-    (includeCampaigns ? CAMPAIGNS_ADDON_PRICE : 0);
+    (includeCampaigns ? CAMPAIGNS_ADDON_PRICE : 0) +
+    (includeEstoque ? ESTOQUE_ADDON_PRICE : 0);
   const estimatedTotal = activePlan.price + extraUsersTotal + addonsTotal;
 
   function gerarWhatsapp(planoNome: string, preco: string) {
@@ -209,6 +212,7 @@ Usuários desejados: ${desiredUsers}
 Usuários extras: ${extraUsers}
 Atendimento / WhatsApp: ${includeWhatsapp ? "Sim" : "Não"}
 Campanhas: ${includeCampaigns ? "Sim" : "Não"}
+Estoque: ${includeEstoque ? "Sim" : "Não"}
 Valor estimado: ${formatCurrency(estimatedTotal)}
 
 Observação:
@@ -368,9 +372,10 @@ Gostaria de ativar para minha empresa.`;
             Monte seu plano do jeito que sua empresa precisa
           </h3>
 
-          <p className="mt-2 text-sm leading-relaxed text-slate-400 md:text-base">
+                    <p className="mt-2 text-sm leading-relaxed text-slate-400 md:text-base">
             Escolha o plano base, defina a quantidade de usuários e adicione
-            módulos opcionais como Atendimento / WhatsApp e Campanhas.
+            módulos opcionais como Atendimento / WhatsApp, Campanhas e Estoque
+            para estruturar melhor sua operação comercial.
           </p>
         </div>
 
@@ -482,7 +487,7 @@ Gostaria de ativar para minha empresa.`;
                 3. Adicionais opcionais
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+                 <div className="grid gap-4 md:grid-cols-2">
                 <AddonCard
                   active={includeWhatsapp}
                   onToggle={() => setIncludeWhatsapp((prev) => !prev)}
@@ -501,6 +506,18 @@ Gostaria de ativar para minha empresa.`;
                   description="Módulo opcional para empresas que querem controlar campanhas, origem de leads e performance comercial."
                   price={formatCurrency(CAMPAIGNS_ADDON_PRICE)}
                 />
+
+                   <div className="md:col-span-2">
+                  <AddonCard
+                    active={includeEstoque}
+                    onToggle={() => setIncludeEstoque((prev) => !prev)}
+                    icon={<Layers3 className="h-5 w-5" />}
+                    title="Estoque"
+                    description="Módulo opcional para empresas que precisam controlar produtos, custo, venda, margem, estoque mínimo, alertas de reposição e movimentações internas."
+                    price={formatCurrency(ESTOQUE_ADDON_PRICE)}
+                    note="Controle de produtos e movimentações"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -542,6 +559,17 @@ Gostaria de ativar para minha empresa.`;
                     : "Não adicionado"
                 }
               />
+
+              <PriceRow
+                label="Estoque"
+                value={
+                  includeEstoque
+                    ? formatCurrency(ESTOQUE_ADDON_PRICE)
+                    : "Não adicionado"
+                }
+              />
+
+
             </div>
 
             {includeWhatsapp && (
@@ -824,42 +852,48 @@ function AddonCard({
       type="button"
       onClick={onToggle}
       className={[
-        "w-full rounded-[24px] border p-4 text-left transition",
+        "w-full rounded-[24px] border p-5 text-left transition",
         active
-          ? "border-cyan-500/30 bg-cyan-500/10"
+          ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
           : "border-white/10 bg-[rgba(255,255,255,0.03)] hover:bg-white/10",
       ].join(" ")}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
-            {icon}
-          </div>
-          <div className="text-base font-semibold text-white">{title}</div>
-          <p className="mt-1 text-sm leading-relaxed text-slate-400">
-            {description}
-          </p>
-          {note && (
-            <div className="mt-3 inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-300">
-              {note}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
+              {icon}
             </div>
-          )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-lg font-semibold text-white">{title}</div>
+
+              <div
+                className={[
+                  "inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
+                  active
+                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                    : "border-white/10 bg-white/5 text-slate-300",
+                ].join(" ")}
+              >
+                {active ? "Adicionado" : "Opcional"}
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <div className="text-base font-bold text-white">{price}</div>
+            <div className="text-xs text-slate-500">/mês</div>
+          </div>
         </div>
 
-        <div className="shrink-0 text-right">
-          <div className="text-sm font-semibold text-white">{price}</div>
-          <div className="text-xs text-slate-500">/mês</div>
-          <div
-            className={[
-              "mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
-              active
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                : "border-white/10 bg-white/5 text-slate-300",
-            ].join(" ")}
-          >
-            {active ? "Adicionado" : "Opcional"}
+        <p className="text-sm leading-7 text-slate-400">{description}</p>
+
+        {note && (
+          <div className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-300">
+            {note}
           </div>
-        </div>
+        )}
       </div>
     </button>
   );

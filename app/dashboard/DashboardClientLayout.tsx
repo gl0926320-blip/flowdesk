@@ -30,6 +30,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Headset,
+  Package,
   Bot,
   BarChart3,
   LogOut,
@@ -65,6 +66,7 @@ type Membership = {
   user_id?: string | null;
   can_access_atendimento?: boolean | null;
   can_access_campanhas?: boolean | null;
+  can_access_estoque?: boolean | null;
   companies?: {
     name?: string | null;
     plan?: string | null;
@@ -94,6 +96,7 @@ export default function DashboardLayout({
 
   const [canAccessAtendimento, setCanAccessAtendimento] = useState(false);
   const [canAccessCampanhas, setCanAccessCampanhas] = useState(false);
+  const [canAccessEstoque, setCanAccessEstoque] = useState(false);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -126,6 +129,7 @@ export default function DashboardLayout({
 
   const hasAtendimentoAccess = canAccessAtendimento === true;
   const hasCampanhasAccess = canAccessCampanhas === true;
+  const hasEstoqueAccess = canAccessEstoque === true;
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -136,7 +140,7 @@ export default function DashboardLayout({
     const { data, error } = await supabase
       .from("company_users")
       .select(
-        "company_id, role, status, email, user_id, can_access_atendimento, can_access_campanhas, companies(name, plan), created_at"
+                "company_id, role, status, email, user_id, can_access_atendimento, can_access_campanhas, can_access_estoque, companies(name, plan), created_at"
       )
       .eq("user_id", userId)
       .eq("status", "ativo")
@@ -171,6 +175,7 @@ export default function DashboardLayout({
       setEmail("");
       setCanAccessAtendimento(false);
       setCanAccessCampanhas(false);
+      setCanAccessEstoque(false);
       setLoadedMembership(true);
       return;
     }
@@ -193,6 +198,7 @@ export default function DashboardLayout({
       setPlan(membership?.companies?.plan || profile?.plan || "free");
       setCanAccessAtendimento(membership?.can_access_atendimento === true);
       setCanAccessCampanhas(membership?.can_access_campanhas === true);
+      setCanAccessEstoque(membership?.can_access_estoque === true);
     } else {
       setCompanyId(null);
       setRole("");
@@ -200,6 +206,7 @@ export default function DashboardLayout({
       setPlan(profile?.plan || "free");
       setCanAccessAtendimento(false);
       setCanAccessCampanhas(false);
+      setCanAccessEstoque(false);
     }
 
     setLoadedMembership(true);
@@ -261,6 +268,11 @@ export default function DashboardLayout({
       return;
     }
 
+        if (pathname.startsWith("/dashboard/estoque") && !hasEstoqueAccess) {
+      router.replace("/dashboard");
+      return;
+    }
+
     if (pathname.startsWith("/dashboard/billing") && isVendedor) {
       router.replace("/dashboard");
       return;
@@ -285,6 +297,7 @@ export default function DashboardLayout({
     isVendedor,
     hasAtendimentoAccess,
     hasCampanhasAccess,
+    hasEstoqueAccess,
     loadedMembership,
     router,
     isMasterPage,
@@ -348,6 +361,14 @@ const sections: MenuSection[] = useMemo(() => {
           href: "/dashboard/clientes",
           icon: Users,
         },
+
+                {
+          name: "Estoque",
+          href: "/dashboard/estoque",
+          icon: Package,
+          visible: hasEstoqueAccess,
+        },
+
       ].filter((item) => item.visible !== false),
     },
     {
@@ -429,6 +450,7 @@ const sections: MenuSection[] = useMemo(() => {
 }, [
   hasAtendimentoAccess,
   hasCampanhasAccess,
+  hasEstoqueAccess,
   isOwner,
   isAdmin,
   isVendedor,
