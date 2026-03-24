@@ -161,6 +161,7 @@ async function upsertCompanyMembership({
   comissaoPercentual,
   canAccessAtendimento,
   canAccessCampanhas,
+  canAccessEstoque,
 }: {
   companyId: string;
   email?: string | null;
@@ -170,21 +171,23 @@ async function upsertCompanyMembership({
   comissaoPercentual: number;
   canAccessAtendimento: boolean;
   canAccessCampanhas: boolean;
+  canAccessEstoque: boolean;
 }) {
   const admin = getAdminSupabase();
 
   const normalizedEmail = normalizeEmail(email);
-  const payloadBase: Record<string, any> = {
-    company_id: companyId,
-    role,
-    status,
-    comissao_percentual: Number.isFinite(comissaoPercentual)
-      ? comissaoPercentual
-      : 0,
-    can_access_atendimento: !!canAccessAtendimento,
-    can_access_campanhas: !!canAccessCampanhas,
-    updated_at: new Date().toISOString(),
-  };
+const payloadBase: Record<string, any> = {
+  company_id: companyId,
+  role,
+  status,
+  comissao_percentual: Number.isFinite(comissaoPercentual)
+    ? comissaoPercentual
+    : 0,
+  can_access_atendimento: !!canAccessAtendimento,
+  can_access_campanhas: !!canAccessCampanhas,
+  can_access_estoque: !!canAccessEstoque,
+  updated_at: new Date().toISOString(),
+};
 
   if (userId) {
     const { data: existingByUser, error: findByUserError } = await admin
@@ -394,16 +397,17 @@ export default async function MasterPage({
     if (ownerToUse) {
       const authUser = await findAuthUserByEmail(ownerToUse);
 
-      const membership = await upsertCompanyMembership({
-        companyId: createdCompany.id,
-        email: ownerToUse,
-        userId: authUser?.id || null,
-        role: "owner",
-        status: "ativo",
-        comissaoPercentual: 0,
-        canAccessAtendimento: true,
-        canAccessCampanhas: true,
-      });
+const membership = await upsertCompanyMembership({
+  companyId: createdCompany.id,
+  email: ownerToUse,
+  userId: authUser?.id || null,
+  role: "owner",
+  status: "ativo",
+  comissaoPercentual: 0,
+  canAccessAtendimento: true,
+  canAccessCampanhas: true,
+  canAccessEstoque: true,
+});
 
       if (membership.error) {
         return goWithMessage(
@@ -585,6 +589,7 @@ export default async function MasterPage({
     const commissionRaw = String(formData.get("comissao_percentual") || "0").trim();
     const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
     const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
+    const canAccessEstoque = formData.get("can_access_estoque") === "on";
 
     const comissao = Number(commissionRaw || 0);
 
@@ -641,18 +646,20 @@ export default async function MasterPage({
     }
 
     if (companyId) {
-      const membership = await upsertCompanyMembership({
-        companyId,
-        email,
-        userId,
-        role,
-        status: isActive ? "ativo" : "inativo",
-        comissaoPercentual: Number.isFinite(comissao) ? comissao : 0,
-        canAccessAtendimento:
-          role === "owner" || role === "admin" ? true : canAccessAtendimento,
-        canAccessCampanhas:
-          role === "owner" || role === "admin" ? true : canAccessCampanhas,
-      });
+const membership = await upsertCompanyMembership({
+  companyId,
+  email,
+  userId,
+  role,
+  status: isActive ? "ativo" : "inativo",
+  comissaoPercentual: Number.isFinite(comissao) ? comissao : 0,
+  canAccessAtendimento:
+    role === "owner" || role === "admin" ? true : canAccessAtendimento,
+  canAccessCampanhas:
+    role === "owner" || role === "admin" ? true : canAccessCampanhas,
+  canAccessEstoque:
+    role === "owner" || role === "admin" ? true : canAccessEstoque,
+});
 
       if (membership.error) {
         return goWithMessage("error", membership.error.message);
@@ -673,6 +680,7 @@ export default async function MasterPage({
     const commission = toNumber(formData.get("comissao_percentual"), 0);
     const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
     const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
+    const canAccessEstoque = formData.get("can_access_estoque") === "on";
 
     if (!companyId) {
       return goWithMessage("error", "Empresa inválida para associação.");
@@ -704,18 +712,20 @@ export default async function MasterPage({
       }
     }
 
-    const membership = await upsertCompanyMembership({
-      companyId,
-      email,
-      userId: authUser?.id || null,
-      role,
-      status,
-      comissaoPercentual: commission,
-      canAccessAtendimento:
-        role === "owner" || role === "admin" ? true : canAccessAtendimento,
-      canAccessCampanhas:
-        role === "owner" || role === "admin" ? true : canAccessCampanhas,
-    });
+const membership = await upsertCompanyMembership({
+  companyId,
+  email,
+  userId: authUser?.id || null,
+  role,
+  status,
+  comissaoPercentual: commission,
+  canAccessAtendimento:
+    role === "owner" || role === "admin" ? true : canAccessAtendimento,
+  canAccessCampanhas:
+    role === "owner" || role === "admin" ? true : canAccessCampanhas,
+  canAccessEstoque:
+    role === "owner" || role === "admin" ? true : canAccessEstoque,
+});
 
     if (membership.error) {
       return goWithMessage("error", membership.error.message);
@@ -743,6 +753,7 @@ export default async function MasterPage({
     const isActive = formData.get("is_active") === "on";
     const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
     const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
+    const canAccessEstoque = formData.get("can_access_estoque") === "on";
 
     if (!userId) {
       return goWithMessage("error", "Usuário inválido.");
@@ -771,16 +782,18 @@ export default async function MasterPage({
     if (companyId) {
       const { error: companyUserError } = await admin
         .from("company_users")
-        .update({
-          role,
-          status,
-          comissao_percentual: Number(commissionRaw || 0),
-          can_access_atendimento:
-            role === "owner" || role === "admin" ? true : canAccessAtendimento,
-          can_access_campanhas:
-            role === "owner" || role === "admin" ? true : canAccessCampanhas,
-          updated_at: new Date().toISOString(),
-        })
+  .update({
+  role,
+  status,
+  comissao_percentual: Number(commissionRaw || 0),
+  can_access_atendimento:
+    role === "owner" || role === "admin" ? true : canAccessAtendimento,
+  can_access_campanhas:
+    role === "owner" || role === "admin" ? true : canAccessCampanhas,
+  can_access_estoque:
+    role === "owner" || role === "admin" ? true : canAccessEstoque,
+  updated_at: new Date().toISOString(),
+})
         .eq("user_id", userId)
         .eq("company_id", companyId);
 
@@ -1100,6 +1113,10 @@ export default async function MasterPage({
       (u: any) => u.can_access_campanhas === true
     ).length;
 
+    const estoqueLiberado = relatedUsers.filter(
+  (u: any) => u.can_access_estoque === true
+).length;
+
     const leads = relatedServices.filter((s: any) => s.status === "lead").length;
     const concluidos = relatedServices.filter((s: any) => s.status === "concluido").length;
 
@@ -1140,6 +1157,7 @@ export default async function MasterPage({
       activeVendedores,
       atendimentoLiberado,
       campanhasLiberado,
+      estoqueLiberado,
       servicesCount: relatedServices.length,
       leads,
       concluidos,
@@ -1288,7 +1306,7 @@ export default async function MasterPage({
               <p className="mt-3 text-sm text-white/65 md:text-base">
                 Controle total da plataforma: empresas/clientes, usuários, masters,
                 limites de vendedores, cobrança, operação comercial, campanhas,
-                filtros e gestão detalhada por empresa.
+                estoque, filtros e gestão detalhada por empresa.
               </p>
             </div>
 
@@ -1448,25 +1466,30 @@ export default async function MasterPage({
                 />
               </div>
 
-              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
-                  Permissões de módulos
-                </div>
+<div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
+    Permissões de módulos
+  </div>
 
-                <label className="flex items-center gap-2 text-sm text-white/80">
-                  <input type="checkbox" name="can_access_atendimento" />
-                  Liberar Atendimento
-                </label>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_atendimento" />
+    Liberar Atendimento
+  </label>
 
-                <label className="flex items-center gap-2 text-sm text-white/80">
-                  <input type="checkbox" name="can_access_campanhas" />
-                  Liberar Campanhas
-                </label>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_campanhas" />
+    Liberar Campanhas
+  </label>
 
-                <div className="text-[11px] text-white/45">
-                  Owner/Admin recebem acesso automaticamente.
-                </div>
-              </div>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_estoque" />
+    Liberar Estoque
+  </label>
+
+  <div className="text-[11px] text-white/45">
+    Owner/Admin recebem acesso automaticamente.
+  </div>
+</div>
 
               <label className="flex items-center gap-2 text-sm text-white/80">
                 <input type="checkbox" name="is_master" />
@@ -1618,20 +1641,24 @@ export default async function MasterPage({
                       />
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <MiniInfo
-                        label="Atendimento liberado"
-                        value={String(item.atendimentoLiberado)}
-                      />
-                      <MiniInfo
-                        label="Campanhas liberado"
-                        value={String(item.campanhasLiberado)}
-                      />
-                      <MiniInfo
-                        label="Dono"
-                        value={item.ownerEmails[0] || "sem owner definido"}
-                      />
-                    </div>
+                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+  <MiniInfo
+    label="Atendimento liberado"
+    value={String(item.atendimentoLiberado)}
+  />
+  <MiniInfo
+    label="Campanhas liberado"
+    value={String(item.campanhasLiberado)}
+  />
+  <MiniInfo
+    label="Estoque liberado"
+    value={String(item.estoqueLiberado)}
+  />
+  <MiniInfo
+    label="Dono"
+    value={item.ownerEmails[0] || "sem owner definido"}
+  />
+</div>
                   </div>
                 ))
               )}
@@ -1676,16 +1703,20 @@ export default async function MasterPage({
                         />
                       </div>
 
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                        <MiniInfo
-                          label="Atendimento"
-                          value={firstRelation?.can_access_atendimento ? "Liberado" : "Bloqueado"}
-                        />
-                        <MiniInfo
-                          label="Campanhas"
-                          value={firstRelation?.can_access_campanhas ? "Liberado" : "Bloqueado"}
-                        />
-                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+  <MiniInfo
+    label="Atendimento"
+    value={firstRelation?.can_access_atendimento ? "Liberado" : "Bloqueado"}
+  />
+  <MiniInfo
+    label="Campanhas"
+    value={firstRelation?.can_access_campanhas ? "Liberado" : "Bloqueado"}
+  />
+  <MiniInfo
+    label="Estoque"
+    value={firstRelation?.can_access_estoque ? "Liberado" : "Bloqueado"}
+  />
+</div>
                     </div>
                   );
                 })
@@ -1819,18 +1850,22 @@ export default async function MasterPage({
                           </div>
 
                           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                            <MiniInfo
-                              label="Liberados em Atendimento"
-                              value={String(item.atendimentoLiberado)}
-                            />
-                            <MiniInfo
-                              label="Liberados em Campanhas"
-                              value={String(item.campanhasLiberado)}
-                            />
-                            <MiniInfo
-                              label="Usuários ativos"
-                              value={String(item.activeMembers)}
-                            />
+                        <MiniInfo
+  label="Liberados em Atendimento"
+  value={String(item.atendimentoLiberado)}
+/>
+<MiniInfo
+  label="Liberados em Campanhas"
+  value={String(item.campanhasLiberado)}
+/>
+<MiniInfo
+  label="Liberados em Estoque"
+  value={String(item.estoqueLiberado)}
+/>
+<MiniInfo
+  label="Usuários ativos"
+  value={String(item.activeMembers)}
+/>
                             <MiniInfo
                               label="Pendentes"
                               value={String(item.pendingMembers)}
@@ -1891,25 +1926,30 @@ export default async function MasterPage({
                                 />
                               </div>
 
-                              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
-                                  Permissões de módulos
-                                </div>
+<div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
+    Permissões de módulos
+  </div>
 
-                                <label className="flex items-center gap-2 text-sm text-white/80">
-                                  <input type="checkbox" name="can_access_atendimento" />
-                                  Liberar Atendimento
-                                </label>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_atendimento" />
+    Liberar Atendimento
+  </label>
 
-                                <label className="flex items-center gap-2 text-sm text-white/80">
-                                  <input type="checkbox" name="can_access_campanhas" />
-                                  Liberar Campanhas
-                                </label>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_campanhas" />
+    Liberar Campanhas
+  </label>
 
-                                <div className="text-[11px] text-white/45">
-                                  Owner/Admin recebem acesso automaticamente.
-                                </div>
-                              </div>
+  <label className="flex items-center gap-2 text-sm text-white/80">
+    <input type="checkbox" name="can_access_estoque" />
+    Liberar Estoque
+  </label>
+
+  <div className="text-[11px] text-white/45">
+    Owner/Admin recebem acesso automaticamente.
+  </div>
+</div>
 
                               <button className={buttonPrimary}>
                                 Associar usuário à empresa
@@ -1928,6 +1968,7 @@ export default async function MasterPage({
                                     <th className="px-3 py-3">Comissão</th>
                                     <th className="px-3 py-3">Atendimento</th>
                                     <th className="px-3 py-3">Campanhas</th>
+                                    <th className="px-3 py-3">Estoque</th>
                                     <th className="px-3 py-3">Master</th>
                                     <th className="px-3 py-3">Último login</th>
                                     <th className="px-3 py-3">Ações</th>
@@ -1969,17 +2010,20 @@ export default async function MasterPage({
                                         </td>
 
                                         <td className="px-3 py-3">
-                                          {relation.can_access_atendimento ? "Liberado" : "Bloqueado"}
-                                        </td>
+  {relation.can_access_atendimento ? "Liberado" : "Bloqueado"}
+</td>
 
-                                        <td className="px-3 py-3">
-                                          {relation.can_access_campanhas ? "Liberado" : "Bloqueado"}
-                                        </td>
+<td className="px-3 py-3">
+  {relation.can_access_campanhas ? "Liberado" : "Bloqueado"}
+</td>
 
-                                        <td className="px-3 py-3">
-                                          {profile?.is_master ? "Sim" : "Não"}
-                                        </td>
+<td className="px-3 py-3">
+  {relation.can_access_estoque ? "Liberado" : "Bloqueado"}
+</td>
 
+<td className="px-3 py-3">
+  {profile?.is_master ? "Sim" : "Não"}
+</td>
                                         <td className="px-3 py-3">
                                           <div>{formatDate(authUser?.last_sign_in_at)}</div>
                                           <div className="text-xs text-white/50">
@@ -2036,27 +2080,16 @@ export default async function MasterPage({
                                                     className={smallInput}
                                                   />
 
-                                                  <label className="flex items-center gap-2 text-xs text-white/80">
-                                                    <input
-                                                      type="checkbox"
-                                                      name="can_access_atendimento"
-                                                      defaultChecked={
-                                                        relation.can_access_atendimento === true
-                                                      }
-                                                    />
-                                                    liberar atendimento
-                                                  </label>
-
-                                                  <label className="flex items-center gap-2 text-xs text-white/80">
-                                                    <input
-                                                      type="checkbox"
-                                                      name="can_access_campanhas"
-                                                      defaultChecked={
-                                                        relation.can_access_campanhas === true
-                                                      }
-                                                    />
-                                                    liberar campanhas
-                                                  </label>
+                                              <label className="flex items-center gap-2 text-xs text-white/80">
+  <input
+    type="checkbox"
+    name="can_access_estoque"
+    defaultChecked={
+      relation.can_access_estoque === true
+    }
+  />
+  liberar estoque
+</label>
 
                                                   <label className="flex items-center gap-2 text-xs text-white/80">
                                                     <input
