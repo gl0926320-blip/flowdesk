@@ -65,8 +65,8 @@ const TEMPERATURA_COLORS: Record<string, string> = {
 };
 
 const OPTION_STYLE = {
-  color: "#111827",
-  backgroundColor: "#ffffff",
+  color: "#e5e7eb",
+  backgroundColor: "#0f172a",
 };
 
 const ACTIVITY_TYPES = [
@@ -121,6 +121,15 @@ type LeadActivity = {
   updated_at?: string | null;
 };
 
+type PipelineStageSetting = {
+  id: string;
+  company_id: string;
+  stage_key: string;
+  label: string | null;
+  color: string | null;
+  is_visible: boolean | null;
+};
+
 export default function LeadsPage() {
   const supabase = createClient();
 
@@ -130,6 +139,9 @@ export default function LeadsPage() {
   const [myEmail, setMyEmail] = useState<string>("");
   const [myRole, setMyRole] = useState<string>("");
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [pipelineStageSettings, setPipelineStageSettings] = useState<PipelineStageSetting[]>([]);
+
+
 
   const [search, setSearch] = useState("");
   const [openModal, setOpenModal] = useState(false);
@@ -158,6 +170,84 @@ export default function LeadsPage() {
     descricao: "",
     data_atividade: "",
   });
+
+const [leadOrigins, setLeadOrigins] = useState<
+  { id: string; nome: string; ordem: number; ativo: boolean; cor?: string | null }[]
+>([]);
+
+const [novaOrigemCor, setNovaOrigemCor] = useState("emerald");
+const [originToRemove, setOriginToRemove] = useState<{
+  id: string;
+  nome: string;
+} | null>(null);
+
+const [novaOrigemLead, setNovaOrigemLead] = useState("");
+const [originSaving, setOriginSaving] = useState(false);
+
+
+const ORIGIN_COLOR_OPTIONS = [
+  { value: "emerald", label: "Verde" },
+  { value: "cyan", label: "Ciano" },
+  { value: "blue", label: "Azul" },
+  { value: "violet", label: "Violeta" },
+  { value: "pink", label: "Rosa" },
+  { value: "orange", label: "Laranja" },
+  { value: "yellow", label: "Amarelo" },
+  { value: "red", label: "Vermelho" },
+  { value: "indigo", label: "Índigo" },
+  { value: "white", label: "Neutro" },
+] as const;
+
+function getOriginColorDot(cor?: string | null) {
+  switch (cor) {
+    case "emerald":
+      return "🟢";
+    case "cyan":
+      return "🔹";
+    case "blue":
+      return "🔵";
+    case "violet":
+      return "🟣";
+    case "pink":
+      return "🩷";
+    case "orange":
+      return "🟠";
+    case "yellow":
+      return "🟡";
+    case "red":
+      return "🔴";
+    case "indigo":
+      return "🔷";
+    default:
+      return "⚪";
+  }
+}
+
+function getOriginBadgeClass(cor?: string | null) {
+  switch (cor) {
+    case "emerald":
+      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+    case "cyan":
+      return "bg-cyan-500/15 text-cyan-300 border-cyan-500/30";
+    case "blue":
+      return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+    case "violet":
+      return "bg-violet-500/15 text-violet-300 border-violet-500/30";
+    case "pink":
+      return "bg-pink-500/15 text-pink-300 border-pink-500/30";
+    case "orange":
+      return "bg-orange-500/15 text-orange-300 border-orange-500/30";
+    case "yellow":
+      return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
+    case "red":
+      return "bg-red-500/15 text-red-300 border-red-500/30";
+    case "indigo":
+      return "bg-indigo-500/15 text-indigo-300 border-indigo-500/30";
+    default:
+      return "bg-white/10 text-white/80 border-white/15";
+  }
+}
+
 
   const [form, setForm] = useState({
     cliente: "",
@@ -375,6 +465,48 @@ export default function LeadsPage() {
     setLoadingActivities(false);
   }
 
+async function loadLeadOrigins(currentCompanyId: string) {
+const { data, error } = await supabase
+  .from("company_lead_origins")
+  .select("id, nome, ordem, ativo, cor")
+    .eq("company_id", currentCompanyId)
+    .eq("ativo", true)
+    .order("ordem", { ascending: true })
+    .order("nome", { ascending: true });
+
+  if (error) {
+    console.error("Erro ao carregar origens do lead:", error);
+    setLeadOrigins([]);
+    return;
+  }
+
+setLeadOrigins(
+  (data || []) as {
+    id: string;
+    nome: string;
+    ordem: number;
+    ativo: boolean;
+    cor?: string | null;
+  }[]
+);
+}
+
+async function loadPipelineStageSettings(currentCompanyId: string) {
+  const { data, error } = await supabase
+    .from("company_pipeline_stage_settings")
+    .select("id, company_id, stage_key, label, color, is_visible")
+    .eq("company_id", currentCompanyId);
+
+  if (error) {
+    console.error("Erro ao carregar config visual do pipeline no leads:", error);
+    setPipelineStageSettings([]);
+    return;
+  }
+
+  setPipelineStageSettings((data || []) as PipelineStageSetting[]);
+}
+  
+
   async function load() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
@@ -391,12 +523,14 @@ export default function LeadsPage() {
     const currentCompanyId = membership.company_id;
     const currentRole = membership.role;
 
-    setCompanyId(currentCompanyId);
-    setMyRole(currentRole);
+setCompanyId(currentCompanyId);
+setMyRole(currentRole);
+await loadLeadOrigins(currentCompanyId);
+await loadPipelineStageSettings(currentCompanyId);
 
-    if (currentRole === "vendedor") {
-      setFiltroResponsavel(userId);
-    }
+if (currentRole === "vendedor") {
+  setFiltroResponsavel(userId);
+}
 
     const { data: equipe, error: equipeError } = await supabase
       .from("company_users")
@@ -435,6 +569,68 @@ export default function LeadsPage() {
 
     setItems(data || []);
   }
+
+
+  async function adicionarOrigemLead() {
+  if (!companyId) return;
+  if (myRole !== "owner") return;
+
+  const nome = novaOrigemLead.trim();
+  if (!nome) {
+    alert("Digite o nome da nova origem.");
+    return;
+  }
+
+  
+
+  setOriginSaving(true);
+
+  const maiorOrdem =
+    leadOrigins.length > 0
+      ? Math.max(...leadOrigins.map((item) => Number(item.ordem || 0)))
+      : 0;
+
+const { error } = await supabase.from("company_lead_origins").insert({
+  company_id: companyId,
+  nome,
+  ordem: maiorOrdem + 1,
+  ativo: true,
+  cor: novaOrigemCor,
+});
+
+  setOriginSaving(false);
+
+  if (error) {
+    console.error("Erro ao adicionar origem:", error);
+    alert("Erro ao adicionar origem: " + error.message);
+    return;
+  }
+
+setNovaOrigemLead("");
+setNovaOrigemCor("emerald");
+await loadLeadOrigins(companyId);
+}
+
+
+async function removerOrigemLead(id: string) {
+  if (!companyId) return;
+  if (myRole !== "owner") return;
+
+  const { error } = await supabase
+    .from("company_lead_origins")
+    .update({ ativo: false })
+    .eq("id", id)
+    .eq("company_id", companyId);
+
+  if (error) {
+    console.error("Erro ao remover origem:", error);
+    alert("Erro ao remover origem: " + error.message);
+    return;
+  }
+
+  setOriginToRemove(null);
+  await loadLeadOrigins(companyId);
+}
 
   async function atualizarStatus(id: string, status: string) {
     const lead = items.find((i) => i.id === id);
@@ -485,7 +681,7 @@ export default function LeadsPage() {
       servicoId: id,
       tipo: "status",
       titulo: "Status atualizado",
-      descricao: `Status alterado de "${STATUS_LABELS[oldStatus] || oldStatus}" para "${STATUS_LABELS[status] || status}".`,
+      descricao: `Status alterado de "${getStageDisplayLabel(oldStatus) || oldStatus}" para "${getStageDisplayLabel(status) || status}".`,
     });
 
     if (selectedLead?.id === id) {
@@ -701,7 +897,7 @@ export default function LeadsPage() {
       servicoId: insertedLead.id,
       tipo: "status",
       titulo: "Lead criado",
-      descricao: `Lead criado com status inicial "${STATUS_LABELS.lead}".`,
+      descricao: `Lead criado com status inicial "${getStageDisplayLabel("lead")}".`,
     });
 
     if (form.observacoes?.trim()) {
@@ -955,27 +1151,27 @@ return {
 };
   }, [filtered]);
 
-  const funnelData = useMemo(() => {
-    const counts: Record<string, number> = {};
+ const funnelData = useMemo(() => {
+  const counts: Record<string, number> = {};
 
-    STATUS_COLUMNS.forEach((status) => {
-      counts[status] = filtered.filter((i) => i.status === status).length;
-    });
+  STATUS_COLUMNS.forEach((status) => {
+    counts[status] = filtered.filter((i) => i.status === status).length;
+  });
 
-    const totalLeads = filtered.length;
+  const totalLeads = filtered.length;
 
-    return STATUS_COLUMNS.map((status) => {
-      const value = counts[status];
-      const percentage = totalLeads > 0 ? Math.round((value / totalLeads) * 100) : 0;
+  return STATUS_COLUMNS.map((status) => {
+    const value = counts[status];
+    const percentage = totalLeads > 0 ? Math.round((value / totalLeads) * 100) : 0;
 
-      return {
-        status,
-        label: STATUS_LABELS[status],
-        value,
-        percentage,
-      };
-    });
-  }, [filtered]);
+    return {
+      status,
+      label: getStageDisplayLabel(status),
+      value,
+      percentage,
+    };
+  });
+}, [filtered, pipelineStageSettings]);
 
   function EditableField({ label, value, field }: any) {
     return (
@@ -1079,6 +1275,11 @@ return {
     if (tipo === "perda") return <X size={14} className="text-red-300" />;
     return <StickyNote size={14} className="text-blue-300" />;
   }
+
+  function getStageDisplayLabel(stageKey: string) {
+  const found = pipelineStageSettings.find((item) => item.stage_key === stageKey);
+  return found?.label?.trim() || STATUS_LABELS[stageKey] || stageKey;
+}
 
   return (
     <div className="min-h-screen bg-[#0A0F1C] text-white p-12 space-y-10">
@@ -1218,11 +1419,11 @@ return {
                 Todos status
               </option>
 
-              {STATUS_COLUMNS.map((status) => (
-                <option key={status} value={status} style={OPTION_STYLE}>
-                  {STATUS_LABELS[status]}
-                </option>
-              ))}
+             {STATUS_COLUMNS.map((status) => (
+  <option key={status} value={status} style={OPTION_STYLE}>
+    {getStageDisplayLabel(status)}
+  </option>
+))}
             </select>
           </div>
         </div>
@@ -1406,11 +1607,11 @@ return {
                       onChange={(e) => atualizarStatus(item.id, e.target.value)}
                       className={`px-3 py-2 rounded-xl border text-sm font-semibold ${STATUS_COLORS[item.status]}`}
                     >
-                      {STATUS_COLUMNS.map((col) => (
-                        <option key={col} value={col} className="bg-[#0f172a]">
-                          {STATUS_LABELS[col]}
-                        </option>
-                      ))}
+                     {STATUS_COLUMNS.map((col) => (
+  <option key={col} value={col} className="bg-[#0f172a]">
+    {getStageDisplayLabel(col)}
+  </option>
+))}
                     </select>
 
                     {item.status === "perdido" && item.motivo_perda && (
@@ -1463,12 +1664,99 @@ return {
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-              <input
-                placeholder="Origem do Lead"
-                value={form.origem_lead}
-                onChange={(e) => setForm({ ...form, origem_lead: e.target.value })}
-                className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
-              />
+<select
+  value={form.origem_lead || ""}
+  onChange={(e) => setForm({ ...form, origem_lead: e.target.value })}
+  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+>
+  <option value="" style={OPTION_STYLE}>
+    Selecione a origem do lead
+  </option>
+
+{leadOrigins.map((origem) => (
+  <option key={origem.id} value={origem.nome} style={OPTION_STYLE}>
+    {getOriginColorDot(origem.cor)} {origem.nome}
+  </option>
+))}
+
+</select>
+{myRole === "owner" && (
+  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-xs uppercase tracking-[0.18em] text-cyan-300 font-semibold">
+          Gerenciar origens do lead
+        </p>
+        <p className="text-xs text-white/45 mt-1">
+          Adicione ou remova opções da lista desta empresa.
+        </p>
+      </div>
+    </div>
+
+<div className="grid grid-cols-1 md:grid-cols-[1fr_180px_140px] gap-2">
+  <input
+    value={novaOrigemLead}
+    onChange={(e) => setNovaOrigemLead(e.target.value)}
+    placeholder="Nova origem (ex: Instagram)"
+    className="flex-1 p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+  />
+
+  <select
+    value={novaOrigemCor}
+    onChange={(e) => setNovaOrigemCor(e.target.value)}
+    className="p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+  >
+    {ORIGIN_COLOR_OPTIONS.map((item) => (
+      <option key={item.value} value={item.value} style={OPTION_STYLE}>
+        {item.label}
+      </option>
+    ))}
+  </select>
+
+  <button
+    type="button"
+    onClick={adicionarOrigemLead}
+    disabled={originSaving}
+    className="px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-semibold disabled:opacity-60"
+  >
+    {originSaving ? "Salvando..." : "Adicionar"}
+  </button>
+</div>
+
+    <div className="flex flex-wrap gap-2">
+      {leadOrigins.length === 0 ? (
+        <span className="text-xs text-white/45">
+          Nenhuma origem cadastrada ainda.
+        </span>
+      ) : (
+        leadOrigins.map((origem) => (
+<div
+  key={origem.id}
+  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${getOriginBadgeClass(
+    origem.cor
+  )}`}
+>
+            <span>{origem.nome}</span>
+
+     <button
+  type="button"
+  onClick={() =>
+    setOriginToRemove({
+      id: origem.id,
+      nome: origem.nome,
+    })
+  }
+  className="text-red-300 hover:text-red-200 text-xs"
+  title="Remover origem"
+>
+  ×
+</button>
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+)}
 
               <select
                 value={form.temperatura}
@@ -1541,12 +1829,22 @@ return {
                 className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
               />
 
-              <input
-                placeholder="Forma de Pagamento"
-                value={form.forma_pagamento}
-                onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })}
-                className="w-full p-3 rounded-xl bg-white/10 border border-white/20"
-              />
+             <select
+  value={form.forma_pagamento}
+  onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })}
+  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+>
+  <option value="" style={OPTION_STYLE}>Selecione a forma de pagamento</option>
+
+  <option value="Pix" style={OPTION_STYLE}>Pix</option>
+  <option value="Dinheiro" style={OPTION_STYLE}>Dinheiro</option>
+  <option value="Cartão de Crédito" style={OPTION_STYLE}>Cartão de Crédito</option>
+  <option value="Cartão de Débito" style={OPTION_STYLE}>Cartão de Débito</option>
+  <option value="Boleto" style={OPTION_STYLE}>Boleto</option>
+  <option value="Transferência" style={OPTION_STYLE}>Transferência</option>
+  <option value="Parcelado" style={OPTION_STYLE}>Parcelado</option>
+  <option value="Outro" style={OPTION_STYLE}>Outro</option>
+</select>
 
               <label className="flex items-center gap-2">
                 <input
@@ -1617,6 +1915,54 @@ return {
                 Salvar Orçamento
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+
+            {originToRemove && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+          <div className="w-[92%] max-w-md rounded-3xl border border-white/10 bg-[#0f172a] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  Remover origem do lead
+                </h3>
+                <p className="mt-2 text-sm text-white/65">
+                  Deseja remover{" "}
+                  <span className="text-cyan-300 font-semibold">
+                    {originToRemove.nome}
+                  </span>{" "}
+                  da lista?
+                </p>
+              </div>
+
+              <button
+                onClick={() => setOriginToRemove(null)}
+                className="text-white/45 hover:text-white"
+                type="button"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setOriginToRemove(null)}
+                className="px-4 py-2 rounded-xl border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => removerOrigemLead(originToRemove.id)}
+                className="px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-500"
+              >
+                Remover
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1701,11 +2047,34 @@ return {
                   )}
                 </div>
 
-                <EditableField
-                  label="Origem"
-                  value={selectedLead.origem_lead}
-                  field="origem_lead"
-                />
+<div className="bg-white/5 p-4 rounded-xl print-card">
+  <p className="text-gray-400 text-xs">Origem</p>
+
+  {isEditing && myRole === "owner" ? (
+    <select
+      value={selectedLead.origem_lead || ""}
+      onChange={(e) =>
+        setSelectedLead({
+          ...selectedLead,
+          origem_lead: e.target.value,
+        })
+      }
+      className="bg-white/10 p-2 rounded-lg w-full text-white"
+    >
+      <option value="" style={OPTION_STYLE}>
+        Selecione a origem do lead
+      </option>
+
+{leadOrigins.map((origem) => (
+  <option key={origem.id} value={origem.nome} style={OPTION_STYLE}>
+    {getOriginColorDot(origem.cor)} {origem.nome}
+  </option>
+))}
+    </select>
+  ) : (
+    <p className="font-semibold">{selectedLead.origem_lead || "-"}</p>
+  )}
+</div>
 
                 <EditableField
                   label="Responsável"

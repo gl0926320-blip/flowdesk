@@ -52,6 +52,62 @@ const STATUS_LABELS: Record<string, string> = {
   perdido: "Perdido",
 };
 
+
+const OPTION_STYLE = {
+  color: "#e5e7eb",
+  backgroundColor: "#0f172a",
+};
+
+function getOriginColorDot(cor?: string | null) {
+  switch (cor) {
+    case "emerald":
+      return "🟢";
+    case "cyan":
+      return "🔹";
+    case "blue":
+      return "🔵";
+    case "violet":
+      return "🟣";
+    case "pink":
+      return "🩷";
+    case "orange":
+      return "🟠";
+    case "yellow":
+      return "🟡";
+    case "red":
+      return "🔴";
+    case "indigo":
+      return "🔷";
+    default:
+      return "⚪";
+  }
+}
+
+const DEFAULT_STAGE_COLORS: Record<string, string> = {
+  lead: "sky",
+  proposta_enviada: "yellow",
+  aguardando_cliente: "purple",
+  proposta_validada: "emerald",
+  andamento: "orange",
+  concluido: "green",
+  perdido: "red",
+};
+
+const STAGE_COLOR_OPTIONS = [
+  { value: "sky", label: "Azul Claro" },
+  { value: "yellow", label: "Amarelo" },
+  { value: "purple", label: "Roxo" },
+  { value: "emerald", label: "Esmeralda" },
+  { value: "orange", label: "Laranja" },
+  { value: "green", label: "Verde" },
+  { value: "red", label: "Vermelho" },
+  { value: "blue", label: "Azul" },
+  { value: "cyan", label: "Ciano" },
+  { value: "pink", label: "Rosa" },
+  { value: "indigo", label: "Índigo" },
+] as const;
+
+
 type Vendedor = {
   user_id: string;
   email: string;
@@ -65,6 +121,15 @@ type ServicoCalculado = {
   valor_comissao_calculado: number;
   percentual_comissao_calculado: number;
   lucro_calculado: number;
+};
+
+type PipelineStageSetting = {
+  id: string;
+  company_id: string;
+  stage_key: string;
+  label: string | null;
+  color: string | null;
+  is_visible: boolean | null;
 };
 
 export default function Pipeline() {
@@ -92,6 +157,23 @@ export default function Pipeline() {
   const [itemPerdaId, setItemPerdaId] = useState<string | null>(null);
   const [motivoPerda, setMotivoPerda] = useState("");
 
+  const [leadOrigins, setLeadOrigins] = useState<
+  { id: string; nome: string; ordem: number; ativo: boolean; cor?: string | null }[]
+>([]);
+
+const [pipelineStageSettings, setPipelineStageSettings] = useState<PipelineStageSetting[]>([]);
+
+const [showStageEditor, setShowStageEditor] = useState(false);
+const [stageEditorForm, setStageEditorForm] = useState<{
+  stage_key: string;
+  label: string;
+  color: string;
+}>({
+  stage_key: "lead",
+  label: "",
+  color: "sky",
+});
+
   const [form, setForm] = useState({
     cliente: "",
     origem_lead: "",
@@ -107,6 +189,18 @@ export default function Pipeline() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+  if (typeof window === "undefined") return;
+
+  (window as any).__PIPELINE_ROLE__ = role;
+  (window as any).__OPEN_PIPELINE_STAGE_EDITOR__ = openStageEditor;
+
+  return () => {
+    delete (window as any).__PIPELINE_ROLE__;
+    delete (window as any).__OPEN_PIPELINE_STAGE_EDITOR__;
+  };
+}, [role, pipelineStageSettings]);
 
   function findVendedorByUserId(id?: string | null) {
     if (!id) return null;
@@ -175,6 +269,50 @@ export default function Pipeline() {
     }
   }
 
+
+  async function loadLeadOrigins(currentCompanyId: string) {
+  const { data, error } = await supabase
+    .from("company_lead_origins")
+    .select("id, nome, ordem, ativo, cor")
+    .eq("company_id", currentCompanyId)
+    .eq("ativo", true)
+    .order("ordem", { ascending: true })
+    .order("nome", { ascending: true });
+
+  if (error) {
+    console.error("Erro ao carregar origens no pipeline:", error);
+    setLeadOrigins([]);
+    return;
+  }
+
+  setLeadOrigins(
+    (data || []) as {
+      id: string;
+      nome: string;
+      ordem: number;
+      ativo: boolean;
+      cor?: string | null;
+    }[]
+  );
+}
+
+
+async function loadPipelineStageSettings(currentCompanyId: string) {
+  const { data, error } = await supabase
+    .from("company_pipeline_stage_settings")
+    .select("id, company_id, stage_key, label, color, is_visible")
+    .eq("company_id", currentCompanyId);
+
+  if (error) {
+    console.error("Erro ao carregar config visual do pipeline:", error);
+    setPipelineStageSettings([]);
+    return;
+  }
+
+  setPipelineStageSettings((data || []) as PipelineStageSetting[]);
+}
+
+
   async function load() {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
@@ -199,8 +337,13 @@ export default function Pipeline() {
     const companyUser = companyUsers?.[0];
     if (!companyUser?.company_id) return;
 
-    setCompanyId(companyUser.company_id);
-    setRole(companyUser.role);
+setCompanyId(companyUser.company_id);
+setRole(companyUser.role);
+await loadLeadOrigins(companyUser.company_id);
+await loadPipelineStageSettings(companyUser.company_id);
+
+
+
 
     const { data: vendedoresData } = await supabase
       .from("company_users")
@@ -512,6 +655,86 @@ export default function Pipeline() {
     setMotivoPerda("");
   }
 
+  function getStageSetting(stageKey: string) {
+  const found = pipelineStageSettings.find((item) => item.stage_key === stageKey);
+
+  return {
+    label: found?.label?.trim() || STATUS_LABELS[stageKey] || stageKey,
+    color: found?.color?.trim() || DEFAULT_STAGE_COLORS[stageKey] || "blue",
+    isVisible: found?.is_visible !== false,
+  };
+}
+
+function getStageColorStyleByName(colorName?: string | null) {
+  switch (colorName) {
+    case "sky":
+      return "from-sky-600/40 to-sky-500/10 border-sky-400/40 text-sky-200";
+    case "yellow":
+      return "from-yellow-600/40 to-yellow-500/10 border-yellow-400/40 text-yellow-200";
+    case "purple":
+      return "from-purple-600/40 to-purple-500/10 border-purple-400/40 text-purple-200";
+    case "emerald":
+      return "from-emerald-600/40 to-emerald-500/10 border-emerald-400/40 text-emerald-200";
+    case "orange":
+      return "from-orange-600/40 to-orange-500/10 border-orange-400/40 text-orange-200";
+    case "green":
+      return "from-green-600/40 to-green-500/10 border-green-400/40 text-green-200";
+    case "red":
+      return "from-red-600/40 to-red-500/10 border-red-400/40 text-red-200";
+    case "blue":
+      return "from-blue-600/40 to-blue-500/10 border-blue-400/40 text-blue-200";
+    case "cyan":
+      return "from-cyan-600/40 to-cyan-500/10 border-cyan-400/40 text-cyan-200";
+    case "pink":
+      return "from-pink-600/40 to-pink-500/10 border-pink-400/40 text-pink-200";
+    case "indigo":
+      return "from-indigo-600/40 to-indigo-500/10 border-indigo-400/40 text-indigo-200";
+    default:
+      return "from-blue-600/40 to-blue-500/10 border-blue-400/40 text-blue-200";
+  }
+}
+
+function openStageEditor(stageKey: string) {
+  const current = getStageSetting(stageKey);
+
+  setStageEditorForm({
+    stage_key: stageKey,
+    label: current.label,
+    color: current.color,
+  });
+
+  setShowStageEditor(true);
+}
+
+async function saveStageEditor() {
+  if (!companyId) return;
+  if (role !== "owner") return;
+
+  const payload = {
+    company_id: companyId,
+    stage_key: stageEditorForm.stage_key,
+    label: stageEditorForm.label.trim(),
+    color: stageEditorForm.color,
+    is_visible: true,
+  };
+
+  const { error } = await supabase
+    .from("company_pipeline_stage_settings")
+    .upsert(payload, {
+      onConflict: "company_id,stage_key",
+    });
+
+  if (error) {
+    console.error("Erro ao salvar config visual da etapa:", error);
+    alert("Erro ao salvar etapa: " + error.message);
+    return;
+  }
+
+  await loadPipelineStageSettings(companyId);
+  setShowStageEditor(false);
+}
+
+
   const itensCalculados = useMemo<ServicoCalculado[]>(() => {
     return items.map((item) => {
       const vendedor =
@@ -729,54 +952,54 @@ export default function Pipeline() {
               />
             </div>
 
-            <select
-              value={role === "vendedor" ? userId || "todos" : filtroVendedor}
-              onChange={(e) => setFiltroVendedor(e.target.value)}
-              disabled={role === "vendedor"}
-              className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
-            >
-              {role !== "vendedor" && (
-                <option value="todos" className="text-black">
-                  Todos os vendedores
-                </option>
-              )}
+<select
+  value={role === "vendedor" ? userId || "todos" : filtroVendedor}
+  onChange={(e) => setFiltroVendedor(e.target.value)}
+  disabled={role === "vendedor"}
+  className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
+>
+  {role !== "vendedor" && (
+    <option value="todos" style={OPTION_STYLE}>
+      Todos os vendedores
+    </option>
+  )}
 
-              {vendedores
-                .filter(
-                  (v) =>
-                    v.role === "vendedor" ||
-                    v.role === "owner" ||
-                    v.role === "admin"
-                )
-                .map((vendedor) => (
-                  <option
-                    key={vendedor.user_id}
-                    value={vendedor.user_id}
-                    className="text-black"
-                  >
-                    {vendedor.email}
-                  </option>
-                ))}
-            </select>
+  {vendedores
+    .filter(
+      (v) =>
+        v.role === "vendedor" ||
+        v.role === "owner" ||
+        v.role === "admin"
+    )
+    .map((vendedor) => (
+      <option
+        key={vendedor.user_id}
+        value={vendedor.user_id}
+        style={OPTION_STYLE}
+      >
+        {vendedor.email}
+      </option>
+    ))}
+</select>
 
-            <select
-              value={filtroTemperatura}
-              onChange={(e) => setFiltroTemperatura(e.target.value)}
-              className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
-            >
-              <option value="todos" className="text-black">
-                Todas temperaturas
-              </option>
-              <option value="frio" className="text-black">
-                Frio
-              </option>
-              <option value="morno" className="text-black">
-                Morno
-              </option>
-              <option value="quente" className="text-black">
-                Quente
-              </option>
-            </select>
+          <select
+  value={filtroTemperatura}
+  onChange={(e) => setFiltroTemperatura(e.target.value)}
+  className="px-4 py-3 rounded-2xl bg-white/10 border border-white/20 text-white"
+>
+  <option value="todos" style={OPTION_STYLE}>
+    Todas temperaturas
+  </option>
+  <option value="frio" style={OPTION_STYLE}>
+    Frio
+  </option>
+  <option value="morno" style={OPTION_STYLE}>
+    Morno
+  </option>
+  <option value="quente" style={OPTION_STYLE}>
+    Quente
+  </option>
+</select>
           </div>
         </div>
 
@@ -793,54 +1016,75 @@ export default function Pipeline() {
           <Metric icon={<TrendingUp size={18} />} title="Lucro" value={metrics.lucro} />
         </div>
 
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
-          <div>
-            <h2 className="text-3xl font-semibold tracking-[0.2em] uppercase text-blue-200">
-              Pipeline
-            </h2>
-            <p className="text-blue-100/60 mt-2 text-sm">
-              Visualize a carteira por etapa, vendedor, temperatura e origem do lead.
-            </p>
-          </div>
+<div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
+  <div>
+    <div className="flex items-center gap-3">
+      <h2 className="text-3xl font-semibold tracking-[0.2em] uppercase text-blue-200">
+        Pipeline
+      </h2>
 
-          <button
-            onClick={() => setOpenModal(true)}
-            className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 px-7 py-3 rounded-xl font-semibold shadow-[0_10px_30px_rgba(59,130,246,0.4)] transition-all duration-200 hover:scale-[1.03]"
-          >
-            + Novo Serviço
-          </button>
-        </div>
+      {role === "owner" && (
+        <button
+          type="button"
+          onClick={() => openStageEditor("lead")}
+          className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-cyan-300"
+          title="Editar visual das etapas"
+        >
+          <Pencil size={16} />
+        </button>
+      )}
+    </div>
+
+    <p className="text-blue-100/60 mt-2 text-sm">
+      Visualize a carteira por etapa, vendedor, temperatura e origem do lead.
+    </p>
+  </div>
+
+  <button
+    onClick={() => setOpenModal(true)}
+    className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 px-7 py-3 rounded-xl font-semibold shadow-[0_10px_30px_rgba(59,130,246,0.4)] transition-all duration-200 hover:scale-[1.03]"
+  >
+    + Novo Serviço
+  </button>
+</div>
+
+
 
         <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
           <div className="flex flex-wrap gap-6 md:gap-10 pb-6 md:pb-10">
-            {columns.map((col) => {
-              const itensDaColuna = itensFiltrados.filter(
-                (i) => i.status === col && i.ativo === true
-              );
+     {columns.map((col) => {
+  const stageConfig = getStageSetting(col);
 
-              return (
-                <Column
-                  key={col}
-                  id={col}
-                  title={col}
-                  count={itensDaColuna.length}
-                >
-                  {itensDaColuna.map((item) => (
-                    <Card
-                      key={item.id}
-                      item={item}
-                      expanded={expandedId === item.id}
-                      toggleExpand={() =>
-                        setExpandedId(expandedId === item.id ? null : item.id)
-                      }
-                      atualizarItem={atualizarItem}
-                      deletar={deletar}
-                      vendedores={vendedores}
-                    />
-                  ))}
-                </Column>
-              );
-            })}
+  if (!stageConfig.isVisible) return null;
+
+  const itensDaColuna = itensFiltrados.filter(
+    (i) => i.status === col && i.ativo === true
+  );
+
+  return (
+    <Column
+      key={col}
+      id={col}
+      title={stageConfig.label}
+      count={itensDaColuna.length}
+      colorStyle={getStageColorStyleByName(stageConfig.color)}
+    >
+      {itensDaColuna.map((item) => (
+        <Card
+          key={item.id}
+          item={item}
+          expanded={expandedId === item.id}
+          toggleExpand={() =>
+            setExpandedId(expandedId === item.id ? null : item.id)
+          }
+          atualizarItem={atualizarItem}
+          deletar={deletar}
+          vendedores={vendedores}
+        />
+      ))}
+    </Column>
+  );
+})}
           </div>
         </DndContext>
 
@@ -856,12 +1100,24 @@ export default function Pipeline() {
                 value={form.cliente}
                 onChange={(v) => setForm({ ...form, cliente: v })}
               />
+<select
+  value={form.origem_lead || ""}
+  onChange={(e) => setForm({ ...form, origem_lead: e.target.value })}
+  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+>
+  <option value="" style={OPTION_STYLE}>
+    Selecione a origem do lead
+  </option>
 
-              <Input
-                placeholder="Origem do Lead"
-                value={form.origem_lead}
-                onChange={(v) => setForm({ ...form, origem_lead: v })}
-              />
+{leadOrigins.map((origem) => (
+  <option key={origem.id} value={origem.nome} style={OPTION_STYLE}>
+    {getOriginColorDot(origem.cor)} {origem.nome}
+  </option>
+))}
+</select>
+
+
+
 
               <Input
                 placeholder="Telefone WhatsApp (ex: 5511999999999)"
@@ -931,6 +1187,111 @@ export default function Pipeline() {
             </div>
           </div>
         )}
+
+
+                {showStageEditor && role === "owner" && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]">
+            <div className="bg-[#0f172a] border border-white/15 rounded-3xl w-[92%] max-w-[520px] p-8 space-y-5 shadow-[0_40px_120px_rgba(0,0,0,0.6)] text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-300">
+                    Editar etapa do pipeline
+                  </h3>
+                  <p className="text-sm text-white/55 mt-1">
+                    O status interno continua o mesmo. Você altera só nome e cor visual.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowStageEditor(false)}
+                  className="text-white/45 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-[0.14em] text-white/45">
+                  Etapa interna
+                </label>
+                <div className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white/70">
+                  {stageEditorForm.stage_key}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-[0.14em] text-white/45">
+                  Nome visual
+                </label>
+                <input
+                  value={stageEditorForm.label}
+                  onChange={(e) =>
+                    setStageEditorForm((prev) => ({
+                      ...prev,
+                      label: e.target.value,
+                    }))
+                  }
+                  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+                  placeholder="Ex: Aprovado"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-[0.14em] text-white/45">
+                  Cor visual
+                </label>
+                <select
+                  value={stageEditorForm.color}
+                  onChange={(e) =>
+                    setStageEditorForm((prev) => ({
+                      ...prev,
+                      color: e.target.value,
+                    }))
+                  }
+                  className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white outline-none"
+                >
+                  {STAGE_COLOR_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} style={OPTION_STYLE}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div
+                  className={`inline-flex px-4 py-2 rounded-xl bg-gradient-to-r ${getStageColorStyleByName(
+                    stageEditorForm.color
+                  )}`}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    {stageEditorForm.label || stageEditorForm.stage_key}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStageEditor(false)}
+                  className="px-5 py-2 rounded-xl border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={saveStageEditor}
+                  className="px-5 py-2 rounded-xl bg-cyan-600 text-white hover:bg-cyan-500"
+                >
+                  Salvar visual
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {showPerdaModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
@@ -1027,31 +1388,8 @@ export default function Pipeline() {
 }
 
 /* COLUMN */
-function Column({ id, title, children, count }: any) {
+function Column({ id, title, children, count, colorStyle }: any) {
   const { setNodeRef, isOver } = useDroppable({ id });
-
-  function getColumnStyle(columnId: string) {
-    switch (columnId) {
-      case "lead":
-        return "from-sky-600/40 to-sky-500/10 border-sky-400/40 text-sky-200";
-      case "proposta_enviada":
-        return "from-yellow-600/40 to-yellow-500/10 border-yellow-400/40 text-yellow-200";
-      case "aguardando_cliente":
-        return "from-purple-600/40 to-purple-500/10 border-purple-400/40 text-purple-200";
-      case "proposta_validada":
-        return "from-emerald-600/40 to-emerald-500/10 border-emerald-400/40 text-emerald-200";
-      case "andamento":
-        return "from-orange-600/40 to-orange-500/10 border-orange-400/40 text-orange-200";
-      case "concluido":
-        return "from-green-600/40 to-green-500/10 border-green-400/40 text-green-200";
-      case "perdido":
-        return "from-red-600/40 to-red-500/10 border-red-400/40 text-red-200";
-      default:
-        return "from-blue-600/40 to-blue-500/10 border-blue-400/40 text-blue-200";
-    }
-  }
-
-  const colorStyle = getColumnStyle(id);
 
   return (
     <div
@@ -1078,28 +1416,39 @@ function Column({ id, title, children, count }: any) {
         className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl bg-gradient-to-r ${colorStyle}`}
       />
 
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div
-            className={`
-              px-4 py-2
-              rounded-xl
-              bg-gradient-to-r
-              ${colorStyle}
-              backdrop-blur-md
-              shadow-inner
-            `}
-          >
-            <span className="text-xs font-semibold tracking-wide uppercase">
-              {title.replaceAll("_", " ")}
-            </span>
-          </div>
+<div className="flex items-center justify-between mb-6">
+  <div className="flex items-center gap-3">
+    <div
+      className={`
+        px-4 py-2
+        rounded-xl
+        bg-gradient-to-r
+        ${colorStyle}
+        backdrop-blur-md
+        shadow-inner
+      `}
+    >
+      <span className="text-xs font-semibold tracking-wide uppercase">
+        {title.replaceAll("_", " ")}
+      </span>
+    </div>
 
-          <div className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-xs font-medium text-white">
-            {count}
-          </div>
-        </div>
-      </div>
+    <div className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-xs font-medium text-white">
+      {count}
+    </div>
+  </div>
+
+  {typeof window !== "undefined" && (window as any).__PIPELINE_ROLE__ === "owner" && (
+    <button
+      type="button"
+      onClick={() => (window as any).__OPEN_PIPELINE_STAGE_EDITOR__?.(id)}
+      className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-cyan-300"
+      title="Editar etapa"
+    >
+      <Pencil size={14} />
+    </button>
+  )}
+</div>
 
       <div className="space-y-6 min-h-[50px]">{children}</div>
     </div>
@@ -1326,11 +1675,10 @@ function Card({
                 onChange={(v) => setLocal({ ...local, cliente: v })}
               />
 
-              <Input
-                placeholder="Origem do Lead"
-                value={local.origem_lead || ""}
-                onChange={(v) => setLocal({ ...local, origem_lead: v })}
-              />
+
+<div className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white/80">
+  {local.origem_lead || "Origem não informada"}
+</div>
 
               <Input
                 placeholder="Telefone WhatsApp"
