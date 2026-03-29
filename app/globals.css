@@ -61,3 +61,20 @@ body {
   width: 0;
   height: 0;
 }
+
+.pipeline-board-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.pipeline-board-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pipeline-board-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.6),
+    rgba(34, 211, 238, 0.6)
+  );
+  border-radius: 999px;
+}

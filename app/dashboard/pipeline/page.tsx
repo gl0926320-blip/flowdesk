@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase-browser";
 import {
   DollarSign,
   TrendingUp,
+  User,
   BarChart3,
   Layers,
   Trash2,
@@ -19,9 +20,13 @@ import {
 } from "lucide-react";
 import {
   DndContext,
+  DragOverlay,
+  PointerSensor,
   useDraggable,
   useDroppable,
   closestCorners,
+  useSensor,
+  useSensors,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -173,6 +178,16 @@ const [stageEditorForm, setStageEditorForm] = useState<{
   label: "",
   color: "sky",
 });
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const [form, setForm] = useState({
     cliente: "",
@@ -593,12 +608,23 @@ await loadPipelineStageSettings(companyUser.company_id);
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  function handleDragStart(event: any) {
+    setActiveDragId(String(event.active.id));
+  }
+
   function handleDragEnd(event: any) {
     const { active, over } = event;
+    setActiveDragId(null);
+
     if (!over) return;
+
     if (columns.includes(over.id)) {
-      atualizarItem(active.id, { status: over.id });
+      atualizarItem(String(active.id), { status: over.id });
     }
+  }
+
+  function handleDragCancel() {
+    setActiveDragId(null);
   }
 
   async function confirmarPerdaPipeline() {
@@ -844,6 +870,11 @@ async function saveStageEditor() {
     busca,
   ]);
 
+    const activeDragItem = useMemo(() => {
+    if (!activeDragId) return null;
+    return itensFiltrados.find((item) => item.id === activeDragId) || null;
+  }, [activeDragId, itensFiltrados]);
+
   const metrics = useMemo(() => {
     const ativos = itensFiltrados.filter((i) => i.ativo === true);
     const concluidos = ativos.filter((i) => i.status === "concluido");
@@ -932,7 +963,7 @@ async function saveStageEditor() {
     <div className="min-h-screen bg-[#0A0F1C] relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_60%)]" />
 
-      <div className="relative z-10 p-6 md:p-14 space-y-8 text-white">
+      <div className="relative z-10 p-4 md:p-6 xl:p-8 space-y-6 text-white">
         <div className="flex flex-col gap-6">
           <FiltroPeriodo
             filtro={filtro}
@@ -1003,7 +1034,7 @@ async function saveStageEditor() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
           <Metric icon={<Layers size={18} />} title="Total" value={metrics.total} />
           <Metric
             icon={<Thermometer size={18} />}
@@ -1016,7 +1047,7 @@ async function saveStageEditor() {
           <Metric icon={<TrendingUp size={18} />} title="Lucro" value={metrics.lucro} />
         </div>
 
-<div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
+<div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
   <div>
     <div className="flex items-center gap-3">
       <h2 className="text-3xl font-semibold tracking-[0.2em] uppercase text-blue-200">
@@ -1050,42 +1081,64 @@ async function saveStageEditor() {
 
 
 
-        <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-          <div className="flex flex-wrap gap-6 md:gap-10 pb-6 md:pb-10">
-     {columns.map((col) => {
-  const stageConfig = getStageSetting(col);
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <div className="pipeline-board-scroll overflow-x-auto overflow-y-hidden pb-4 scroll-smooth snap-x snap-mandatory">
+            <div className="flex items-start gap-5 px-1 min-w-max">
+              {columns.map((col) => {
+                const stageConfig = getStageSetting(col);
 
-  if (!stageConfig.isVisible) return null;
+                if (!stageConfig.isVisible) return null;
 
-  const itensDaColuna = itensFiltrados.filter(
-    (i) => i.status === col && i.ativo === true
-  );
+                const itensDaColuna = itensFiltrados.filter(
+                  (i) => i.status === col && i.ativo === true
+                );
 
-  return (
-    <Column
-      key={col}
-      id={col}
-      title={stageConfig.label}
-      count={itensDaColuna.length}
-      colorStyle={getStageColorStyleByName(stageConfig.color)}
-    >
-      {itensDaColuna.map((item) => (
-        <Card
-          key={item.id}
-          item={item}
-          expanded={expandedId === item.id}
-          toggleExpand={() =>
-            setExpandedId(expandedId === item.id ? null : item.id)
-          }
-          atualizarItem={atualizarItem}
-          deletar={deletar}
-          vendedores={vendedores}
-        />
-      ))}
-    </Column>
-  );
-})}
+                                const totalValue = itensDaColuna.reduce(
+                  (acc, item) => acc + Number(item.valor_orcamento || 0),
+                  0
+                );
+
+                return (
+                  <Column
+                    key={col}
+                    id={col}
+                    title={stageConfig.label}
+                    count={itensDaColuna.length}
+                    totalValue={totalValue}
+                    colorStyle={getStageColorStyleByName(stageConfig.color)}
+                  >
+                    {itensDaColuna.map((item) => (
+                      <Card
+                        key={item.id}
+                        item={item}
+                        expanded={expandedId === item.id}
+                        toggleExpand={() =>
+                          setExpandedId(expandedId === item.id ? null : item.id)
+                        }
+                        atualizarItem={atualizarItem}
+                        deletar={deletar}
+                        vendedores={vendedores}
+                        leadOrigins={leadOrigins}
+                        isActiveDragging={activeDragId === item.id}
+                      />
+                    ))}
+                  </Column>
+                );
+              })}
+            </div>
           </div>
+
+          <DragOverlay dropAnimation={null}>
+            {activeDragItem ? (
+              <DragCardPreview item={activeDragItem} />
+            ) : null}
+          </DragOverlay>
         </DndContext>
 
         {openModal && (
@@ -1383,74 +1436,165 @@ async function saveStageEditor() {
           </div>
         )}
       </div>
+
+              <style jsx global>{`
+        .pipeline-board-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(71, 85, 105, 0.7) transparent;
+        }
+
+        .pipeline-board-scroll::-webkit-scrollbar {
+          height: 10px;
+        }
+
+        .pipeline-board-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .pipeline-board-scroll::-webkit-scrollbar-thumb {
+          background: linear-gradient(
+            90deg,
+            rgba(59, 130, 246, 0.7),
+            rgba(34, 211, 238, 0.7)
+          );
+          border-radius: 999px;
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+
+        .pipeline-board-scroll::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(
+            90deg,
+            rgba(125, 211, 252, 0.9),
+            rgba(59, 130, 246, 0.95)
+          );
+        }
+
+        .pipeline-column-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(59, 130, 246, 0.7) transparent;
+        }
+
+        .pipeline-column-scroll::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        .pipeline-column-scroll::-webkit-scrollbar-thumb {
+          background: linear-gradient(
+            180deg,
+            rgba(59, 130, 246, 0.7),
+            rgba(34, 211, 238, 0.7)
+          );
+          border-radius: 999px;
+        }
+      `}</style>
+
     </div>
   );
 }
 
 /* COLUMN */
-function Column({ id, title, children, count, colorStyle }: any) {
+function Column({
+  id,
+  title,
+  children,
+  count,
+  totalValue,
+  colorStyle,
+}: any) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
     <div
       ref={setNodeRef}
       className={`
-        relative overflow-hidden
-        w-full sm:w-[48%] lg:w-[360px]
-        p-4 md:p-6
-        rounded-3xl
-        bg-[#0f172a]
-        border border-[#1e293b]
-        shadow-[0_15px_50px_rgba(0,0,0,0.6)]
+        relative overflow-hidden self-start snap-start
+        shrink-0 w-[270px] xl:w-[280px] 2xl:w-[290px]
+        p-3.5 md:p-4
+        rounded-[28px]
+        bg-[#0d1424]
+        border border-white/8
+        shadow-[0_12px_36px_rgba(0,0,0,0.38)]
         transition-all duration-300
         ${
           isOver
-            ? "scale-[1.02] border-blue-500 shadow-[0_20px_70px_rgba(59,130,246,0.3)]"
+            ? "border-cyan-300/60 bg-[#101a30] shadow-[0_0_0_1px_rgba(103,232,249,0.22),0_20px_60px_rgba(34,211,238,0.18)]"
             : ""
         }
       `}
     >
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+      <div className="absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_58%)] pointer-events-none" />
 
       <div
-        className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl bg-gradient-to-r ${colorStyle}`}
+        className={`absolute top-0 left-0 right-0 h-[3px] rounded-t-[28px] bg-gradient-to-r ${colorStyle}`}
       />
 
-<div className="flex items-center justify-between mb-6">
-  <div className="flex items-center gap-3">
-    <div
-      className={`
-        px-4 py-2
-        rounded-xl
-        bg-gradient-to-r
-        ${colorStyle}
-        backdrop-blur-md
-        shadow-inner
-      `}
-    >
-      <span className="text-xs font-semibold tracking-wide uppercase">
-        {title.replaceAll("_", " ")}
-      </span>
-    </div>
+      <div className="relative flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+            <div
+              className={`
+                px-3.5 py-2
+                rounded-xl
+                bg-gradient-to-r
+                ${colorStyle}
+                border border-white/10
+              `}
+            >
+              <span className="text-[11px] font-semibold tracking-[0.16em] uppercase">
+                {title.replaceAll("_", " ")}
+              </span>
+            </div>
 
-    <div className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-xs font-medium text-white">
-      {count}
-    </div>
-  </div>
+            <div className="px-2.5 py-1 rounded-lg bg-white/6 border border-white/10 text-[11px] font-medium text-white/90">
+              {count}
+            </div>
 
-  {typeof window !== "undefined" && (window as any).__PIPELINE_ROLE__ === "owner" && (
-    <button
-      type="button"
-      onClick={() => (window as any).__OPEN_PIPELINE_STAGE_EDITOR__?.(id)}
-      className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-cyan-300"
-      title="Editar etapa"
-    >
-      <Pencil size={14} />
-    </button>
-  )}
-</div>
+            <div
+              className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium ${
+                Number(totalValue || 0) > 0
+                  ? "bg-emerald-500/10 border-emerald-400/20 text-emerald-300"
+                  : "bg-white/[0.03] border-white/8 text-white/35"
+              }`}
+            >
+              {formatMoney(Number(totalValue || 0))}
+            </div>
+          </div>
+        </div>
 
-      <div className="space-y-6 min-h-[50px]">{children}</div>
+        {typeof window !== "undefined" &&
+          (window as any).__PIPELINE_ROLE__ === "owner" && (
+            <button
+              type="button"
+              onClick={() => (window as any).__OPEN_PIPELINE_STAGE_EDITOR__?.(id)}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-cyan-300 transition shrink-0"
+              title="Editar etapa"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+      </div>
+
+      {count === 0 ? (
+        <div className="relative overflow-hidden rounded-2xl border border-dashed border-white/10 bg-white/[0.025] px-3 py-3 min-h-[74px]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.05),transparent_65%)] pointer-events-none" />
+
+          <div className="relative flex h-full min-h-[48px] flex-col justify-center">
+            <span className="text-[12px] font-medium text-white/55">
+              Nenhuma oportunidade nesta etapa
+            </span>
+            <span className="mt-1 text-[11px] text-white/28">
+              Arraste um lead para começar
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="relative">
+          <div className="pipeline-column-scroll max-h-[calc(100vh-320px)] overflow-y-auto pr-2 space-y-4">
+            {children}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1463,6 +1607,8 @@ function Card({
   atualizarItem,
   deletar,
   vendedores,
+  leadOrigins,
+  isActiveDragging = false,
 }: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -1592,25 +1738,28 @@ function Card({
         backdrop-blur-2xl
         bg-white/5
         border border-white/10
-        shadow-[0_20px_60px_rgba(0,0,0,0.6)]
-        hover:shadow-[0_25px_80px_rgba(59,130,246,0.15)]
+        shadow-[0_14px_34px_rgba(0,0,0,0.34)]
+        hover:shadow-[0_18px_40px_rgba(15,23,42,0.42)]
         transition-all duration-300
-        hover:scale-[1.04]
-        hover:-translate-y-1
+        hover:scale-[1.01]
+        hover:-translate-y-0.5
         ${item.ativo === false ? "bg-red-900/20 border-red-500/30 opacity-60" : ""}
-        ${isDragging ? "scale-[1.06] rotate-1 shadow-[0_40px_100px_rgba(0,0,0,0.8)]" : ""}
+        ${isActiveDragging ? "opacity-25 scale-[0.98]" : ""}
+        ${isDragging ? "scale-[1.02] rotate-[0.4deg] shadow-[0_28px_60px_rgba(0,0,0,0.45)]" : ""}
       `}
     >
       <div {...listeners} {...attributes} className="cursor-grab font-medium">
         <div className="flex justify-between gap-3">
           <div className="min-w-0">
-            <span className="font-semibold block truncate">{item.cliente}</span>
+            <span className="font-semibold block truncate text-[13px] leading-tight">
+  {item.cliente}
+</span>
 
-            <div className="text-[11px] text-blue-200/70 mt-1 truncate">
+            <div className="text-[10px] text-blue-200/70 mt-1 truncate leading-tight">
               {item.tipo_servico || "Sem serviço definido"}
             </div>
 
-            <div className="text-[11px] text-cyan-300/80 mt-1 truncate flex items-center gap-1">
+            <div className="text-[10px] text-cyan-300/80 mt-1 truncate flex items-center gap-1 leading-tight">
               <MapPinned size={12} />
               {item.origem_lead || "Origem não informada"}
             </div>
@@ -1621,7 +1770,7 @@ function Card({
           </span>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
           <span className="text-purple-300">
             Comissão: {formatMoney(Number(item.valor_comissao_calculado || 0))}
           </span>
@@ -1630,11 +1779,11 @@ function Card({
           </span>
         </div>
 
-        <div className="text-xs text-emerald-400 mt-2">
+        <div className="text-[11px] text-emerald-400 mt-1.5">
           Lucro: {formatMoney(lucro)}
         </div>
 
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
           <span
             className={`px-2 py-1 rounded-lg border text-[11px] font-semibold ${
               temperatura === "frio"
@@ -1651,11 +1800,12 @@ function Card({
               : "Morno"}
           </span>
 
-          {item.responsavel && (
-            <span className="px-2 py-1 rounded-lg border border-white/10 bg-white/5 text-[11px] text-white/80 truncate max-w-full">
-              {item.responsavel}
-            </span>
-          )}
+{item.responsavel && (
+  <span className="px-2 py-1 rounded-lg border border-white/10 bg-white/5 text-[11px] text-white/80 truncate max-w-full flex items-center gap-1">
+    <User size={12} className="opacity-70" />
+    {item.responsavel}
+  </span>
+)}
         </div>
       </div>
 
@@ -1744,12 +1894,15 @@ function Card({
                   </p>
                 </div>
 
-                <div className="bg-white/5 rounded-xl p-3 min-w-0">
-                  <p className="text-[11px] text-gray-400">Telefone</p>
-                  <p className="break-all text-sm leading-snug">
-                    {item.telefone || "Não informado"}
-                  </p>
-                </div>
+<div className="bg-white/5 rounded-xl p-3 min-w-0">
+  <p className="text-[11px] text-gray-400 flex items-center gap-1">
+    <MessageCircle size={12} className="opacity-70" />
+    Telefone
+  </p>
+  <p className="break-all text-sm leading-snug">
+    {item.telefone || "Não informado"}
+  </p>
+</div>
 
                 <div className="bg-white/5 rounded-xl p-3 min-w-0">
                   <p className="text-[11px] text-gray-400">Temperatura</p>
@@ -1782,13 +1935,24 @@ function Card({
                     {formatMoney(Number(item.valor_comissao_calculado || 0))}
                   </p>
                 </div>
+<div className="bg-white/5 rounded-xl p-3 sm:col-span-2 min-w-0">
+  <p className="text-[11px] text-gray-400 flex items-center gap-1">
+    <MapPinned size={12} className="opacity-70" />
+    Origem do Lead
+  </p>
 
-                <div className="bg-white/5 rounded-xl p-3 sm:col-span-2 min-w-0">
-                  <p className="text-[11px] text-gray-400">Origem do Lead</p>
-                  <p className="break-words text-sm leading-snug">
-                    {item.origem_lead || "Não informada"}
-                  </p>
-                </div>
+  <div className="mt-1 flex items-center gap-2 flex-wrap">
+    <span className="text-base">
+{getOriginColorDot(
+  leadOrigins?.find((o: { nome: string; cor?: string | null }) => o.nome === item.origem_lead)?.cor
+)}
+    </span>
+
+    <span className="text-sm text-white">
+      {item.origem_lead || "Não informada"}
+    </span>
+  </div>
+</div>
               </div>
 
               <div className="bg-white/5 rounded-xl p-3">
@@ -1901,8 +2065,89 @@ function Metric({ icon, title, value }: any) {
         <span>{title}</span>
         <span className="text-blue-400">{icon}</span>
       </div>
-
+         
       <div className="mt-4 text-3xl font-bold text-cyan-400">{value}</div>
+    </div>
+  );
+}
+
+function DragCardPreview({ item }: any) {
+  const temperatura = item.temperatura || "morno";
+
+  return (
+    <div
+      className="
+        w-[270px]
+        rounded-2xl
+        border border-cyan-300/35
+        bg-[#1a2438]/95
+        backdrop-blur-xl
+        text-white
+        p-4
+        shadow-[0_24px_80px_rgba(0,0,0,0.45)]
+        ring-1 ring-cyan-300/15
+        rotate-[1deg]
+        scale-[1.02]
+        pointer-events-none
+      "
+    >
+      <div className="flex justify-between gap-3">
+        <div className="min-w-0">
+          <span className="font-semibold block truncate text-[13px] leading-tight">
+            {item.cliente}
+          </span>
+
+          <div className="text-[10px] text-blue-200/70 mt-1 truncate leading-tight">
+            {item.tipo_servico || "Sem serviço definido"}
+          </div>
+
+          <div className="text-[10px] text-cyan-300/80 mt-1 truncate flex items-center gap-1 leading-tight">
+            <MapPinned size={12} />
+            {item.origem_lead || "Origem não informada"}
+          </div>
+        </div>
+
+        <span className="text-blue-400 font-semibold whitespace-nowrap">
+          {formatMoney(Number(item.valor_orcamento || 0))}
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+        <span className="text-purple-300">
+          Comissão: {formatMoney(Number(item.valor_comissao_calculado || 0))}
+        </span>
+        <span className="text-yellow-300">
+          {Number(item.percentual_comissao_calculado || 0).toFixed(1)}%
+        </span>
+      </div>
+
+      <div className="text-[11px] text-emerald-400 mt-1.5">
+        Lucro: {formatMoney(Number(item.lucro_calculado || 0))}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mt-2.5">
+        <span
+          className={`px-2 py-1 rounded-lg border text-[11px] font-semibold ${
+            temperatura === "frio"
+              ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+              : temperatura === "quente"
+              ? "bg-red-500/20 text-red-300 border-red-500/40"
+              : "bg-yellow-500/20 text-yellow-300 border-yellow-500/40"
+          }`}
+        >
+          {temperatura === "frio"
+            ? "Frio"
+            : temperatura === "quente"
+            ? "Quente"
+            : "Morno"}
+        </span>
+
+        {item.responsavel && (
+          <span className="px-2 py-1 rounded-lg border border-white/10 bg-white/5 text-[11px] text-white/80 truncate max-w-full">
+            {item.responsavel}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

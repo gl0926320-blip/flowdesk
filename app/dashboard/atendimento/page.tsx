@@ -277,6 +277,57 @@ function formatRelative(value?: string | null) {
   return `${Math.floor(minutes / 1440)} d`;
 }
 
+function getSlaInfo(value?: string | null) {
+  if (!value) {
+    return {
+      label: "sem atividade",
+      color: "text-slate-400",
+      level: "none" as const,
+    };
+  }
+
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.floor(diff / 60000);
+
+  if (minutes < 5) {
+    return {
+      label: "agora",
+      color: "text-emerald-400",
+      level: "good" as const,
+    };
+  }
+
+  if (minutes < 15) {
+    return {
+      label: `${minutes} min`,
+      color: "text-yellow-400",
+      level: "warning" as const,
+    };
+  }
+
+  if (minutes < 60) {
+    return {
+      label: `${minutes} min`,
+      color: "text-orange-400",
+      level: "alert" as const,
+    };
+  }
+
+  if (minutes < 1440) {
+    return {
+      label: `${Math.floor(minutes / 60)} h`,
+      color: "text-red-400",
+      level: "critical" as const,
+    };
+  }
+
+  return {
+    label: `${Math.floor(minutes / 1440)} d`,
+    color: "text-red-400",
+    level: "critical" as const,
+  };
+}
+
 function getTemperatureBadge(value?: string | null) {
   const temp = (value || "").toLowerCase();
 
@@ -300,6 +351,29 @@ function stageToStatus(stage: ConversationStage): ConversationStatus {
   if (stage === "concluido" || stage === "perdido") return "closed";
   if (stage === "lead") return "queue";
   return "in_progress";
+}
+
+function getConversationStatusMeta(item: ConversationRow) {
+  const stage = getEffectiveStage(item);
+
+  if (item.status === "closed" || stage === "concluido" || stage === "perdido") {
+    return {
+      label: "Finalizado",
+      className: "border-slate-500/25 bg-slate-500/12 text-slate-300",
+    };
+  }
+
+  if (item.status === "in_progress" || !!item.assigned_to) {
+    return {
+      label: "Em atendimento",
+      className: "border-emerald-500/25 bg-emerald-500/12 text-emerald-300",
+    };
+  }
+
+  return {
+    label: "Fila",
+    className: "border-blue-500/25 bg-blue-500/12 text-blue-300",
+  };
 }
 
 function maskToken(value?: string | null) {
@@ -357,6 +431,9 @@ export default function AtendimentoPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingConnection, setSavingConnection] = useState(false);
+  const [removingConnection, setRemovingConnection] = useState(false);
+  const [showRemoveConnectionConfirm, setShowRemoveConnectionConfirm] =
+    useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string>("Atendente");
@@ -377,6 +454,7 @@ export default function AtendimentoPage() {
   const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
 
   const [apiOpen, setApiOpen] = useState(false);
+  const [showAdvancedApi, setShowAdvancedApi] = useState(false);
   const [pageError, setPageError] = useState<string>("");
   const [pageSuccess, setPageSuccess] = useState<string>("");
 
@@ -400,6 +478,9 @@ export default function AtendimentoPage() {
     !!connectionForm.verify_token.trim() &&
     !!connectionForm.access_token.trim();
 
+      const hasActiveConnection = connection?.status === "connected";
+
+    
   useEffect(() => {
     bootstrap();
   }, []);
@@ -474,6 +555,17 @@ export default function AtendimentoPage() {
   function clearNotices() {
     setPageError("");
     setPageSuccess("");
+  }
+
+    function resetConnectionForm() {
+    setConnectionForm({
+      connection_name: "WhatsApp Principal",
+      phone_number: "",
+      phone_number_id: "",
+      business_account_id: "",
+      access_token: "",
+      verify_token: "",
+    });
   }
 
   async function bootstrap() {
@@ -626,7 +718,9 @@ export default function AtendimentoPage() {
 
       if (row.status === "connected") {
         setApiOpen(false);
+        setShowAdvancedApi(false);
       }
+
     } else {
       setApiOpen(true);
     }
@@ -719,6 +813,44 @@ export default function AtendimentoPage() {
       setPageError("Falha inesperada ao salvar a conexão.");
     } finally {
       setSavingConnection(false);
+    }
+  }
+
+    async function removeConnection() {
+    if (!companyId || !connection?.id) {
+      setPageError("Nenhuma conexão encontrada para remover.");
+      return;
+    }
+
+    clearNotices();
+    setRemovingConnection(true);
+
+    try {
+      const { error } = await supabase
+        .from("whatsapp_connections")
+        .delete()
+        .eq("id", connection.id)
+        .eq("company_id", companyId);
+
+      if (error) {
+        console.error("Erro ao remover conexão:", error);
+        setPageError(`Erro ao remover conexão: ${error.message}`);
+        return;
+      }
+
+      setConnection(null);
+      resetConnectionForm();
+      setShowAdvancedApi(false);
+      setShowRemoveConnectionConfirm(false);
+      setApiOpen(true);
+      setSelectedId(null);
+      setPageError("");
+      setPageSuccess("Conexão removida com sucesso.");
+    } catch (error) {
+      console.error("Falha inesperada ao remover conexão:", error);
+      setPageError("Falha inesperada ao remover a conexão.");
+    } finally {
+      setRemovingConnection(false);
     }
   }
 
@@ -1029,28 +1161,47 @@ export default function AtendimentoPage() {
     }
   }
 
-  const searched = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return conversations;
+const searched = useMemo(() => {
+  const term = search.trim().toLowerCase();
 
-    return conversations.filter((item) => {
-      const haystack = [
-        item.client_name || "",
-        item.client_phone || "",
-        item.client_email || "",
-        item.subject || "",
-        item.last_message || "",
-        item.assigned_to_name || "",
-        item.lead_source || "",
-        item.temperature || "",
-        ...(item.tags || []),
-      ]
-        .join(" ")
-        .toLowerCase();
+  const base = conversations.filter((item) => {
+    if (!term) return true;
 
-      return haystack.includes(term);
-    });
-  }, [conversations, search]);
+    const haystack = [
+      item.client_name || "",
+      item.client_phone || "",
+      item.client_email || "",
+      item.subject || "",
+      item.last_message || "",
+      item.assigned_to_name || "",
+      item.lead_source || "",
+      item.temperature || "",
+      ...(item.tags || []),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(term);
+  });
+
+  return [...base].sort((a, b) => {
+    const aUnassigned = !a.assigned_to ? 1 : 0;
+    const bUnassigned = !b.assigned_to ? 1 : 0;
+
+    if (aUnassigned !== bUnassigned) {
+      return bUnassigned - aUnassigned;
+    }
+
+    const aTime = a.last_message_at
+      ? new Date(a.last_message_at).getTime()
+      : 0;
+    const bTime = b.last_message_at
+      ? new Date(b.last_message_at).getTime()
+      : 0;
+
+    return aTime - bTime;
+  });
+}, [conversations, search]);
 
   const queueItems = useMemo(
     () =>
@@ -1196,7 +1347,7 @@ export default function AtendimentoPage() {
                 >
                   {connection?.status === "connected"
                     ? "API conectada"
-                    : "API não configurada"}
+                    : "API desconectada"}
                 </span>
 
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-300">
@@ -1209,11 +1360,10 @@ export default function AtendimentoPage() {
               </div>
 
               <h1 className="mt-3 text-3xl font-black tracking-wide text-white md:text-4xl">
-                ATENDIMENTO PREMIUM
+                CENTRAL DE ATENDIMENTO
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-300 md:text-[15px]">
-                Central multiatendente com fila geral, minha fila, ativos e
-                kanban comercial.
+                Atendimento oficial com fila geral, operadores, etapas comerciais e conexão da API do WhatsApp da própria empresa.
               </p>
             </div>
 
@@ -1255,14 +1405,61 @@ export default function AtendimentoPage() {
             </div>
           </div>
 
+          {!hasActiveConnection && (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div className="text-sm text-amber-200">
+                  <div className="font-semibold">WhatsApp desconectado</div>
+                  <div className="mt-1 text-amber-100/80">
+                    O histórico continua disponível, mas a empresa precisa reconectar a API para voltar a responder clientes.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setApiOpen(true);
+                  setShowAdvancedApi(true);
+                  setPageError("");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Reconectar
+              </button>
+            </div>
+          )}
+
           {(pageError || pageSuccess) && (
             <div className="mt-4 space-y-2">
-              {pageError && (
-                <div className="flex items-start gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{pageError}</span>
+          {!hasActiveConnection && (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div className="text-sm text-amber-200">
+                  <div className="font-semibold">WhatsApp desconectado</div>
+                  <div className="mt-1 text-amber-100/80">
+                    O histórico continua disponível, mas a empresa precisa reconectar a API para voltar a responder clientes.
+                  </div>
                 </div>
-              )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setApiOpen(true);
+                  setShowAdvancedApi(true);
+                  setPageError("");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Reconectar
+              </button>
+            </div>
+          )}
 
               {pageSuccess && (
                 <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
@@ -1292,150 +1489,386 @@ export default function AtendimentoPage() {
               Atualizar
             </button>
 
-            <button
-              onClick={() => setApiOpen((prev) => !prev)}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/15"
-            >
-              <Settings2 className="h-4 w-4" />
-              {apiOpen ? "Ocultar API" : "Configurar API"}
-              {apiOpen ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </button>
-          </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => {
+                  const nextOpen = !apiOpen;
+                  setApiOpen(nextOpen);
 
-          {apiOpen && (
-            <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-cyan-300" />
-                <h2 className="text-sm font-semibold text-white">
-                  Configuração da WhatsApp Cloud API
-                </h2>
-              </div>
+                  if (!hasActiveConnection && nextOpen) {
+                    setShowAdvancedApi(true);
+                    setPageError("");
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/15"
+              >
+                <MessageCircle className="h-4 w-4" />
+                {hasActiveConnection
+                  ? apiOpen
+                    ? "Fechar conexão"
+                    : "Gerenciar conexão"
+                  : apiOpen
+                  ? "Fechar conexão"
+                  : "Conectar WhatsApp"}
+                {apiOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
 
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                <InputField
-                  label="Nome da conexão"
-                  value={connectionForm.connection_name}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      connection_name: value,
-                    }))
-                  }
-                  placeholder="WhatsApp Principal"
-                />
-                <InputField
-                  label="Número conectado"
-                  value={connectionForm.phone_number}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      phone_number: value,
-                    }))
-                  }
-                  placeholder="+55 11 99999-9999"
-                />
-                <InputField
-                  label="Phone Number ID"
-                  value={connectionForm.phone_number_id}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      phone_number_id: value,
-                    }))
-                  }
-                  placeholder="123456789012345"
-                />
-                <InputField
-                  label="Business Account ID"
-                  value={connectionForm.business_account_id}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      business_account_id: value,
-                    }))
-                  }
-                  placeholder="WABA ID"
-                />
-                <InputField
-                  label="Verify Token"
-                  value={connectionForm.verify_token}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      verify_token: value,
-                    }))
-                  }
-                  placeholder="token de verificação do webhook"
-                />
-                <InputField
-                  label="Access Token"
-                  value={connectionForm.access_token}
-                  onChange={(value) =>
-                    setConnectionForm((prev) => ({
-                      ...prev,
-                      access_token: value,
-                    }))
-                  }
-                  placeholder="token da Meta"
-                  type="password"
-                />
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
-                <StatusMini
-                  label="Status"
-                  value={
-                    connection?.status === "connected"
-                      ? "API conectada"
-                      : isConnectionReady
-                      ? "Pronta para salvar"
-                      : "Campos obrigatórios pendentes"
-                  }
-                  tone={
-                    connection?.status === "connected"
-                      ? "success"
-                      : isConnectionReady
-                      ? "info"
-                      : "warning"
-                  }
-                />
-                <StatusMini
-                  label="Token"
-                  value={maskToken(connectionForm.access_token)}
-                  tone="neutral"
-                />
-                <StatusMini
-                  label="Webhook esperado"
-                  value="/api/whatsapp/webhook"
-                  tone="info"
-                />
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  onClick={saveConnection}
-                  disabled={savingConnection}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:opacity-60"
+              {connection?.id && (
+  <button
+                  type="button"
+                  onClick={() => setShowRemoveConnectionConfirm(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/15"
                 >
-                  {savingConnection ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  Salvar conexão
+                  <X className="h-4 w-4" />
+                  Remover conexão
                 </button>
+              )}
+            </div>
+          </div>
+                        {apiOpen && (
+            <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-5">
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                <div className="max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-cyan-300" />
+                    <h2 className="text-sm font-semibold text-white">
+                      Conexão oficial do WhatsApp
+                    </h2>
+                  </div>
 
-                <div className="text-xs text-slate-400">
-                  Após salvar, o status precisa ficar como{" "}
-                  <span className="text-emerald-300">API conectada</span>.
+                  <h3 className="mt-3 text-2xl font-bold text-white">
+                    Conecte o número da empresa
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Centralize conversas, assuma atendimentos, mova etapas do funil
+                    e responda clientes usando a API oficial do WhatsApp Cloud.
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <StatusMini
+                      label="Status da conexão"
+                      value={
+                        connection?.status === "connected"
+                          ? "WhatsApp conectado"
+                          : isConnectionReady
+                          ? "Pronto para conectar"
+                          : "Configuração pendente"
+                      }
+                      tone={
+                        connection?.status === "connected"
+                          ? "success"
+                          : isConnectionReady
+                          ? "info"
+                          : "warning"
+                      }
+                    />
+
+                    <StatusMini
+                      label="Número"
+                      value={
+                        connectionForm.phone_number
+                          ? connectionForm.phone_number
+                          : "Não informado"
+                      }
+                      tone="neutral"
+                    />
+
+                    <StatusMini
+                      label="Webhook"
+                      value="/api/whatsapp/webhook"
+                      tone="info"
+                    />
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Conexão atual
+                        </p>
+                        <p className="mt-2 text-base font-semibold text-white">
+                          {connectionForm.connection_name || "WhatsApp Principal"}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {connectionForm.phone_number
+                            ? connectionForm.phone_number
+                            : "Nenhum número conectado ainda"}
+                        </p>
+                      </div>
+
+                      <div
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold",
+                          connection?.status === "connected"
+                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                            : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                        )}
+                      >
+                        {connection?.status === "connected" ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4" />
+                        )}
+                        {connection?.status === "connected"
+                          ? "Conectado"
+                          : "Pendente"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Etapas para conectar
+                    </p>
+
+                    <div className="mt-3 space-y-2 text-sm text-slate-300">
+                      <div className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
+                        <span>Defina o nome da conexão e o número principal da empresa.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
+                        <span>Preencha os dados da Meta na configuração avançada.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
+                        <span>Salve a conexão para ativar o atendimento oficial.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full max-w-[360px] rounded-[24px] border border-cyan-500/15 bg-[linear-gradient(180deg,rgba(8,15,35,0.95),rgba(14,24,48,0.95))] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                    Ação principal
+                  </p>
+
+                  <h4 className="mt-3 text-lg font-bold text-white">
+                    {hasActiveConnection
+                      ? "Canal conectado"
+                      : "Conecte seu WhatsApp"}
+                  </h4>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    {hasActiveConnection
+                      ? "O canal oficial da empresa está ativo e pronto para operar dentro da central."
+                      : "Reconecte o canal da empresa para liberar atendimento, resposta e operação completa pela API oficial."}
+                  </p>
+
+                  <div className="mt-4 flex flex-col gap-3">
+                    <button
+                      onClick={saveConnection}
+                      disabled={savingConnection}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:opacity-60"
+                    >
+                      {savingConnection ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      {hasActiveConnection
+                        ? "Salvar ajustes"
+                        : "Reconectar WhatsApp"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedApi((prev) => !prev)}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10"
+                    >
+                      <Settings2 className="h-4 w-4" />
+                      {showAdvancedApi
+                        ? "Ocultar configuração avançada"
+                        : "Mostrar configuração avançada"}
+                    </button>
+
+                    {connection?.id && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRemoveConnectionConfirm(true)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/15"
+                      >
+                        <X className="h-4 w-4" />
+                        Remover conexão
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <p className="text-[11px] text-slate-400">Token atual</p>
+                    <p className="mt-1 text-sm text-white">
+                      {maskToken(connectionForm.access_token)}
+                    </p>
+                  </div>
+
+                  {connection?.id && (
+                    <div className="mt-3 rounded-2xl border border-red-500/15 bg-red-500/5 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-300">
+                        Zona de risco
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-slate-300">
+                        Remover a conexão desativa o uso da API oficial nesta empresa até uma nova configuração.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {showAdvancedApi && (
+                <div className="mt-5 rounded-[24px] border border-white/10 bg-[rgba(255,255,255,0.02)] p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">
+                        Configuração avançada da Meta
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Área técnica para integrador ou administrador configurar os dados oficiais.
+                      </p>
+                    </div>
+
+                    <div className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-300">
+                      Modo avançado
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                    <InputField
+                      label="Nome da conexão"
+                      value={connectionForm.connection_name}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          connection_name: value,
+                        }))
+                      }
+                      placeholder="WhatsApp Principal"
+                    />
+
+                    <InputField
+                      label="Número conectado"
+                      value={connectionForm.phone_number}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          phone_number: value,
+                        }))
+                      }
+                      placeholder="+55 11 99999-9999"
+                    />
+
+                    <InputField
+                      label="Phone Number ID"
+                      value={connectionForm.phone_number_id}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          phone_number_id: value,
+                        }))
+                      }
+                      placeholder="123456789012345"
+                    />
+
+                    <InputField
+                      label="Business Account ID"
+                      value={connectionForm.business_account_id}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          business_account_id: value,
+                        }))
+                      }
+                      placeholder="WABA ID"
+                    />
+
+                    <InputField
+                      label="Verify Token"
+                      value={connectionForm.verify_token}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          verify_token: value,
+                        }))
+                      }
+                      placeholder="token de verificação do webhook"
+                    />
+
+                    <InputField
+                      label="Access Token"
+                      value={connectionForm.access_token}
+                      onChange={(value) =>
+                        setConnectionForm((prev) => ({
+                          ...prev,
+                          access_token: value,
+                        }))
+                      }
+                      placeholder="token da Meta"
+                      type="password"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+                    {showRemoveConnectionConfirm && (
+            <div className="mt-5 rounded-[24px] border border-red-500/20 bg-[rgba(127,29,29,0.12)] p-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-red-300" />
+                    <h3 className="text-sm font-semibold text-white">
+                      Confirmar remoção da conexão
+                    </h3>
+                  </div>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    Você está prestes a remover a conexão oficial do WhatsApp desta empresa.
+                    Depois disso, o atendimento via API ficará indisponível até que uma nova conexão seja configurada.
+                  </p>
+
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <p className="text-[11px] text-slate-400">Conexão selecionada</p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {connectionForm.connection_name || "WhatsApp Principal"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {connectionForm.phone_number || "Sem número configurado"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex w-full max-w-[340px] flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={removeConnection}
+                    disabled={removingConnection}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {removingConnection ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <X className="h-4 w-4" />
+                    )}
+                    Confirmar remoção
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowRemoveConnectionConfirm(false)}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             </div>
           )}
+       
         </div>
       </div>
 
@@ -1738,7 +2171,8 @@ export default function AtendimentoPage() {
                       {!selectedConversation.assigned_to ? (
                         <button
                           onClick={() => assumeConversation(selectedConversation.id)}
-                          className="rounded-2xl bg-cyan-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
+                          disabled={!hasActiveConnection}
+                          className="rounded-2xl bg-cyan-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Assumir atendimento
                         </button>
@@ -2017,6 +2451,7 @@ export default function AtendimentoPage() {
                     <button
                       onClick={sendMessage}
                       disabled={
+                        !hasActiveConnection ||
                         sending ||
                         (!messageText.trim() && attachments.length === 0)
                       }
@@ -2045,8 +2480,16 @@ export default function AtendimentoPage() {
                 />
 
                 <p className="mt-2 text-xs text-slate-500">
-                  O envio de texto continua usando{" "}
-                  <span className="text-cyan-300">/api/whatsapp/send</span>.
+                  {hasActiveConnection ? (
+                    <>
+                      O envio de texto continua usando{" "}
+                      <span className="text-cyan-300">/api/whatsapp/send</span>.
+                    </>
+                  ) : (
+                    <>
+                      A conexão oficial do WhatsApp está desativada. Reconecte a empresa para voltar a enviar mensagens.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -2428,115 +2871,108 @@ function ConversationInboxCard({
   assignedName?: string;
   assignedEmail?: string;
 }) {
-  const stage = getEffectiveStage(item);
-  const isQueue =
-    !item.assigned_to && (item.status === "queue" || stage === "lead");
+  
+ const stage = getEffectiveStage(item);
+const statusMeta = getConversationStatusMeta(item);
 
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full rounded-[24px] border p-4 text-left transition",
-        active
-          ? "border-cyan-500/30 bg-[linear-gradient(180deg,rgba(34,211,238,0.14),rgba(34,211,238,0.06))] shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
-          : "border-white/10 bg-white/5 hover:bg-white/10"
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <AvatarBubble
-          name={item.client_name}
-          avatarUrl={item.avatar_url}
-          size="md"
-          showWhatsapp
-        />
+return (
+  <button
+    onClick={onClick}
+    className={cn(
+      "w-full rounded-[24px] border p-4 text-left transition",
+      active
+        ? "border-cyan-500/30 bg-[linear-gradient(180deg,rgba(34,211,238,0.14),rgba(34,211,238,0.06))] shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
+        : "border-white/10 bg-white/5 hover:bg-white/10"
+    )}
+  >
+    <div className="flex items-start gap-3">
+      <AvatarBubble
+        name={item.client_name}
+        avatarUrl={item.avatar_url}
+        size="md"
+        showWhatsapp
+      />
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-white">
-                {item.client_name || "Sem nome"}
-              </div>
-              <div className="mt-1 text-xs text-slate-400">
-                {formatPhone(item.client_phone)}
-              </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-white">
+              {item.client_name || "Sem nome"}
             </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {formatPhone(item.client_phone)}
+            </div>
+          </div>
 
-            <div className="shrink-0 text-right">
-              <div className="text-[11px] text-slate-400">
-                {formatRelative(item.last_message_at || item.updated_at)}
-              </div>
-              {!!item.unread_count && item.unread_count > 0 && (
-                <div className="mt-1 inline-flex rounded-full bg-cyan-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                  {item.unread_count}
+          <div className="shrink-0 text-right">
+            {(() => {
+              const sla = getSlaInfo(item.last_message_at || item.updated_at);
+
+              return (
+                <div className={`text-[11px] font-semibold ${sla.color}`}>
+                  ⏱ {sla.label}
                 </div>
-              )}
-            </div>
-          </div>
+              );
+            })()}
 
-          <div className="mt-3">
-            <p className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-300">
-              {item.last_message || item.subject || "Sem mensagem recente"}
-            </p>
+            {!!item.unread_count && item.unread_count > 0 && (
+              <div className="mt-1 inline-flex rounded-full bg-cyan-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                {item.unread_count}
+              </div>
+            )}
           </div>
+        </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3">
+          <p className="overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-300">
+            {item.last_message || item.subject || "Sem mensagem recente"}
+          </p>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+              statusMeta.className
+            )}
+          >
+            {statusMeta.label}
+          </span>
+
+          <span
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+              STAGE_BADGES[stage]
+            )}
+          >
+            {STAGE_LABELS[stage]}
+          </span>
+
+          {item.temperature && (
             <span
               className={cn(
                 "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                isQueue
-                  ? "border-blue-500/25 bg-blue-500/12 text-blue-300"
-                  : STAGE_BADGES[stage]
-              )}
-            >
-              {isQueue ? "Fila geral" : STAGE_LABELS[stage]}
-            </span>
-
-            <span
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[11px] font-medium",
                 getTemperatureBadge(item.temperature)
               )}
             >
-              {item.temperature || "Morno"}
+              {item.temperature}
             </span>
-
-            {assignedName && (
-              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
-                {assignedName}
-              </span>
-            )}
-          </div>
-
-          {(assignedName || assignedEmail) && (
-            <div className="mt-2 space-y-1">
-              {assignedName && (
-                <div className="text-[11px] text-slate-400">
-                  Assumido por{" "}
-                  <span className="font-medium text-slate-200">
-                    {assignedName}
-                  </span>
-                </div>
-              )}
-              {assignedEmail && (
-                <div className="truncate text-[11px] text-slate-500">
-                  {assignedEmail}
-                </div>
-              )}
-            </div>
           )}
+        </div>
 
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="text-[11px] text-slate-500">
-              {item.lead_source || "WhatsApp"}
-            </div>
-            <div className="text-sm font-bold text-cyan-300">
-              {formatCurrency(item.amount)}
-            </div>
+        <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+          <div className="min-w-0 truncate">
+            {assignedName ? `Responsável: ${assignedName}` : "Sem responsável"}
+          </div>
+          <div className="truncate">
+            {item.lead_source || assignedEmail || "Origem não informada"}
           </div>
         </div>
       </div>
-    </button>
-  );
+    </div>
+  </button>
+);
+
 }
 
 function AvatarBubble({
