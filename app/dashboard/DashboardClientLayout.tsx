@@ -160,6 +160,10 @@ export default function DashboardLayout({
 
   async function carregarPlanoEMembership() {
     setLoadedMembership(false);
+    
+    setCanAccessAtendimento(false);
+setCanAccessCampanhas(false);
+setCanAccessEstoque(false);
 
     const {
       data: { session },
@@ -212,20 +216,20 @@ export default function DashboardLayout({
     setLoadedMembership(true);
   }
 
-  useEffect(() => {
-    carregarPlanoEMembership();
+useEffect(() => {
+  carregarPlanoEMembership();
 
-    const savedSidebar = localStorage.getItem("flowdesk_sidebar_collapsed");
-    if (savedSidebar === "true") {
-      setIsSidebarCollapsed(true);
-    }
+  const savedSidebar = localStorage.getItem("flowdesk_sidebar_collapsed");
+  if (savedSidebar === "true") {
+    setIsSidebarCollapsed(true);
+  }
 
-    const onFocus = () => carregarPlanoEMembership();
+  const onFocus = () => carregarPlanoEMembership();
 
-    window.addEventListener("focus", onFocus);
+  window.addEventListener("focus", onFocus);
 
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  return () => window.removeEventListener("focus", onFocus);
+}, [pathname]);
 
   useEffect(() => {
     localStorage.setItem(

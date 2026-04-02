@@ -99,6 +99,11 @@ function contains(value: unknown, q: string) {
   return safeString(value).toLowerCase().includes(q.toLowerCase());
 }
 
+function getCheckboxValue(formData: FormData, name: string) {
+  const values = formData.getAll(name).map(String);
+  return values.includes("true") || values.includes("on");
+}
+
 async function ensureMasterAccess() {
   const supabase = await createServerClient();
   const {
@@ -587,9 +592,9 @@ const membership = await upsertCompanyMembership({
     const isMaster = formData.get("is_master") === "on";
     const isActive = formData.get("is_active") === "on";
     const commissionRaw = String(formData.get("comissao_percentual") || "0").trim();
-    const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
-    const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
-    const canAccessEstoque = formData.get("can_access_estoque") === "on";
+const canAccessAtendimento = getCheckboxValue(formData, "can_access_atendimento");
+const canAccessCampanhas = getCheckboxValue(formData, "can_access_campanhas");
+const canAccessEstoque = getCheckboxValue(formData, "can_access_estoque");
 
     const comissao = Number(commissionRaw || 0);
 
@@ -653,12 +658,9 @@ const membership = await upsertCompanyMembership({
   role,
   status: isActive ? "ativo" : "inativo",
   comissaoPercentual: Number.isFinite(comissao) ? comissao : 0,
-  canAccessAtendimento:
-    role === "owner" || role === "admin" ? true : canAccessAtendimento,
-  canAccessCampanhas:
-    role === "owner" || role === "admin" ? true : canAccessCampanhas,
-  canAccessEstoque:
-    role === "owner" || role === "admin" ? true : canAccessEstoque,
+canAccessAtendimento,
+canAccessCampanhas,
+canAccessEstoque,
 });
 
       if (membership.error) {
@@ -678,9 +680,9 @@ const membership = await upsertCompanyMembership({
     const role = String(formData.get("role") || "owner").trim();
     const status = String(formData.get("status") || "ativo").trim();
     const commission = toNumber(formData.get("comissao_percentual"), 0);
-    const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
-    const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
-    const canAccessEstoque = formData.get("can_access_estoque") === "on";
+    const canAccessAtendimento = getCheckboxValue(formData, "can_access_atendimento");
+const canAccessCampanhas = getCheckboxValue(formData, "can_access_campanhas");
+const canAccessEstoque = getCheckboxValue(formData, "can_access_estoque");
 
     if (!companyId) {
       return goWithMessage("error", "Empresa inválida para associação.");
@@ -719,12 +721,9 @@ const membership = await upsertCompanyMembership({
   role,
   status,
   comissaoPercentual: commission,
-  canAccessAtendimento:
-    role === "owner" || role === "admin" ? true : canAccessAtendimento,
-  canAccessCampanhas:
-    role === "owner" || role === "admin" ? true : canAccessCampanhas,
-  canAccessEstoque:
-    role === "owner" || role === "admin" ? true : canAccessEstoque,
+  canAccessAtendimento,
+  canAccessCampanhas,
+  canAccessEstoque,
 });
 
     if (membership.error) {
@@ -751,9 +750,9 @@ const membership = await upsertCompanyMembership({
     const commissionRaw = String(formData.get("comissao_percentual") || "0").trim();
     const isMaster = formData.get("is_master") === "on";
     const isActive = formData.get("is_active") === "on";
-    const canAccessAtendimento = formData.get("can_access_atendimento") === "on";
-    const canAccessCampanhas = formData.get("can_access_campanhas") === "on";
-    const canAccessEstoque = formData.get("can_access_estoque") === "on";
+    const canAccessAtendimento = getCheckboxValue(formData, "can_access_atendimento");
+const canAccessCampanhas = getCheckboxValue(formData, "can_access_campanhas");
+const canAccessEstoque = getCheckboxValue(formData, "can_access_estoque");
 
     if (!userId) {
       return goWithMessage("error", "Usuário inválido.");
@@ -782,16 +781,13 @@ const membership = await upsertCompanyMembership({
     if (companyId) {
       const { error: companyUserError } = await admin
         .from("company_users")
-  .update({
+.update({
   role,
   status,
   comissao_percentual: Number(commissionRaw || 0),
-  can_access_atendimento:
-    role === "owner" || role === "admin" ? true : canAccessAtendimento,
-  can_access_campanhas:
-    role === "owner" || role === "admin" ? true : canAccessCampanhas,
-  can_access_estoque:
-    role === "owner" || role === "admin" ? true : canAccessEstoque,
+  can_access_atendimento: canAccessAtendimento,
+  can_access_campanhas: canAccessCampanhas,
+  can_access_estoque: canAccessEstoque,
   updated_at: new Date().toISOString(),
 })
         .eq("user_id", userId)
@@ -1471,24 +1467,24 @@ const membership = await upsertCompanyMembership({
     Permissões de módulos
   </div>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_atendimento" />
-    Liberar Atendimento
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="checkbox" name="can_access_atendimento" />
+  Liberar Atendimento
+</label>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_campanhas" />
-    Liberar Campanhas
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="checkbox" name="can_access_campanhas" />
+  Liberar Campanhas
+</label>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_estoque" />
-    Liberar Estoque
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="checkbox" name="can_access_estoque" />
+  Liberar Estoque
+</label>
 
-  <div className="text-[11px] text-white/45">
-    Owner/Admin recebem acesso automaticamente.
-  </div>
+<div className="text-[11px] text-white/45">
+  As permissões abaixo são controladas manualmente pelo painel master.
+</div>
 </div>
 
               <label className="flex items-center gap-2 text-sm text-white/80">
@@ -1758,6 +1754,9 @@ const membership = await upsertCompanyMembership({
                 companyStats.map((item) => {
                   const company = item.company;
 
+                  const selectedRelation = item.users?.[0] || null;
+                  const selectedRelationEmail = selectedRelation ? getRelationEmail(selectedRelation) : "";
+
                   return (
                     <details
                       key={company.id}
@@ -1890,40 +1889,54 @@ const membership = await upsertCompanyMembership({
                             <form action={assignUserToCompanyAction} className="grid gap-3">
                               <input type="hidden" name="company_id" value={company.id} />
 
-                              <input
-                                name="email"
-                                type="email"
-                                className={input}
-                                placeholder="Email para associar"
-                                required
-                              />
+<select
+  name="email"
+  className={input}
+  defaultValue={selectedRelationEmail}
+  required
+>
+  <option value="">Selecione um usuário da empresa</option>
+  {item.users.map((relation: any) => {
+    const relationEmail = getRelationEmail(relation);
+
+    return (
+      <option key={`${relation.company_id}-${relation.user_id || relation.email}`} value={relationEmail}>
+        {relationEmail}
+      </option>
+    );
+  })}
+</select>
 
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                                 <select
-                                  name="role"
-                                  className={input}
-                                  defaultValue={item.hasOwner ? "admin" : "owner"}
-                                >
+  name="role"
+  className={input}
+  defaultValue={selectedRelation?.role || (item.hasOwner ? "admin" : "owner")}
+>
                                   <option value="owner">owner</option>
                                   <option value="admin">admin</option>
                                   <option value="vendedor">vendedor</option>
                                 </select>
 
-                                <select name="status" className={input} defaultValue="ativo">
+                                <select
+  name="status"
+  className={input}
+  defaultValue={selectedRelation?.status || "ativo"}
+>
                                   <option value="ativo">ativo</option>
                                   <option value="inativo">inativo</option>
                                   <option value="pending">pending</option>
                                 </select>
 
-                                <input
-                                  name="comissao_percentual"
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  defaultValue="0"
-                                  className={input}
-                                  placeholder="Comissão %"
-                                />
+                          <input
+  name="comissao_percentual"
+  type="number"
+  step="0.01"
+  min="0"
+  defaultValue={selectedRelation?.comissao_percentual ?? 0}
+  className={input}
+  placeholder="Comissão %"
+/>
                               </div>
 
 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -1931,24 +1944,42 @@ const membership = await upsertCompanyMembership({
     Permissões de módulos
   </div>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_atendimento" />
-    Liberar Atendimento
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_atendimento" value="false" />
+  <input
+    type="checkbox"
+    name="can_access_atendimento"
+    value="true"
+    defaultChecked={selectedRelation?.can_access_atendimento === true}
+  />
+  Liberar Atendimento
+</label>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_campanhas" />
-    Liberar Campanhas
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_campanhas" value="false" />
+  <input
+    type="checkbox"
+    name="can_access_campanhas"
+    value="true"
+    defaultChecked={selectedRelation?.can_access_campanhas === true}
+  />
+  Liberar Campanhas
+</label>
 
-  <label className="flex items-center gap-2 text-sm text-white/80">
-    <input type="checkbox" name="can_access_estoque" />
-    Liberar Estoque
-  </label>
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_estoque" value="false" />
+  <input
+    type="checkbox"
+    name="can_access_estoque"
+    value="true"
+    defaultChecked={selectedRelation?.can_access_estoque === true}
+  />
+  Liberar Estoque
+</label>
 
-  <div className="text-[11px] text-white/45">
-    Owner/Admin recebem acesso automaticamente.
-  </div>
+<div className="text-[11px] text-white/45">
+  As permissões abaixo são controladas manualmente pelo painel master.
+</div>
 </div>
 
                               <button className={buttonPrimary}>
@@ -2080,15 +2111,37 @@ const membership = await upsertCompanyMembership({
                                                     className={smallInput}
                                                   />
 
-                                              <label className="flex items-center gap-2 text-xs text-white/80">
+                                                <label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_atendimento" value="false" />
+  <input
+    type="checkbox"
+    name="can_access_atendimento"
+    value="true"
+    defaultChecked={selectedRelation?.can_access_atendimento === true}
+  />
+  Liberar Atendimento
+</label>
+
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_campanhas" value="false" />
+  <input
+    type="checkbox"
+    name="can_access_campanhas"
+    value="true"
+    defaultChecked={selectedRelation?.can_access_campanhas === true}
+  />
+  Liberar Campanhas
+</label>
+
+<label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="hidden" name="can_access_estoque" value="false" />
   <input
     type="checkbox"
     name="can_access_estoque"
-    defaultChecked={
-      relation.can_access_estoque === true
-    }
+    value="true"
+    defaultChecked={selectedRelation?.can_access_estoque === true}
   />
-  liberar estoque
+  Liberar Estoque
 </label>
 
                                                   <label className="flex items-center gap-2 text-xs text-white/80">
