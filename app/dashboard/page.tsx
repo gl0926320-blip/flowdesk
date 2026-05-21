@@ -65,6 +65,7 @@ export default function Dashboard() {
 
   const [todosServicos, setTodosServicos] = useState<any[]>([]);
   const [orcamentosRecentes, setOrcamentosRecentes] = useState<any[]>([]);
+    const [followUpsDashboard, setFollowUpsDashboard] = useState<any[]>([]);
 
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [role, setRole] = useState<string>("");
@@ -143,6 +144,38 @@ export default function Dashboard() {
       percentual_comissao: percentualFinal,
       valor_comissao: valorFinal,
     };
+  }
+
+    async function carregarFollowUpsDashboard(params: {
+    companyId: string;
+    userId: string;
+    userRole: string;
+  }) {
+    const agora = new Date();
+    const limiteProximo = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    let query = supabase
+      .from("lead_atividades")
+      .select("*")
+      .eq("company_id", params.companyId)
+      .eq("concluida", false)
+      .not("data_atividade", "is", null)
+      .lte("data_atividade", limiteProximo.toISOString())
+      .order("data_atividade", { ascending: true });
+
+    if (params.userRole === "vendedor") {
+      query = query.eq("criado_por", params.userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Erro ao carregar follow-ups do dashboard:", error);
+      setFollowUpsDashboard([]);
+      return;
+    }
+
+    setFollowUpsDashboard(data || []);
   }
 
   async function carregarDashboard() {
@@ -225,6 +258,12 @@ export default function Dashboard() {
       setTodosServicos(data);
       setOrcamentosRecentes(data.slice(0, 5));
     }
+
+    await carregarFollowUpsDashboard({
+      companyId: typedCompanyUser.company_id,
+      userId: user.id,
+      userRole: typedCompanyUser.role,
+    });
   }
 
   useEffect(() => {
@@ -334,6 +373,36 @@ const recusadosList = servicosFiltrados.filter((o) =>
   const leadsFrios = servicosFiltrados.filter(
     (item) => (item.temperatura || "morno") === "frio"
   ).length;
+
+    const agoraFollowUp = new Date();
+
+  const followUpsAtrasados = followUpsDashboard.filter((item) => {
+    if (!item.data_atividade) return false;
+    return new Date(item.data_atividade).getTime() < agoraFollowUp.getTime();
+  }).length;
+
+  const followUpsHoje = followUpsDashboard.filter((item) => {
+    if (!item.data_atividade) return false;
+
+    const data = new Date(item.data_atividade);
+
+    return (
+      data.getDate() === agoraFollowUp.getDate() &&
+      data.getMonth() === agoraFollowUp.getMonth() &&
+      data.getFullYear() === agoraFollowUp.getFullYear()
+    );
+  }).length;
+
+  const proximosFollowUps = followUpsDashboard.filter((item) => {
+    if (!item.data_atividade) return false;
+
+    const data = new Date(item.data_atividade);
+
+    return (
+      data.getTime() >= agoraFollowUp.getTime() &&
+      data.getTime() <= agoraFollowUp.getTime() + 7 * 24 * 60 * 60 * 1000
+    );
+  }).length;
 
   const receitaTotal = realizadosList.reduce(
     (acc, item) => acc + Number(item.valor_orcamento || 0),
@@ -666,7 +735,7 @@ const recusadosList = servicosFiltrados.filter((o) =>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 mb-10">
           <Metric
             icon={<DollarSign size={18} />}
             title="Receita Realizada"
@@ -747,6 +816,14 @@ const recusadosList = servicosFiltrados.filter((o) =>
             value={leadsFrios}
             subtitle="Precisam de mais aquecimento"
             glow="rgba(14,165,233,0.18)"
+          />
+
+                    <Metric
+            icon={<Clock3 size={18} />}
+            title="Follow-ups"
+            value={followUpsAtrasados}
+            subtitle={`${followUpsHoje} hoje · ${proximosFollowUps} próximos`}
+            glow="rgba(249,115,22,0.22)"
           />
         </div>
 

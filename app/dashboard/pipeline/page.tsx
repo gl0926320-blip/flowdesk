@@ -137,6 +137,16 @@ type PipelineStageSetting = {
   is_visible: boolean | null;
 };
 
+type LeadFollowUpInfo = {
+  id: string;
+  servico_id: string;
+  tipo: string | null;
+  titulo: string | null;
+  descricao: string | null;
+  data_atividade: string | null;
+  concluida: boolean;
+};
+
 export default function Pipeline() {
   const supabase = createClient();
 
@@ -167,6 +177,7 @@ export default function Pipeline() {
 >([]);
 
 const [pipelineStageSettings, setPipelineStageSettings] = useState<PipelineStageSetting[]>([]);
+const [leadFollowUps, setLeadFollowUps] = useState<LeadFollowUpInfo[]>([]);
 
 const [showStageEditor, setShowStageEditor] = useState(false);
 const [stageEditorForm, setStageEditorForm] = useState<{
@@ -327,6 +338,68 @@ async function loadPipelineStageSettings(currentCompanyId: string) {
   setPipelineStageSettings((data || []) as PipelineStageSetting[]);
 }
 
+async function loadLeadFollowUps(currentCompanyId: string) {
+  const agora = new Date();
+  const limiteProximo = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const { data, error } = await supabase
+    .from("lead_atividades")
+    .select("id, servico_id, tipo, titulo, descricao, data_atividade, concluida")
+    .eq("company_id", currentCompanyId)
+    .eq("concluida", false)
+    .not("data_atividade", "is", null)
+    .lte("data_atividade", limiteProximo.toISOString())
+    .order("data_atividade", { ascending: true });
+
+  if (error) {
+    console.error("Erro ao carregar follow-ups do pipeline:", error);
+    setLeadFollowUps([]);
+    return;
+  }
+
+  setLeadFollowUps((data || []) as LeadFollowUpInfo[]);
+}
+
+function getLeadFollowUp(servicoId: string) {
+  const followUpsDoLead = leadFollowUps
+    .filter((item) => item.servico_id === servicoId && item.data_atividade)
+    .sort(
+      (a, b) =>
+        new Date(a.data_atividade || 0).getTime() -
+        new Date(b.data_atividade || 0).getTime()
+    );
+
+  const next = followUpsDoLead[0];
+
+  if (!next?.data_atividade) return null;
+
+  const data = new Date(next.data_atividade);
+  const agora = new Date();
+
+  const isAtrasado = data.getTime() < agora.getTime();
+
+  const isHoje =
+    data.getDate() === agora.getDate() &&
+    data.getMonth() === agora.getMonth() &&
+    data.getFullYear() === agora.getFullYear();
+
+  return {
+    ...next,
+    isAtrasado,
+    isHoje,
+    label: isAtrasado
+      ? "Follow-up atrasado"
+      : isHoje
+      ? "Follow-up hoje"
+      : "Próximo follow-up",
+    className: isAtrasado
+      ? "border-red-500/40 bg-red-500/15 text-red-300"
+      : isHoje
+      ? "border-yellow-500/40 bg-yellow-500/15 text-yellow-300"
+      : "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
+  };
+}
+
 
   async function load() {
     const { data } = await supabase.auth.getUser();
@@ -356,6 +429,7 @@ setCompanyId(companyUser.company_id);
 setRole(companyUser.role);
 await loadLeadOrigins(companyUser.company_id);
 await loadPipelineStageSettings(companyUser.company_id);
+await loadLeadFollowUps(companyUser.company_id);
 
 
 
@@ -1114,19 +1188,20 @@ async function saveStageEditor() {
                     colorStyle={getStageColorStyleByName(stageConfig.color)}
                   >
                     {itensDaColuna.map((item) => (
-                      <Card
-                        key={item.id}
-                        item={item}
-                        expanded={expandedId === item.id}
-                        toggleExpand={() =>
-                          setExpandedId(expandedId === item.id ? null : item.id)
-                        }
-                        atualizarItem={atualizarItem}
-                        deletar={deletar}
-                        vendedores={vendedores}
-                        leadOrigins={leadOrigins}
-                        isActiveDragging={activeDragId === item.id}
-                      />
+<Card
+  key={item.id}
+  item={item}
+  followUp={getLeadFollowUp(item.id)}
+  expanded={expandedId === item.id}
+  toggleExpand={() =>
+    setExpandedId(expandedId === item.id ? null : item.id)
+  }
+  atualizarItem={atualizarItem}
+  deletar={deletar}
+  vendedores={vendedores}
+  leadOrigins={leadOrigins}
+  isActiveDragging={activeDragId === item.id}
+/>
                     ))}
                   </Column>
                 );
@@ -1602,6 +1677,7 @@ function Column({
 /* CARD */
 function Card({
   item,
+  followUp,
   expanded,
   toggleExpand,
   atualizarItem,
@@ -1763,6 +1839,14 @@ function Card({
               <MapPinned size={12} />
               {item.origem_lead || "Origem não informada"}
             </div>
+
+            {followUp && (
+              <div
+                className={`mt-2 inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-bold ${followUp.className}`}
+              >
+                {followUp.label}
+              </div>
+            )}
           </div>
 
           <span className="text-blue-400 font-semibold whitespace-nowrap">

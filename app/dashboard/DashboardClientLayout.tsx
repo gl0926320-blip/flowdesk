@@ -35,6 +35,7 @@ import {
   BarChart3,
   LogOut,
   ShieldCheck,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 
@@ -73,6 +74,19 @@ type Membership = {
   } | null;
 };
 
+type FollowUpAlert = {
+  id: string;
+  servico_id: string;
+  tipo: string | null;
+  titulo: string | null;
+  descricao: string | null;
+  data_atividade: string | null;
+  cliente?: string | null;
+  telefone?: string | null;
+  status?: string | null;
+  responsavel?: string | null;
+};
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -105,6 +119,9 @@ export default function DashboardLayout({
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const profileRef = useRef<HTMLDivElement | null>(null);
+
+    const [followUpAlerts, setFollowUpAlerts] = useState<FollowUpAlert[]>([]);
+  const [showFollowUpPopup, setShowFollowUpPopup] = useState(false);
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
     Campanhas: pathname.startsWith("/dashboard/campanhas"),
@@ -158,6 +175,118 @@ export default function DashboardLayout({
     return data[0] as Membership;
   }
 
+    async function carregarFollowUpsPendentes(params: {
+    companyId: string;
+    userId: string;
+    userEmail: string;
+    userRole: string;
+  }) {
+    const agora = new Date();
+    const limiteProximo = new Date(agora.getTime() + 24 * 60 * 60 * 1000);
+
+    const { data: atividades, error } = await supabase
+      .from("lead_atividades")
+      .select("*")
+      .eq("company_id", params.companyId)
+      .eq("concluida", false)
+      .not("data_atividade", "is", null)
+      .lte("data_atividade", limiteProximo.toISOString())
+      .order("data_atividade", { ascending: true })
+      .limit(20);
+
+    if (error) {
+      console.error("Erro ao buscar follow-ups pendentes:", error);
+      setFollowUpAlerts([]);
+      setShowFollowUpPopup(false);
+      return;
+    }
+
+    const atividadesList = atividades || [];
+    const servicoIds = atividadesList
+      .map((item: any) => item.servico_id)
+      .filter(Boolean);
+
+    let leadsMap = new Map<string, any>();
+
+    if (servicoIds.length > 0) {
+      const { data: leads, error: leadsError } = await supabase
+        .from("servicos")
+        .select("id, cliente, telefone, status, responsavel, user_id, criado_por")
+        .eq("company_id", params.companyId)
+        .in("id", servicoIds);
+
+      if (leadsError) {
+        console.error("Erro ao buscar leads dos follow-ups:", leadsError);
+      }
+
+      leadsMap = new Map((leads || []).map((lead: any) => [lead.id, lead]));
+    }
+
+    const normalizedEmail = params.userEmail.trim().toLowerCase();
+    const isVendedor = params.userRole === "vendedor";
+
+    const filtrados = atividadesList
+      .map((atividade: any) => {
+        const lead = leadsMap.get(atividade.servico_id);
+
+        return {
+          id: atividade.id,
+          servico_id: atividade.servico_id,
+          tipo: atividade.tipo,
+          titulo: atividade.titulo,
+          descricao: atividade.descricao,
+          data_atividade: atividade.data_atividade,
+          cliente: lead?.cliente || "Lead sem nome",
+          telefone: lead?.telefone || null,
+          status: lead?.status || null,
+          responsavel: lead?.responsavel || atividade.criado_por_email || null,
+          lead,
+          atividade,
+        };
+      })
+      .filter((item: any) => {
+        if (!isVendedor) return true;
+
+        const responsavel = String(item.lead?.responsavel || "")
+          .trim()
+          .toLowerCase();
+
+        return (
+          item.atividade?.criado_por === params.userId ||
+          String(item.atividade?.criado_por_email || "").trim().toLowerCase() ===
+            normalizedEmail ||
+          item.lead?.user_id === params.userId ||
+          item.lead?.criado_por === params.userId ||
+          responsavel === normalizedEmail
+        );
+      })
+      .slice(0, 8);
+
+    setFollowUpAlerts(filtrados);
+
+const dismissKey = `flowdesk_followup_popup_${params.companyId}`;
+
+let shouldShow = filtrados.length > 0;
+
+if (typeof window !== "undefined") {
+  const savedDismiss = localStorage.getItem(dismissKey);
+
+  if (savedDismiss) {
+    const dismissedUntil = Number(savedDismiss);
+
+    if (!Number.isNaN(dismissedUntil)) {
+      const now = Date.now();
+
+      if (now < dismissedUntil) {
+        shouldShow = false;
+      }
+    }
+  }
+}
+
+setShowFollowUpPopup(shouldShow);
+  }
+
   async function carregarPlanoEMembership() {
     setLoadedMembership(false);
     
@@ -203,6 +332,13 @@ setCanAccessEstoque(false);
       setCanAccessAtendimento(membership?.can_access_atendimento === true);
       setCanAccessCampanhas(membership?.can_access_campanhas === true);
       setCanAccessEstoque(membership?.can_access_estoque === true);
+
+      await carregarFollowUpsPendentes({
+        companyId: membership.company_id,
+        userId: user.id,
+        userEmail,
+        userRole: membership.role || "",
+      });
     } else {
       setCompanyId(null);
       setRole("");
@@ -211,6 +347,8 @@ setCanAccessEstoque(false);
       setCanAccessAtendimento(false);
       setCanAccessCampanhas(false);
       setCanAccessEstoque(false);
+            setFollowUpAlerts([]);
+      setShowFollowUpPopup(false);
     }
 
     setLoadedMembership(true);
@@ -395,20 +533,80 @@ const sections: MenuSection[] = useMemo(() => {
         },
       ],
     },
+{
+  title: "Marketing",
+  items: [
     {
-      title: "Marketing",
-      items: [
+      name: "Campanhas",
+      icon: Megaphone,
+      visible: hasCampanhasAccess,
+      children: [
         {
           name: "Campanhas",
-          icon: Megaphone,
-          visible: hasCampanhasAccess,
-          children: [
-            { name: "Campanhas", href: "/dashboard/campanhas" },
-            { name: "Master Dashboard", href: "/dashboard/campanhas/master" },
-          ],
+          href: "/dashboard/campanhas",
         },
-      ].filter((item) => item.visible !== false),
+        {
+          name: "Master Dashboard",
+          href: "/dashboard/campanhas/master",
+        },
+      ],
     },
+  ].filter((item) => item.visible !== false),
+},
+
+{
+  title: "Automação Comercial",
+  items: [
+    {
+      name: "Disparos",
+      href: "/dashboard/disparos",
+      icon: MessageCircle,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "Automações",
+      href: "/dashboard/automacoes",
+      icon: Bot,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "Templates",
+      href: "/dashboard/templates",
+      icon: FileText,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "Logs",
+      href: "/dashboard/logs",
+      icon: BarChart3,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "WhatsApp",
+      href: "/dashboard/whatsapp",
+      icon: MessageCircle,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "E-mail",
+      href: "/dashboard/email",
+      icon: Mail,
+      visible: isOwner || isAdmin,
+    },
+
+    {
+      name: "SMS",
+      href: "/dashboard/sms",
+      icon: Megaphone,
+      visible: isOwner || isAdmin,
+    },
+  ].filter((item) => item.visible !== false),
+},
     {
       title: "Administração",
       items: [
@@ -468,6 +666,141 @@ const sections: MenuSection[] = useMemo(() => {
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">
+
+      {showFollowUpPopup && followUpAlerts.length > 0 && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-amber-400/20 bg-[#0B1120] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
+            <div className="border-b border-white/10 bg-amber-500/10 px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">
+                    Lembrete comercial
+                  </p>
+                  <h2 className="mt-2 text-xl font-bold text-white">
+                    Você tem {followUpAlerts.length} follow-up
+                    {followUpAlerts.length === 1 ? "" : "s"} pendente
+                    {followUpAlerts.length === 1 ? "" : "s"}
+                  </h2>
+                  <p className="mt-1 text-sm text-white/60">
+                    O FlowDesk encontrou retornos, tarefas ou contatos comerciais
+                    que precisam de atenção.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowFollowUpPopup(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[420px] space-y-3 overflow-y-auto p-5">
+              {followUpAlerts.map((item) => {
+                const data = item.data_atividade
+                  ? new Date(item.data_atividade)
+                  : null;
+
+                const atrasado = data ? data.getTime() < Date.now() : false;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-white">
+                          {item.cliente || "Lead sem nome"}
+                        </div>
+                        <div className="mt-1 text-xs text-white/50">
+                          {item.titulo || item.tipo || "Follow-up comercial"}
+                        </div>
+                      </div>
+
+                      <span
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                          atrasado
+                            ? "border-rose-400/30 bg-rose-500/10 text-rose-300"
+                            : "border-amber-400/30 bg-amber-500/10 text-amber-300"
+                        )}
+                      >
+                        {atrasado ? "Atrasado" : "Próximo"}
+                      </span>
+                    </div>
+
+                    {item.descricao ? (
+                      <p className="mt-3 text-sm leading-6 text-white/70">
+                        {item.descricao}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-3 grid gap-2 text-xs text-white/50 sm:grid-cols-2">
+                      <span>
+                        Horário:{" "}
+                        {item.data_atividade
+                          ? new Date(item.data_atividade).toLocaleString("pt-BR")
+                          : "Não definido"}
+                      </span>
+                      <span>Status do lead: {item.status || "—"}</span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/leads`}
+                        onClick={() => setShowFollowUpPopup(false)}
+                        className="rounded-xl bg-cyan-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-cyan-500"
+                      >
+                        Abrir Leads
+                      </Link>
+
+                      <Link
+                        href={`/dashboard/pipeline`}
+                        onClick={() => setShowFollowUpPopup(false)}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10"
+                      >
+                        Ver Pipeline
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-white/10 bg-black/20 px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => {
+                  const dismissKey = `flowdesk_followup_popup_${companyId}`;
+
+                  const oneHourLater =
+                    Date.now() + 60 * 60 * 1000;
+
+                  localStorage.setItem(
+                    dismissKey,
+                    String(oneHourLater)
+                  );
+
+                  setShowFollowUpPopup(false);
+                }}
+                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/75 transition hover:bg-white/10"
+              >
+                Lembrar depois
+              </button>
+
+              <Link
+                href="/dashboard/leads"
+                onClick={() => setShowFollowUpPopup(false)}
+                className="rounded-2xl bg-amber-500 px-5 py-3 text-center text-sm font-bold text-[#111827] transition hover:bg-amber-400"
+              >
+                Ver follow-ups agora
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSidebarOpen && (
         <button
           className="fixed inset-0 z-30 bg-black/50 md:hidden"

@@ -121,6 +121,16 @@ type LeadActivity = {
   updated_at?: string | null;
 };
 
+type LeadFollowUpInfo = {
+  id: string;
+  servico_id: string;
+  tipo: string | null;
+  titulo: string | null;
+  descricao: string | null;
+  data_atividade: string | null;
+  concluida: boolean;
+};
+
 type PipelineStageSetting = {
   id: string;
   company_id: string;
@@ -164,6 +174,7 @@ export default function LeadsPage() {
   const [leadActivities, setLeadActivities] = useState<LeadActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [savingActivity, setSavingActivity] = useState(false);
+    const [leadFollowUps, setLeadFollowUps] = useState<LeadFollowUpInfo[]>([]);
   const [activityForm, setActivityForm] = useState({
     tipo: "observacao",
     titulo: "",
@@ -465,6 +476,68 @@ function getOriginBadgeClass(cor?: string | null) {
     setLoadingActivities(false);
   }
 
+    async function loadLeadFollowUps(currentCompanyId: string) {
+    const agora = new Date();
+    const limiteProximo = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const { data, error } = await supabase
+      .from("lead_atividades")
+      .select("id, servico_id, tipo, titulo, descricao, data_atividade, concluida")
+      .eq("company_id", currentCompanyId)
+      .eq("concluida", false)
+      .not("data_atividade", "is", null)
+      .lte("data_atividade", limiteProximo.toISOString())
+      .order("data_atividade", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar follow-ups dos leads:", error);
+      setLeadFollowUps([]);
+      return;
+    }
+
+    setLeadFollowUps((data || []) as LeadFollowUpInfo[]);
+  }
+
+  function getLeadFollowUp(servicoId: string) {
+    const followUpsDoLead = leadFollowUps
+      .filter((item) => item.servico_id === servicoId && item.data_atividade)
+      .sort(
+        (a, b) =>
+          new Date(a.data_atividade || 0).getTime() -
+          new Date(b.data_atividade || 0).getTime()
+      );
+
+    const next = followUpsDoLead[0];
+
+    if (!next?.data_atividade) return null;
+
+    const data = new Date(next.data_atividade);
+    const agora = new Date();
+
+    const isAtrasado = data.getTime() < agora.getTime();
+
+    const isHoje =
+      data.getDate() === agora.getDate() &&
+      data.getMonth() === agora.getMonth() &&
+      data.getFullYear() === agora.getFullYear();
+
+    return {
+      ...next,
+      isAtrasado,
+      isHoje,
+      label: isAtrasado
+        ? "Follow-up atrasado"
+        : isHoje
+        ? "Follow-up hoje"
+        : "Próximo follow-up",
+      className: isAtrasado
+        ? "border-red-500/40 bg-red-500/15 text-red-300"
+        : isHoje
+        ? "border-yellow-500/40 bg-yellow-500/15 text-yellow-300"
+        : "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
+    };
+  }
+
 async function loadLeadOrigins(currentCompanyId: string) {
 const { data, error } = await supabase
   .from("company_lead_origins")
@@ -568,6 +641,7 @@ if (currentRole === "vendedor") {
     }
 
     setItems(data || []);
+    await loadLeadFollowUps(currentCompanyId);
   }
 
 
@@ -973,6 +1047,11 @@ async function removerOrigemLead(id: string) {
     });
 
     await loadLeadActivities(selectedLead.id);
+
+    if (companyId) {
+      await loadLeadFollowUps(companyId);
+    }
+
     setSavingActivity(false);
   }
 
@@ -993,6 +1072,10 @@ async function removerOrigemLead(id: string) {
 
     if (selectedLead?.id) {
       await loadLeadActivities(selectedLead.id);
+    }
+
+    if (companyId) {
+      await loadLeadFollowUps(companyId);
     }
   }
 
@@ -1538,7 +1621,25 @@ return {
                 }}
                 className="border-t border-white/5 cursor-pointer hover:bg-white/5"
               >
-                <td className="p-4 font-semibold">{item.cliente}</td>
+                <td className="p-4 font-semibold">
+                  <div className="flex flex-col gap-2">
+                    <span>{item.cliente}</span>
+
+                    {(() => {
+                      const followUp = getLeadFollowUp(item.id);
+
+                      if (!followUp) return null;
+
+                      return (
+                        <span
+                          className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${followUp.className}`}
+                        >
+                          {followUp.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </td>
                 <td className="p-4 text-cyan-400">{item.responsavel || "-"}</td>
                 <td className="p-4">{item.origem_lead || "-"}</td>
                 <td className="p-4">
