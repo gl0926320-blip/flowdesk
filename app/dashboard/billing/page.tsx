@@ -156,34 +156,69 @@ export default function BillingPage() {
   const [includeCampaigns, setIncludeCampaigns] = useState(false);
   const [includeEstoque, setIncludeEstoque] = useState(false);
 
-  useEffect(() => {
-    async function loadPlan() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+useEffect(() => {
+  async function loadPlan() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("plan")
-        .eq("id", user.id)
-        .single();
-
-      if (data?.plan) {
-        const currentPlan = data.plan as PlanKey;
-        setPlan(currentPlan);
-        setSelectedPlan(currentPlan);
-      }
-
+    if (!user) {
       setLoading(false);
+      return;
     }
 
-    loadPlan();
-  }, [supabase]);
+    const { data: membership, error: membershipError } = await supabase
+      .from("company_users")
+      .select("company_id, role, status")
+      .eq("user_id", user.id)
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error("Erro ao buscar vínculo da empresa:", membershipError);
+      setLoading(false);
+      return;
+    }
+
+    if (!membership?.company_id) {
+      console.error("Usuário sem empresa ativa vinculada.");
+      setPlan("free");
+      setSelectedPlan("free");
+      setLoading(false);
+      return;
+    }
+
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("plan, is_active, billing_status, next_billing_date, last_payment_date, price_amount")
+      .eq("id", membership.company_id)
+      .maybeSingle();
+
+    if (companyError) {
+      console.error("Erro ao buscar plano da empresa:", companyError);
+      setLoading(false);
+      return;
+    }
+
+    const companyPlan = (company?.plan || "free") as PlanKey;
+    const isCompanyActive = company?.is_active !== false;
+
+    if (!isCompanyActive) {
+      setPlan("free");
+      setSelectedPlan("free");
+      setLoading(false);
+      return;
+    }
+
+    setPlan(companyPlan);
+    setSelectedPlan(companyPlan);
+    setLoading(false);
+  }
+
+  loadPlan();
+}, [supabase]);
 
   const activePlan = useMemo(() => {
     return (
