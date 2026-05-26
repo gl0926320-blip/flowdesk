@@ -855,6 +855,32 @@ async function removerOrigemLead(id: string) {
     0
   );
 
+  async function registrarDebugLog(params: {
+  companyId?: string | null;
+  userId?: string | null;
+  email?: string | null;
+  area: string;
+  action: string;
+  payload?: any;
+}) {
+  try {
+    const { error } = await supabase.from("flowdesk_debug_logs").insert({
+      company_id: params.companyId || null,
+      user_id: params.userId || null,
+      email: params.email || null,
+      area: params.area,
+      action: params.action,
+      payload: params.payload || {},
+    });
+
+    if (error) {
+      console.warn("Falha ao gravar debug log:", error);
+    }
+  } catch (err) {
+    console.warn("Erro inesperado no debug log:", err);
+  }
+}
+
   async function salvarNovoLead(e: any) {
     e.preventDefault();
 
@@ -892,6 +918,33 @@ const plan = companyPlanData?.plan ?? "free";
 const isCompanyActive = companyPlanData?.is_active !== false;
 const LIMITE_FREE = 5;
 
+console.log("DEBUG PLANO LEADS", {
+  currentUserEmail,
+  currentUserId,
+  currentCompanyId,
+  currentRole,
+  companyPlanData,
+  plan,
+  isCompanyActive,
+});
+
+await registrarDebugLog({
+  companyId: currentCompanyId,
+  userId: currentUserId,
+  email: currentUserEmail,
+  area: "leads",
+  action: "verificar_plano_antes_salvar_orcamento",
+  payload: {
+    currentUserEmail,
+    currentUserId,
+    currentCompanyId,
+    currentRole,
+    companyPlanData,
+    plan,
+    isCompanyActive,
+  },
+});
+
 if (!isCompanyActive) {
   alert("Esta empresa está inativa. Verifique o status no painel master.");
   return;
@@ -911,10 +964,35 @@ if (!isCompanyActive) {
         return;
       }
 
-      if ((count ?? 0) >= LIMITE_FREE) {
-        setShowUpgrade(true);
-        return;
-      }
+if ((count ?? 0) >= LIMITE_FREE) {
+  console.log("DEBUG LIMITE FREE ATINGIDO", {
+    currentUserEmail,
+    currentUserId,
+    currentCompanyId,
+    plan,
+    count,
+    LIMITE_FREE,
+  });
+
+  await registrarDebugLog({
+    companyId: currentCompanyId,
+    userId: currentUserId,
+    email: currentUserEmail,
+    area: "leads",
+    action: "limite_free_atingido",
+    payload: {
+      currentUserEmail,
+      currentUserId,
+      currentCompanyId,
+      plan,
+      count,
+      LIMITE_FREE,
+    },
+  });
+
+  setShowUpgrade(true);
+  return;
+}
     }
 
     const isVendedor = currentRole === "vendedor";
