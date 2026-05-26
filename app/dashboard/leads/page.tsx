@@ -873,22 +873,29 @@ async function removerOrigemLead(id: string) {
     const currentUserId = currentUser.id;
     const currentUserEmail = (currentUser.email || "").trim().toLowerCase();
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("plan")
-      .eq("id", currentUserId)
-      .maybeSingle();
+const currentCompanyId = companyId;
+const currentRole = myRole;
 
-    if (profileError) {
-      console.error("Erro ao verificar plano:", profileError);
-      alert("Erro ao verificar plano");
-      return;
-    }
+const { data: companyPlanData, error: companyPlanError } = await supabase
+  .from("companies")
+  .select("plan, is_active, billing_status")
+  .eq("id", currentCompanyId)
+  .maybeSingle();
 
-    const currentCompanyId = companyId;
-    const currentRole = myRole;
-    const plan = profile?.plan ?? "free";
-    const LIMITE_FREE = 5;
+if (companyPlanError) {
+  console.error("Erro ao verificar plano da empresa:", companyPlanError);
+  alert("Erro ao verificar plano da empresa.");
+  return;
+}
+
+const plan = companyPlanData?.plan ?? "free";
+const isCompanyActive = companyPlanData?.is_active !== false;
+const LIMITE_FREE = 5;
+
+if (!isCompanyActive) {
+  alert("Esta empresa está inativa. Verifique o status no painel master.");
+  return;
+}
 
     if (plan === "free") {
       const { count, error: erroCount } = await supabase

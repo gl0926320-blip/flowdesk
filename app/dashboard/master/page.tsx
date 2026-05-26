@@ -1113,14 +1113,59 @@
     (u: any) => u.can_access_estoque === true
   ).length;
 
-      const leads = relatedServices.filter((s: any) => s.status === "lead").length;
-      const concluidos = relatedServices.filter((s: any) => s.status === "concluido").length;
+const getServiceValue = (item: any) => {
+  return (
+    Number(
+      item?.valor_final ??
+        item?.valor_total ??
+        item?.valor_orcamento ??
+        item?.valor ??
+        0
+    ) || 0
+  );
+};
 
-      const receita = relatedServices.reduce((acc: number, item: any) => {
-        const value =
-          Number(item?.valor_final ?? item?.valor_total ?? item?.valor ?? 0) || 0;
-        return acc + value;
-      }, 0);
+const STATUS_POTENCIAL = ["lead", "proposta_enviada", "aguardando_cliente"];
+const STATUS_CONFIRMADA = ["proposta_validada", "andamento"];
+const STATUS_CONCLUIDA = ["concluido"];
+
+const leads = relatedServices.filter((s: any) => s.status === "lead").length;
+const concluidos = relatedServices.filter((s: any) => s.status === "concluido").length;
+
+const receitaPotencial = relatedServices
+  .filter((item: any) => STATUS_POTENCIAL.includes(String(item?.status || "")))
+  .reduce((acc: number, item: any) => acc + getServiceValue(item), 0);
+
+const receitaConfirmada = relatedServices
+  .filter((item: any) => STATUS_CONFIRMADA.includes(String(item?.status || "")))
+  .reduce((acc: number, item: any) => acc + getServiceValue(item), 0);
+
+const receitaConcluida = relatedServices
+  .filter((item: any) => STATUS_CONCLUIDA.includes(String(item?.status || "")))
+  .reduce((acc: number, item: any) => acc + getServiceValue(item), 0);
+
+const receita = receitaConcluida;
+
+const ultimoLeadRow =
+  [...relatedServices]
+    .filter((item: any) => item?.created_at || item?.updated_at || item?.data_orcamento)
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.created_at || b.updated_at || b.data_orcamento || 0).getTime() -
+        new Date(a.created_at || a.updated_at || a.data_orcamento || 0).getTime()
+    )[0] || null;
+
+const ultimoLeadDate =
+  ultimoLeadRow?.created_at ||
+  ultimoLeadRow?.updated_at ||
+  ultimoLeadRow?.data_orcamento ||
+  null;
+
+const ultimoLeadCliente =
+  ultimoLeadRow?.cliente || ultimoLeadRow?.nome_cliente || ultimoLeadRow?.titulo || "—";
+
+const ultimoLeadStatus = ultimoLeadRow?.status || "—";
+const ultimoLeadValor = ultimoLeadRow ? getServiceValue(ultimoLeadRow) : 0;
 
       const maxVendedores = Number(company?.max_vendedores || 0);
       const canDelete =
@@ -1186,11 +1231,19 @@ const ownerLastLogin = ownerAuth?.last_sign_in_at || null;
         users: relatedUsers,
 
         totalServicos,
+        totalLeadsEmpresa: totalServicos,
         propostas,
         andamento,
         perdidos,
         clientesUnicos,
         ticketMedio,
+        receitaPotencial,
+        receitaConfirmada,
+        receitaConcluida,
+        ultimoLeadDate,
+        ultimoLeadCliente,
+        ultimoLeadStatus,
+        ultimoLeadValor,
         lastActivity,
         ownerLastLogin,
         owners,
@@ -1496,13 +1549,27 @@ const empresasComMaisLeads = [...companyStatsRaw]
     <div className="grid gap-3">
       {empresasComMaisLeads.map((item: any) => (
         <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <div className="font-semibold text-white">{item.name}</div>
-          <div className="mt-1 text-xs text-white/55">
-            {item.totalServicos} registros · {item.clientesUnicos} clientes únicos
-          </div>
-          <div className="mt-2 text-xs text-white/60">
-            {item.concluidos} concluídos · ticket médio {money(item.ticketMedio)}
-          </div>
+<div className="font-semibold text-white">{item.name}</div>
+
+<div className="mt-1 text-xs text-white/55">
+  Dono: {item.ownerEmails[0] || "sem owner definido"}
+</div>
+
+<div className="mt-2 grid grid-cols-2 gap-2 text-xs text-white/65">
+  <span>Total leads: {item.totalLeadsEmpresa}</span>
+  <span>Clientes únicos: {item.clientesUnicos}</span>
+  <span>Concluídos: {item.concluidos}</span>
+  <span>Abertos: {item.leads}</span>
+</div>
+
+<div className="mt-3 grid grid-cols-1 gap-1 text-xs text-white/70">
+  <span>Receita concluída: {money(item.receitaConcluida)}</span>
+  <span>Receita potencial: {money(item.receitaPotencial)}</span>
+  <span>Ticket médio: {money(item.ticketMedio)}</span>
+  <span>
+    Último lead: {formatDateShort(item.ultimoLeadDate)} · {item.ultimoLeadCliente}
+  </span>
+</div>
         </div>
       ))}
     </div>
@@ -1910,17 +1977,19 @@ const empresasComMaisLeads = [...companyStatsRaw]
                                 <Badge tone="sky">{item.billingStatus}</Badge>
                               </div>
 
-                              <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-white/65 md:grid-cols-6">
-                                <span>Usuários: {item.users.length}</span>
-                                <span>
-                                  Vendedores: {item.activeVendedores}/
-                                  {item.maxVendedores > 0 ? item.maxVendedores : "∞"}
-                                </span>
-                                <span>Leads: {item.leads}</span>
-                                <span>Campanhas: {item.campaignsCount}</span>
-                                <span>Receita: {money(item.receita)}</span>
-                                <span>Dono: {item.ownerEmails[0] || "não definido"}</span>
-                              </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-white/65 md:grid-cols-4 xl:grid-cols-8">
+                            <span>Usuários: {item.users.length}</span>
+                            <span>
+                              Vendedores: {item.activeVendedores}/
+                              {item.maxVendedores > 0 ? item.maxVendedores : "∞"}
+                            </span>
+                            <span>Total leads: {item.totalLeadsEmpresa}</span>
+                            <span>Concluídos: {item.concluidos}</span>
+                            <span>Potencial: {money(item.receitaPotencial)}</span>
+                            <span>Concluída: {money(item.receitaConcluida)}</span>
+                            <span>Último lead: {formatDateShort(item.ultimoLeadDate)}</span>
+                            <span>Dono: {item.ownerEmails[0] || "não definido"}</span>
+                          </div>
                             </div>
 
                             <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
@@ -1931,38 +2000,56 @@ const empresasComMaisLeads = [...companyStatsRaw]
 
                         <div className="mt-5 grid gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
                           <div className="grid gap-4">
-                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                              <Info label="Usuários" value={String(item.users.length)} />
-                              <Info label="Owners" value={String(item.owners)} />
-                              <Info label="Admins" value={String(item.admins)} />
-                              <Info label="Vendedores" value={String(item.vendedores)} />
-                              <Info label="Usuários ativos" value={String(item.activeMembers)} />
-                              <Info label="Pendentes" value={String(item.pendingMembers)} />
-                              <Info label="Leads" value={String(item.leads)} />
-                              <Info label="Campanhas" value={String(item.campaignsCount)} />
-                            </div>
+                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+                            <Info label="Usuários" value={String(item.users.length)} />
+                            <Info label="Owners" value={String(item.owners)} />
+                            <Info label="Admins" value={String(item.admins)} />
+                            <Info label="Vendedores" value={String(item.vendedores)} />
+                            <Info label="Usuários ativos" value={String(item.activeMembers)} />
+                            <Info label="Pendentes" value={String(item.pendingMembers)} />
+                            <Info label="Total de leads" value={String(item.totalLeadsEmpresa)} />
+                            <Info label="Leads abertos" value={String(item.leads)} />
+                            <Info label="Concluídos" value={String(item.concluidos)} />
+                            <Info label="Propostas" value={String(item.propostas)} />
+                            <Info label="Em andamento" value={String(item.andamento)} />
+                            <Info label="Campanhas" value={String(item.campaignsCount)} />
+                          </div>
 
-                            <div className="grid gap-3 md:grid-cols-3">
-                              <InfoCard
-                                title="Receita mapeada"
-                                value={money(item.receita)}
-                                subtitle="Base nos serviços da empresa"
-                              />
-                              <InfoCard
-                                title="Limite de vendedores"
-                                value={
-                                  item.maxVendedores > 0
-                                    ? String(item.maxVendedores)
-                                    : "Ilimitado"
-                                }
-                                subtitle={`Disponível: ${item.availableVendedores}`}
-                              />
-                              <InfoCard
-                                title="Cobrança"
-                                value={safeString(item.billingStatus)}
-                                subtitle={`Plano: ${safeString(company.plan || "sem plano")}`}
-                              />
-                            </div>
+                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                            <InfoCard
+                              title="Receita concluída"
+                              value={money(item.receitaConcluida)}
+                              subtitle={`${item.concluidos} leads concluídos`}
+                            />
+
+                            <InfoCard
+                              title="Receita potencial"
+                              value={money(item.receitaPotencial)}
+                              subtitle={`${item.leads + item.propostas} oportunidades abertas`}
+                            />
+
+                            <InfoCard
+                              title="Último lead"
+                              value={formatDateShort(item.ultimoLeadDate)}
+                              subtitle={`${item.ultimoLeadCliente} · ${safeString(item.ultimoLeadStatus)}`}
+                            />
+
+                            <InfoCard
+                              title="Limite de vendedores"
+                              value={
+                                item.maxVendedores > 0
+                                  ? String(item.maxVendedores)
+                                  : "Ilimitado"
+                              }
+                              subtitle={`Disponível: ${item.availableVendedores}`}
+                            />
+
+                            <InfoCard
+                              title="Cobrança"
+                              value={safeString(item.billingStatus)}
+                              subtitle={`Plano: ${safeString(company.plan || "sem plano")}`}
+                            />
+                          </div>
 
                             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                               <MiniInfo
