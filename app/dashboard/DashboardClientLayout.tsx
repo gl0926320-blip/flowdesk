@@ -391,59 +391,7 @@ useEffect(() => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (!loadedMembership) return;
-    if (isMasterPage) return;
-
-    if (pathname.startsWith("/dashboard/empresas") && !isOwner) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    if (pathname.startsWith("/dashboard/equipe") && !(isOwner || isAdmin)) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    if (pathname.startsWith("/dashboard/campanhas") && !hasCampanhasAccess) {
-      router.replace("/dashboard");
-      return;
-    }
-
-        if (pathname.startsWith("/dashboard/estoque") && !hasEstoqueAccess) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    if (pathname.startsWith("/dashboard/billing") && isVendedor) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    if (
-      pathname.startsWith("/dashboard/atendimento") &&
-      !hasAtendimentoAccess
-    ) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    if (pathname.startsWith("/dashboard/flowia") && isVendedor) {
-      router.replace("/dashboard");
-      return;
-    }
-  }, [
-    pathname,
-    isOwner,
-    isAdmin,
-    isVendedor,
-    hasAtendimentoAccess,
-    hasCampanhasAccess,
-    hasEstoqueAccess,
-    loadedMembership,
-    router,
-    isMasterPage,
-  ]);
+  // Acesso aos módulos liberado para todos os usuários autenticados.
 
   function toggleMenu(menuName: string) {
     setOpenMenus((prev) => ({
@@ -496,7 +444,7 @@ const sections: MenuSection[] = useMemo(() => {
           name: "Atendimento",
           href: "/dashboard/atendimento",
           icon: Headset,
-          visible: hasAtendimentoAccess,
+          visible: true,
         },
         {
           name: "Clientes",
@@ -508,7 +456,7 @@ const sections: MenuSection[] = useMemo(() => {
           name: "Estoque",
           href: "/dashboard/estoque",
           icon: Package,
-          visible: hasEstoqueAccess,
+          visible: true,
         },
 
       ].filter((item) => item.visible !== false),
@@ -539,7 +487,7 @@ const sections: MenuSection[] = useMemo(() => {
     {
       name: "Campanhas",
       icon: Megaphone,
-      visible: hasCampanhasAccess,
+      visible: true,
       children: [
         {
           name: "Campanhas",
@@ -561,49 +509,49 @@ const sections: MenuSection[] = useMemo(() => {
       name: "Disparos",
       href: "/dashboard/disparos",
       icon: MessageCircle,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "Automações",
       href: "/dashboard/automacoes",
       icon: Bot,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "Templates",
       href: "/dashboard/templates",
       icon: FileText,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "Logs",
       href: "/dashboard/logs",
       icon: BarChart3,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "WhatsApp",
       href: "/dashboard/whatsapp",
       icon: MessageCircle,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "E-mail",
       href: "/dashboard/email",
       icon: Mail,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
 
     {
       name: "SMS",
       href: "/dashboard/sms",
       icon: Megaphone,
-      visible: isOwner || isAdmin,
+      visible: true,
     },
   ].filter((item) => item.visible !== false),
 },
@@ -614,19 +562,19 @@ const sections: MenuSection[] = useMemo(() => {
           name: "Empresas",
           href: "/dashboard/empresas",
           icon: Building2,
-          visible: isOwner,
+          visible: true,
         },
         {
           name: "Equipe",
           href: "/dashboard/equipe",
           icon: Users2,
-          visible: isOwner || isAdmin,
+          visible: true,
         },
         {
           name: "Assinatura",
           href: "/dashboard/billing",
           icon: CreditCard,
-          visible: !isVendedor,
+          visible: true,
         },
         {
           name: "Configurações",
@@ -642,7 +590,7 @@ const sections: MenuSection[] = useMemo(() => {
           name: "FlowIA",
           href: "/dashboard/flowia",
           icon: Bot,
-          visible: !isVendedor,
+          visible: true,
         },
       ].filter((item) => item.visible !== false),
     },
@@ -883,7 +831,7 @@ const sections: MenuSection[] = useMemo(() => {
           </div>
         </div>
 
-        <nav className="flowdesk-scroll flex-1 overflow-y-auto px-3 py-4 pr-2">
+        <nav className="flowdesk-scroll min-h-0 flex-1 overflow-y-scroll px-3 py-4 pr-2">
           <div className="space-y-5">
             {sections.map((section) => (
               <div key={section.title}>
@@ -1180,7 +1128,7 @@ const sections: MenuSection[] = useMemo(() => {
                       Configurações
                     </Link>
 
-                    {!isVendedor && (
+                    {true && (
                       <Link
                         href="/dashboard/billing"
                         onClick={() => setIsProfileOpen(false)}

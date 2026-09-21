@@ -52,15 +52,7 @@ body {
   min-height: 40px;
 }
 
-.flowdesk-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
 
-.flowdesk-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
 
 .pipeline-board-scroll::-webkit-scrollbar {
   height: 10px;
