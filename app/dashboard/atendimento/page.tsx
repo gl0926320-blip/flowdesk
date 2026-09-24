@@ -458,6 +458,15 @@ export default function AtendimentoPage() {
   const [pageError, setPageError] = useState<string>("");
   const [pageSuccess, setPageSuccess] = useState<string>("");
 
+  // WhatsApp via QR Code
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrStatus, setQrStatus] = useState<
+    "idle" | "starting" | "qr" | "authenticated" | "connected" | "disconnected" | "error"
+  >("idle");
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrPhone, setQrPhone] = useState("");
+  const [qrMessage, setQrMessage] = useState("");
+
   const [connection, setConnection] = useState<WhatsAppConnectionRow | null>(
     null
   );
@@ -477,13 +486,64 @@ export default function AtendimentoPage() {
     !!connectionForm.business_account_id.trim() &&
     !!connectionForm.verify_token.trim() &&
     !!connectionForm.access_token.trim();
+  const hasActiveConnection =
+    qrStatus === "connected" ||
+    (connection?.provider === "webjs" && connection?.status === "connected");
 
-      const hasActiveConnection = connection?.status === "connected";
-
-    
   useEffect(() => {
     bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    const activeCompanyId = companyId;
+    let cancelled = false;
+
+    async function checkQrStatus() {
+      try {
+        const response = await fetch(
+          `/api/whatsapp/qr/status?companyId=${encodeURIComponent(activeCompanyId)}`,
+          { method: "GET", cache: "no-store" }
+        );
+
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok || !result || cancelled) return;
+
+        const nextStatus = String(result.status || "idle") as
+          | "idle"
+          | "starting"
+          | "qr"
+          | "authenticated"
+          | "connected"
+          | "disconnected"
+          | "error";
+
+        setQrStatus(nextStatus);
+        setQrCode(result.qrCode || null);
+        setQrPhone(result.phone || "");
+        setQrMessage(result.message || "");
+
+        if (nextStatus === "connected") {
+          setQrCode(null);
+          setPageSuccess("WhatsApp conectado com sucesso pelo QR Code.");
+          await fetchConnection(activeCompanyId);
+        }
+      } catch (error) {
+        console.error("Erro ao consultar status do WhatsApp QR:", error);
+      }
+    }
+
+    checkQrStatus();
+    const interval = window.setInterval(checkQrStatus, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [companyId, apiOpen]);
+
 
   useEffect(() => {
     if (!companyId) return;
@@ -723,6 +783,75 @@ export default function AtendimentoPage() {
 
     } else {
       setApiOpen(true);
+    }
+  }
+
+  async function startQrConnection() {
+    if (!companyId) {
+      setPageError("Empresa não identificada.");
+      return;
+    }
+
+    if (qrLoading) return;
+
+    clearNotices();
+    setQrLoading(true);
+    setQrStatus("starting");
+    setQrCode(null);
+    setQrPhone("");
+    setQrMessage("Iniciando WhatsApp e preparando o QR Code...");
+
+    try {
+      const response = await fetch("/api/whatsapp/qr/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId }),
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error || "Não foi possível iniciar o WhatsApp."
+        );
+      }
+
+      const nextStatus = String(result?.status || "starting") as
+        | "idle"
+        | "starting"
+        | "qr"
+        | "authenticated"
+        | "connected"
+        | "disconnected"
+        | "error";
+
+      setQrStatus(nextStatus);
+      setQrCode(result?.qrCode || null);
+      setQrPhone(result?.phone || "");
+      setQrMessage(
+        result?.message ||
+          "Sessão iniciada. Aguarde alguns segundos para o QR Code aparecer."
+      );
+
+      if (nextStatus === "connected") {
+        setPageSuccess("WhatsApp já está conectado.");
+      } else {
+        setPageSuccess(
+          "WhatsApp iniciado. Aguarde o QR Code e escaneie pelo celular."
+        );
+      }
+    } catch (error) {
+      console.error("Erro ao iniciar conexão QR:", error);
+      setQrStatus("error");
+      setQrCode(null);
+      setQrMessage("");
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "Falha inesperada ao gerar QR Code."
+      );
+    } finally {
+      setQrLoading(false);
     }
   }
 
@@ -1034,6 +1163,55 @@ export default function AtendimentoPage() {
       return;
     }
 
+    // Sincroniza automaticamente a etapa da conversa com a tabela Leads.
+    const leadStageMap: Record<ConversationStage, string> = {
+      lead: "novo",
+      proposta_enviada: "negociacao",
+      aguardando_cliente: "negociacao",
+      proposta_validada: "qualificado",
+      andamento: "negociacao",
+      concluido: "fechado",
+      perdido: "perdido",
+    };
+
+    const targetPhone = normalizePhone(target.client_phone);
+
+    if (targetPhone) {
+      const { data: leadRows, error: leadLookupError } = await supabase
+        .from("leads")
+        .select("id, phone")
+        .eq("company_id", target.company_id);
+
+      if (leadLookupError) {
+        console.error(
+          "Erro ao localizar lead para sincronizar:",
+          leadLookupError.message
+        );
+      } else {
+        const matchedLead = (leadRows || []).find(
+          (lead) => normalizePhone(lead.phone || "") === targetPhone
+        );
+
+        if (matchedLead?.id) {
+          const { error: leadUpdateError } = await supabase
+            .from("leads")
+            .update({
+              status: leadStageMap[stage],
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", matchedLead.id)
+            .eq("company_id", target.company_id);
+
+          if (leadUpdateError) {
+            console.error(
+              "Erro ao sincronizar etapa do lead:",
+              leadUpdateError.message
+            );
+          }
+        }
+      }
+    }
+
     await supabase.from("conversation_messages").insert({
       conversation_id: conversationId,
       company_id: target.company_id,
@@ -1115,7 +1293,7 @@ export default function AtendimentoPage() {
     setSending(true);
 
     try {
-      const response = await fetch("/api/whatsapp/send", {
+      const response = await fetch("/api/whatsapp/webjs/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1345,9 +1523,9 @@ const searched = useMemo(() => {
                       : "border-amber-500/20 bg-amber-500/10 text-amber-300"
                   )}
                 >
-                  {connection?.status === "connected"
-                    ? "API conectada"
-                    : "API desconectada"}
+                  {hasActiveConnection
+                    ? "WhatsApp conectado"
+                    : "WhatsApp desconectado"}
                 </span>
 
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-300">
@@ -1363,7 +1541,7 @@ const searched = useMemo(() => {
                 CENTRAL DE ATENDIMENTO
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-300 md:text-[15px]">
-                Atendimento oficial com fila geral, operadores, etapas comerciais e conexão da API do WhatsApp da própria empresa.
+                Atendimento integrado ao WhatsApp, Leads e Pipeline em uma única operação comercial.
               </p>
             </div>
 
@@ -1412,7 +1590,7 @@ const searched = useMemo(() => {
                 <div className="text-sm text-amber-200">
                   <div className="font-semibold">WhatsApp desconectado</div>
                   <div className="mt-1 text-amber-100/80">
-                    O histórico continua disponível, mas a empresa precisa reconectar a API para voltar a responder clientes.
+                    O histórico continua disponível. Reconecte o WhatsApp para voltar a receber e responder clientes.
                   </div>
                 </div>
               </div>
@@ -1421,7 +1599,7 @@ const searched = useMemo(() => {
                 type="button"
                 onClick={() => {
                   setApiOpen(true);
-                  setShowAdvancedApi(true);
+                  setShowAdvancedApi(false);
                   setPageError("");
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
@@ -1434,33 +1612,6 @@ const searched = useMemo(() => {
 
           {(pageError || pageSuccess) && (
             <div className="mt-4 space-y-2">
-          {!hasActiveConnection && (
-            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                <div className="text-sm text-amber-200">
-                  <div className="font-semibold">WhatsApp desconectado</div>
-                  <div className="mt-1 text-amber-100/80">
-                    O histórico continua disponível, mas a empresa precisa reconectar a API para voltar a responder clientes.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setApiOpen(true);
-                  setShowAdvancedApi(true);
-                  setPageError("");
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Reconectar
-              </button>
-            </div>
-          )}
-
               {pageSuccess && (
                 <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1496,7 +1647,7 @@ const searched = useMemo(() => {
                   setApiOpen(nextOpen);
 
                   if (!hasActiveConnection && nextOpen) {
-                    setShowAdvancedApi(true);
+                    setShowAdvancedApi(false);
                     setPageError("");
                   }
                 }}
@@ -1516,354 +1667,173 @@ const searched = useMemo(() => {
                   <ChevronDown className="h-4 w-4" />
                 )}
               </button>
-
-              {connection?.id && (
-  <button
-                  type="button"
-                  onClick={() => setShowRemoveConnectionConfirm(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/15"
-                >
-                  <X className="h-4 w-4" />
-                  Remover conexão
-                </button>
-              )}
             </div>
           </div>
                         {apiOpen && (
-            <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-5">
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                <div className="max-w-2xl">
-                  <div className="flex items-center gap-2">
-                    <Link2 className="h-4 w-4 text-cyan-300" />
-                    <h2 className="text-sm font-semibold text-white">
-                      Conexão oficial do WhatsApp
-                    </h2>
+            <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_35%),rgba(2,6,23,0.40)] p-5">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-center">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                    <MessageCircle className="h-4 w-4" />
+                    WhatsApp integrado ao FlowDesk
                   </div>
 
-                  <h3 className="mt-3 text-2xl font-bold text-white">
-                    Conecte o número da empresa
-                  </h3>
+                  <h2 className="mt-4 text-2xl font-black text-white md:text-3xl">
+                    {hasActiveConnection
+                      ? "WhatsApp conectado e pronto para operar"
+                      : "Conecte o WhatsApp da empresa"}
+                  </h2>
 
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Centralize conversas, assuma atendimentos, mova etapas do funil
-                    e responda clientes usando a API oficial do WhatsApp Cloud.
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                    {hasActiveConnection
+                      ? "As novas mensagens entram automaticamente em Conversas, criam ou atualizam Leads e podem ser movimentadas pelo Pipeline."
+                      : "Clique em Gerar QR Code e escaneie pelo WhatsApp em Aparelhos conectados."}
                   </p>
 
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <StatusMini
-                      label="Status da conexão"
+                      label="WhatsApp"
                       value={
-                        connection?.status === "connected"
-                          ? "WhatsApp conectado"
-                          : isConnectionReady
-                          ? "Pronto para conectar"
-                          : "Configuração pendente"
+                        hasActiveConnection
+                          ? "Conectado"
+                          : qrStatus === "qr"
+                          ? "Aguardando leitura"
+                          : qrStatus === "authenticated"
+                          ? "Autenticando"
+                          : qrStatus === "starting"
+                          ? "Iniciando"
+                          : qrStatus === "error"
+                          ? "Erro"
+                          : "Desconectado"
                       }
                       tone={
-                        connection?.status === "connected"
+                        hasActiveConnection
                           ? "success"
-                          : isConnectionReady
-                          ? "info"
-                          : "warning"
+                          : qrStatus === "error"
+                          ? "warning"
+                          : "info"
                       }
                     />
 
                     <StatusMini
                       label="Número"
-                      value={
-                        connectionForm.phone_number
-                          ? connectionForm.phone_number
-                          : "Não informado"
-                      }
+                      value={qrPhone ? formatPhone(qrPhone) : "Aguardando conexão"}
                       tone="neutral"
                     />
 
                     <StatusMini
-                      label="Webhook"
-                      value="/api/whatsapp/webhook"
-                      tone="info"
+                      label="Operação"
+                      value="Conversas + Leads + Pipeline"
+                      tone="success"
                     />
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Conexão atual
-                        </p>
-                        <p className="mt-2 text-base font-semibold text-white">
-                          {connectionForm.connection_name || "WhatsApp Principal"}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-400">
-                          {connectionForm.phone_number
-                            ? connectionForm.phone_number
-                            : "Nenhum número conectado ainda"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold",
-                          connection?.status === "connected"
-                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                            : "border-amber-500/20 bg-amber-500/10 text-amber-300"
-                        )}
-                      >
-                        {connection?.status === "connected" ? (
-                          <CheckCircle2 className="h-4 w-4" />
-                        ) : (
-                          <AlertTriangle className="h-4 w-4" />
-                        )}
-                        {connection?.status === "connected"
-                          ? "Conectado"
-                          : "Pendente"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Etapas para conectar
-                    </p>
-
-                    <div className="mt-3 space-y-2 text-sm text-slate-300">
-                      <div className="flex items-start gap-2">
-                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
-                        <span>Defina o nome da conexão e o número principal da empresa.</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
-                        <span>Preencha os dados da Meta na configuração avançada.</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
-                        <span>Salve a conexão para ativar o atendimento oficial.</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="w-full max-w-[360px] rounded-[24px] border border-cyan-500/15 bg-[linear-gradient(180deg,rgba(8,15,35,0.95),rgba(14,24,48,0.95))] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-                    Ação principal
-                  </p>
-
-                  <h4 className="mt-3 text-lg font-bold text-white">
-                    {hasActiveConnection
-                      ? "Canal conectado"
-                      : "Conecte seu WhatsApp"}
-                  </h4>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {hasActiveConnection
-                      ? "O canal oficial da empresa está ativo e pronto para operar dentro da central."
-                      : "Reconecte o canal da empresa para liberar atendimento, resposta e operação completa pela API oficial."}
-                  </p>
-
-                  <div className="mt-4 flex flex-col gap-3">
-                    <button
-                      onClick={saveConnection}
-                      disabled={savingConnection}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:opacity-60"
-                    >
-                      {savingConnection ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      {hasActiveConnection
-                        ? "Salvar ajustes"
-                        : "Reconectar WhatsApp"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowAdvancedApi((prev) => !prev)}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10"
-                    >
-                      <Settings2 className="h-4 w-4" />
-                      {showAdvancedApi
-                        ? "Ocultar configuração avançada"
-                        : "Mostrar configuração avançada"}
-                    </button>
-
-                    {connection?.id && (
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    {!hasActiveConnection && (
                       <button
                         type="button"
-                        onClick={() => setShowRemoveConnectionConfirm(true)}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/15"
+                        onClick={startQrConnection}
+                        disabled={qrLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        <X className="h-4 w-4" />
-                        Remover conexão
+                        {qrLoading || qrStatus === "starting" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <MessageCircle className="h-4 w-4" />
+                        )}
+
+                        {qrCode ? "Atualizar QR Code" : "Gerar QR Code"}
+                      </button>
+                    )}
+
+                    {hasActiveConnection && (
+                      <button
+                        type="button"
+                        onClick={() => setApiOpen(false)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        WhatsApp conectado
                       </button>
                     )}
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-slate-400">Token atual</p>
-                    <p className="mt-1 text-sm text-white">
-                      {maskToken(connectionForm.access_token)}
-                    </p>
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-400">
+                    {qrMessage ||
+                      (hasActiveConnection
+                        ? "Aguardando novas mensagens do WhatsApp."
+                        : "Nenhuma sessão iniciada. Clique em Gerar QR Code para começar.")}
                   </div>
 
-                  {connection?.id && (
-                    <div className="mt-3 rounded-2xl border border-red-500/15 bg-red-500/5 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-300">
-                        Zona de risco
+                  <div className="mt-4 grid gap-2 text-sm text-slate-300">
+                    <div className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                      <span>Mensagem nova cria ou atualiza uma conversa automaticamente.</span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                      <span>Contato novo vira Lead automaticamente com origem WhatsApp.</span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                      <span>Mover a conversa no funil sincroniza a etapa na área de Leads.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex min-h-[330px] items-center justify-center rounded-[24px] border border-white/10 bg-white p-5 shadow-[0_18px_50px_rgba(0,0,0,0.25)]">
+                  {hasActiveConnection ? (
+                    <div className="text-center">
+                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                        <CheckCircle2 className="h-10 w-10" />
+                      </div>
+
+                      <h3 className="mt-4 text-xl font-black text-slate-900">
+                        WhatsApp conectado
+                      </h3>
+
+                      <p className="mt-2 text-sm text-slate-500">
+                        {qrPhone ? formatPhone(qrPhone) : "Sessão ativa"}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-slate-300">
-                        Remover a conexão desativa o uso da API oficial nesta empresa até uma nova configuração.
+
+                      <p className="mt-5 text-xs leading-5 text-slate-500">
+                        Pode fechar esta área. As conversas novas aparecerão
+                        automaticamente abaixo.
                       </p>
+                    </div>
+                  ) : qrCode ? (
+                    <div className="text-center">
+                      <img
+                        src={qrCode}
+                        alt="QR Code do WhatsApp"
+                        className="mx-auto h-[255px] w-[255px] rounded-xl object-contain"
+                      />
+
+                      <p className="mt-3 text-sm font-bold text-slate-900">
+                        Escaneie este QR Code
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        WhatsApp → Aparelhos conectados → Conectar aparelho
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-w-[240px] text-center">
+                      {qrLoading || qrStatus === "starting" ? (
+                        <Loader2 className="mx-auto h-16 w-16 animate-spin text-emerald-600" />
+                      ) : (
+                        <MessageCircle className="mx-auto h-16 w-16 text-emerald-600" />
+                      )}
+
+                      <h3 className="mt-4 text-lg font-black text-slate-900">
+                        {qrStatus === "starting"
+                          ? "Preparando QR Code..."
+                          : "QR Code aparecerá aqui"}
+                      </h3>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {showAdvancedApi && (
-                <div className="mt-5 rounded-[24px] border border-white/10 bg-[rgba(255,255,255,0.02)] p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">
-                        Configuração avançada da Meta
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Área técnica para integrador ou administrador configurar os dados oficiais.
-                      </p>
-                    </div>
-
-                    <div className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-300">
-                      Modo avançado
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                    <InputField
-                      label="Nome da conexão"
-                      value={connectionForm.connection_name}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          connection_name: value,
-                        }))
-                      }
-                      placeholder="WhatsApp Principal"
-                    />
-
-                    <InputField
-                      label="Número conectado"
-                      value={connectionForm.phone_number}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          phone_number: value,
-                        }))
-                      }
-                      placeholder="+55 11 99999-9999"
-                    />
-
-                    <InputField
-                      label="Phone Number ID"
-                      value={connectionForm.phone_number_id}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          phone_number_id: value,
-                        }))
-                      }
-                      placeholder="123456789012345"
-                    />
-
-                    <InputField
-                      label="Business Account ID"
-                      value={connectionForm.business_account_id}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          business_account_id: value,
-                        }))
-                      }
-                      placeholder="WABA ID"
-                    />
-
-                    <InputField
-                      label="Verify Token"
-                      value={connectionForm.verify_token}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          verify_token: value,
-                        }))
-                      }
-                      placeholder="token de verificação do webhook"
-                    />
-
-                    <InputField
-                      label="Access Token"
-                      value={connectionForm.access_token}
-                      onChange={(value) =>
-                        setConnectionForm((prev) => ({
-                          ...prev,
-                          access_token: value,
-                        }))
-                      }
-                      placeholder="token da Meta"
-                      type="password"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-                    {showRemoveConnectionConfirm && (
-            <div className="mt-5 rounded-[24px] border border-red-500/20 bg-[rgba(127,29,29,0.12)] p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="max-w-2xl">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-300" />
-                    <h3 className="text-sm font-semibold text-white">
-                      Confirmar remoção da conexão
-                    </h3>
-                  </div>
-
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    Você está prestes a remover a conexão oficial do WhatsApp desta empresa.
-                    Depois disso, o atendimento via API ficará indisponível até que uma nova conexão seja configurada.
-                  </p>
-
-                  <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-slate-400">Conexão selecionada</p>
-                    <p className="mt-1 text-sm font-semibold text-white">
-                      {connectionForm.connection_name || "WhatsApp Principal"}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {connectionForm.phone_number || "Sem número configurado"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex w-full max-w-[340px] flex-col gap-3">
-                  <button
-                    type="button"
-                    onClick={removeConnection}
-                    disabled={removingConnection}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {removingConnection ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <X className="h-4 w-4" />
-                    )}
-                    Confirmar remoção
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowRemoveConnectionConfirm(false)}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10"
-                  >
-                    Cancelar
-                  </button>
                 </div>
               </div>
             </div>
@@ -2482,12 +2452,11 @@ const searched = useMemo(() => {
                 <p className="mt-2 text-xs text-slate-500">
                   {hasActiveConnection ? (
                     <>
-                      O envio de texto continua usando{" "}
-                      <span className="text-cyan-300">/api/whatsapp/send</span>.
+                      WhatsApp conectado. As mensagens são enviadas diretamente pelo FlowDesk.
                     </>
                   ) : (
                     <>
-                      A conexão oficial do WhatsApp está desativada. Reconecte a empresa para voltar a enviar mensagens.
+                      WhatsApp desconectado. Reconecte para voltar a enviar mensagens.
                     </>
                   )}
                 </p>

@@ -1,132 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import {
-  Crown,
-  Users,
   BarChart3,
-  GraduationCap,
   Check,
-  Sparkles,
-  ShieldCheck,
-  Rocket,
-  Target,
+  Crown,
+  GraduationCap,
   Layers3,
-  Plus,
   Minus,
-  MessageCircle,
-  Megaphone,
+  Plus,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Users,
 } from "lucide-react";
 
-type PlanKey = "free" | "starter" | "growth" | "scale" | "pro";
-
-type PlanConfig = {
-  key: PlanKey;
-  title: string;
-  subtitle: string;
-  idealFor: string;
-  price: number;
-  usersIncluded: number;
-  limitLabel: string;
-  limitValue: string;
-  features: string[];
-  recommended?: boolean;
-};
-
-const EXTRA_USER_PRICE = 29.9;
-const WHATSAPP_ADDON_PRICE = 149.9;
-const CAMPAIGNS_ADDON_PRICE = 49.9;
-const ESTOQUE_ADDON_PRICE = 79.9;
-
-const PLAN_CONFIGS: PlanConfig[] = [
-  {
-    key: "free",
-    title: "Free",
-    subtitle: "Para começar",
-    idealFor:
-      "Ideal para quem quer conhecer o FlowDesk e iniciar a organização comercial.",
-    price: 0,
-    usersIncluded: 1,
-    limitLabel: "Recursos iniciais",
-    limitValue: "5 serviços",
-    features: [
-      "CRM básico",
-      "Pipeline simples",
-      "Dashboard básico",
-      "Gestão inicial de leads",
-    ],
-  },
-  {
-    key: "starter",
-    title: "Starter",
-    subtitle: "Para estruturar a operação",
-    idealFor:
-      "Ideal para pequenos negócios que querem sair do improviso e vender com mais organização.",
-    price: 69.9,
-    usersIncluded: 1,
-    limitLabel: "Recursos",
-    limitValue: "Ilimitados",
-    features: [
-      "CRM completo",
-      "Pipeline avançado",
-      "Orçamentos ilimitados",
-      "Exportação em PDF",
-    ],
-  },
-  {
-    key: "growth",
-    title: "Growth",
-    subtitle: "Para crescer com controle",
-    idealFor:
-      "Ideal para empresas com operação comercial ativa e necessidade de acompanhar equipe e resultados.",
-    price: 149.9,
-    usersIncluded: 3,
-    limitLabel: "Gestão",
-    limitValue: "Mais profundidade",
-    features: [
-      "Gestão de equipe",
-      "Controle de leads",
-      "Métricas de vendas",
-      "Comissões",
-    ],
-  },
-  {
-    key: "scale",
-    title: "Scale",
-    subtitle: "Para operação mais forte",
-    idealFor:
-      "Ideal para equipes maiores que precisam de visão gerencial, produtividade e acompanhamento avançado.",
-    price: 239.9,
-    usersIncluded: 5,
-    limitLabel: "Estrutura",
-    limitValue: "Mais performance",
-    features: [
-      "Equipe completa",
-      "Ranking de vendedores",
-      "Dashboard avançado",
-      "Suporte prioritário",
-    ],
-  },
-  {
-    key: "pro",
-    title: "Pro",
-    subtitle: "Para gestão avançada",
-    idealFor:
-      "Ideal para empresas que querem uma operação comercial premium, mais inteligência e acompanhamento estratégico.",
-    price: 449.9,
-    usersIncluded: 10,
-    limitLabel: "Operação",
-    limitValue: "Mais inteligência",
-    features: [
-      "Alertas estratégicos",
-      "Analytics avançado",
-      "Recursos premium de gestão",
-      "FlowDesk Academy",
-    ],
-    recommended: true,
-  },
-];
+const BASE_PRICE = 149.9;
+const EXTRA_USER_PRICE = 89.9;
+const USERS_INCLUDED = 1;
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -135,172 +28,154 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatCompactCurrency(value: number) {
-  const formatted = new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-
-  return `R$ ${formatted}`;
-}
-
 export default function BillingPage() {
   const supabase = createClient();
 
-  const [plan, setPlan] = useState<PlanKey>("free");
   const [loading, setLoading] = useState(true);
-
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("starter");
+  const [companyActive, setCompanyActive] = useState(true);
+  const [billingStatus, setBillingStatus] = useState<string | null>(null);
+  const [nextBillingDate, setNextBillingDate] = useState<string | null>(null);
+  const [lastPaymentDate, setLastPaymentDate] = useState<string | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [desiredUsers, setDesiredUsers] = useState(1);
-  const [includeWhatsapp, setIncludeWhatsapp] = useState(false);
-  const [includeCampaigns, setIncludeCampaigns] = useState(false);
-  const [includeEstoque, setIncludeEstoque] = useState(false);
-
-useEffect(() => {
-  async function loadPlan() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const { data: membership, error: membershipError } = await supabase
-      .from("company_users")
-      .select("company_id, role, status")
-      .eq("user_id", user.id)
-      .eq("status", "ativo")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (membershipError) {
-      console.error("Erro ao buscar vínculo da empresa:", membershipError);
-      setLoading(false);
-      return;
-    }
-
-    if (!membership?.company_id) {
-      console.error("Usuário sem empresa ativa vinculada.");
-      setPlan("free");
-      setSelectedPlan("free");
-      setLoading(false);
-      return;
-    }
-
-    const { data: company, error: companyError } = await supabase
-      .from("companies")
-      .select("plan, is_active, billing_status, next_billing_date, last_payment_date, price_amount")
-      .eq("id", membership.company_id)
-      .maybeSingle();
-
-    if (companyError) {
-      console.error("Erro ao buscar plano da empresa:", companyError);
-      setLoading(false);
-      return;
-    }
-
-    const companyPlan = (company?.plan || "free") as PlanKey;
-    const isCompanyActive = company?.is_active !== false;
-
-    if (!isCompanyActive) {
-      setPlan("free");
-      setSelectedPlan("free");
-      setLoading(false);
-      return;
-    }
-
-    setPlan(companyPlan);
-    setSelectedPlan(companyPlan);
-    setLoading(false);
-  }
-
-  loadPlan();
-}, [supabase]);
-
-  const activePlan = useMemo(() => {
-    return (
-      PLAN_CONFIGS.find((item) => item.key === selectedPlan) || PLAN_CONFIGS[1]
-    );
-  }, [selectedPlan]);
 
   useEffect(() => {
-    setDesiredUsers((prev) => Math.max(prev, activePlan.usersIncluded));
-  }, [activePlan.usersIncluded]);
+    async function loadBilling() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-  const extraUsers = Math.max(0, desiredUsers - activePlan.usersIncluded);
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        const { data: membership, error: membershipError } = await supabase
+          .from("company_users")
+          .select("company_id, role, status")
+          .eq("user_id", user.id)
+          .eq("status", "ativo")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (membershipError) {
+          console.error(
+            "Erro ao buscar vínculo da empresa:",
+            membershipError
+          );
+          setLoading(false);
+          return;
+        }
+
+        if (!membership?.company_id) {
+          console.error("Usuário sem empresa ativa vinculada.");
+          setCompanyActive(false);
+          setLoading(false);
+          return;
+        }
+
+        const { data: company, error: companyError } = await supabase
+          .from("companies")
+          .select(
+            "is_active, billing_status, next_billing_date, last_payment_date, price_amount"
+          )
+          .eq("id", membership.company_id)
+          .maybeSingle();
+
+        if (companyError) {
+          console.error("Erro ao buscar assinatura da empresa:", companyError);
+          setLoading(false);
+          return;
+        }
+
+        setCompanyActive(company?.is_active !== false);
+        setBillingStatus(company?.billing_status || null);
+        setNextBillingDate(company?.next_billing_date || null);
+        setLastPaymentDate(company?.last_payment_date || null);
+
+        const savedPrice = Number(company?.price_amount);
+        setCurrentPrice(
+          Number.isFinite(savedPrice) && savedPrice > 0 ? savedPrice : null
+        );
+
+        setLoading(false);
+      } catch (error) {
+        console.error("Erro ao carregar assinatura:", error);
+        setLoading(false);
+      }
+    }
+
+    loadBilling();
+  }, [supabase]);
+
+  const extraUsers = Math.max(0, desiredUsers - USERS_INCLUDED);
   const extraUsersTotal = extraUsers * EXTRA_USER_PRICE;
-  const addonsTotal =
-    (includeWhatsapp ? WHATSAPP_ADDON_PRICE : 0) +
-    (includeCampaigns ? CAMPAIGNS_ADDON_PRICE : 0) +
-    (includeEstoque ? ESTOQUE_ADDON_PRICE : 0);
-  const estimatedTotal = activePlan.price + extraUsersTotal + addonsTotal;
+  const estimatedTotal = BASE_PRICE + extraUsersTotal;
 
-  function gerarWhatsapp(planoNome: string, preco: string) {
-    const texto = `Olá! Quero contratar o plano ${planoNome} do FlowDesk.
+  function formatDate(value: string | null) {
+    if (!value) return "—";
 
-Plano: ${planoNome}
-Valor base: R$ ${preco}/mês
-Usuários desejados: ${desiredUsers}
-Usuários extras: ${extraUsers}
-Atendimento / WhatsApp: ${includeWhatsapp ? "Sim" : "Não"}
-Campanhas: ${includeCampaigns ? "Sim" : "Não"}
-Estoque: ${includeEstoque ? "Sim" : "Não"}
-Valor estimado: ${formatCurrency(estimatedTotal)}
+    const date = new Date(value);
 
-Observação:
-- Módulo de WhatsApp com API e consumo por conta do cliente.
+    if (Number.isNaN(date.getTime())) {
+      return "—";
+    }
 
-Gostaria de ativar para minha empresa.`;
-
-    return `https://wa.me/5562994693465?text=${encodeURIComponent(texto)}`;
+    return new Intl.DateTimeFormat("pt-BR").format(date);
   }
 
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-white">
-        Carregando plano...
+        Carregando assinatura...
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-16 p-6 text-white md:p-10">
+    <div className="mx-auto max-w-7xl space-y-10 p-6 text-white md:p-10">
       <section className="overflow-hidden rounded-[32px] border border-cyan-500/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_24%),linear-gradient(135deg,rgba(7,15,34,0.98),rgba(15,23,42,0.98))] px-6 py-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_18px_60px_rgba(0,0,0,0.35)] md:px-8 md:py-10">
         <div className="flex flex-col gap-8 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-3xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-yellow-300">
               <Crown className="h-4 w-4" />
-              Planos FlowDesk
+              Assinatura FlowDesk
             </div>
 
             <h1 className="text-3xl font-black tracking-tight text-white md:text-5xl">
-              Monte o plano ideal para sua operação comercial
+              Um único plano. Todos os recursos.
             </h1>
 
             <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-300 md:text-base">
-              Escolha a base ideal para sua empresa, defina a quantidade de
-              usuários e adicione módulos opcionais conforme sua necessidade.
+              Tenha acesso completo ao FlowDesk por{" "}
+              <span className="font-bold text-white">
+                {formatCurrency(BASE_PRICE)}/mês
+              </span>{" "}
+              com 1 usuário incluído. Adicione novos usuários por{" "}
+              <span className="font-bold text-cyan-300">
+                {formatCurrency(EXTRA_USER_PRICE)}/mês
+              </span>{" "}
+              cada.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <HeroPill
                 icon={<BarChart3 className="h-4 w-4" />}
-                label="Inteligência comercial"
+                label="CRM completo"
               />
               <HeroPill
                 icon={<Users className="h-4 w-4" />}
-                label="Equipe e produtividade"
+                label="Gestão de equipe"
               />
               <HeroPill
                 icon={<Layers3 className="h-4 w-4" />}
-                label="Operação organizada"
+                label="Todos os módulos"
               />
               <HeroPill
                 icon={<Sparkles className="h-4 w-4" />}
-                label="Plano flexível"
+                label="FlowIA incluída"
               />
             </div>
           </div>
@@ -308,26 +183,26 @@ Gostaria de ativar para minha empresa.`;
           <div className="grid gap-3 sm:grid-cols-2 xl:w-[420px]">
             <MiniStat
               icon={<ShieldCheck className="h-4 w-4" />}
-              title="Mais controle"
-              value="Tudo centralizado"
+              title="Plano"
+              value="Completo"
               tone="cyan"
             />
             <MiniStat
               icon={<Rocket className="h-4 w-4" />}
-              title="Mais crescimento"
-              value="Estrutura para escalar"
+              title="Usuário inicial"
+              value="1 incluído"
               tone="violet"
             />
             <MiniStat
               icon={<Target className="h-4 w-4" />}
-              title="Mais performance"
-              value="Operação mais eficiente"
+              title="Usuário adicional"
+              value={formatCurrency(EXTRA_USER_PRICE)}
               tone="emerald"
             />
             <MiniStat
               icon={<GraduationCap className="h-4 w-4" />}
-              title="Mais apoio"
-              value="Implantação estratégica"
+              title="Cobrança"
+              value="Mensal"
               tone="amber"
             />
           </div>
@@ -337,312 +212,258 @@ Gostaria de ativar para minha empresa.`;
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <Feature
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Inteligência Comercial"
-          desc="Acompanhe métricas, conversão, desempenho e a evolução real da operação."
+          title="Gestão Comercial"
+          desc="Leads, carteira, pipeline, clientes, orçamentos, vendas e acompanhamento da operação."
         />
 
         <Feature
           icon={<Users className="h-5 w-5" />}
-          title="Gestão de Equipe"
-          desc="Controle usuários, acompanhe produtividade e organize melhor o trabalho comercial."
+          title="Equipe e Comissões"
+          desc="Gerencie usuários, vendedores, produtividade, metas e comissões em um único ambiente."
         />
 
         <Feature
           icon={<Layers3 className="h-5 w-5" />}
-          title="Operação Organizada"
-          desc="Centralize pipeline, orçamentos, follow-up, clientes e atendimento em um só lugar."
+          title="Recursos Inclusos"
+          desc="Estoque, campanhas, automações, WhatsApp, e-mail, SMS, templates e logs sem cobrança por módulo."
         />
 
         <Feature
-          icon={<GraduationCap className="h-5 w-5" />}
-          title="FlowDesk Academy"
-          desc="Apoio estratégico para implantação, uso e crescimento da operação."
+          icon={<Sparkles className="h-5 w-5" />}
+          title="FlowIA"
+          desc="Inteligência integrada à operação comercial para apoiar análise, produtividade e tomada de decisão."
         />
       </section>
 
-      <section className="space-y-6">
-        <div className="max-w-2xl">
-          <h2 className="text-2xl font-bold text-white md:text-3xl">
-            Planos pensados para cada fase do seu negócio
-          </h2>
-          <p className="mt-2 text-sm text-slate-400 md:text-base">
-            Comece com o essencial e evolua para uma gestão mais estratégica,
-            produtiva e profissional.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 2xl:grid-cols-5">
-          {PLAN_CONFIGS.map((item) => (
-            <Card
-              key={item.key}
-              title={item.title}
-              subtitle={item.subtitle}
-              idealFor={item.idealFor}
-              price={item.price}
-              usersIncluded={item.usersIncluded}
-              limitLabel={item.limitLabel}
-              limitValue={item.limitValue}
-              features={item.features}
-              recommended={item.recommended}
-              current={plan === item.key}
-              activeForBuilder={selectedPlan === item.key}
-              onSelectBuilder={() => setSelectedPlan(item.key)}
-              link={gerarWhatsapp(
-                item.title,
-                item.price.toFixed(2).replace(".", ",")
-              )}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(9,14,28,0.98))] p-6 shadow-[0_16px_40px_rgba(0,0,0,0.22)] md:p-8">
-        <div className="mb-8 max-w-3xl">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-            <Sparkles className="h-4 w-4" />
-            Simulador de plano
-          </div>
-
-          <h3 className="text-2xl font-bold text-white md:text-3xl">
-            Monte seu plano do jeito que sua empresa precisa
-          </h3>
-
-                    <p className="mt-2 text-sm leading-relaxed text-slate-400 md:text-base">
-            Escolha o plano base, defina a quantidade de usuários e adicione
-            módulos opcionais como Atendimento / WhatsApp, Campanhas e Estoque
-            para estruturar melhor sua operação comercial.
-          </p>
-        </div>
-
-        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 space-y-6">
-            <div className="overflow-hidden rounded-[26px] border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 text-sm font-semibold text-white">
-                1. Escolha o plano base
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                {PLAN_CONFIGS.map((item) => {
-                  const active = selectedPlan === item.key;
-
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setSelectedPlan(item.key)}
-                      className={[
-                        "flex min-h-[156px] min-w-0 flex-col justify-between rounded-2xl border px-4 py-4 text-left transition",
-                        active
-                          ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_8px_30px_rgba(0,0,0,0.18)]"
-                          : "border-white/10 bg-[rgba(255,255,255,0.03)] hover:bg-white/10",
-                      ].join(" ")}
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-bold text-white">
-                          {item.title}
-                        </div>
-
-                        <div className="mt-1 min-h-[38px] text-xs leading-relaxed text-slate-400">
-                          {item.subtitle}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 min-w-0">
-                        <div className="text-xl font-black leading-none tracking-tight text-white sm:text-2xl">
-                          {formatCompactCurrency(item.price)}
-                        </div>
-                        <div className="mt-1 text-xs font-medium text-slate-400">
-                          /mês
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+      <section className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(9,14,28,0.98))] p-6 shadow-[0_16px_40px_rgba(0,0,0,0.22)] md:p-8">
+          <div className="mb-8">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+              <Users className="h-4 w-4" />
+              Quantidade de usuários
             </div>
 
-            <div className="overflow-hidden rounded-[26px] border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 text-sm font-semibold text-white">
-                2. Quantos usuários sua empresa precisa?
-              </div>
+            <h2 className="text-2xl font-bold text-white md:text-3xl">
+              Monte sua assinatura pela sua equipe
+            </h2>
 
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="text-sm text-slate-400">
-                    Plano{" "}
-                    <span className="font-semibold text-white">
-                      {activePlan.title}
-                    </span>{" "}
-                    inclui{" "}
-                    <span className="font-semibold text-cyan-300">
-                      {activePlan.usersIncluded}
-                    </span>{" "}
-                    usuário{activePlan.usersIncluded > 1 ? "s" : ""}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    Usuário extra: {formatCurrency(EXTRA_USER_PRICE)} / mês
-                  </div>
-                </div>
-
-                <div className="inline-flex items-center rounded-2xl border border-white/10 bg-[rgba(255,255,255,0.03)] p-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDesiredUsers((prev) =>
-                        Math.max(activePlan.usersIncluded, prev - 1)
-                      )
-                    }
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-
-                  <div className="min-w-[120px] px-4 text-center">
-                    <div className="text-2xl font-black text-white">
-                      {desiredUsers}
-                    </div>
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                      usuários
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setDesiredUsers((prev) => prev + 1)}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[26px] border border-white/10 bg-white/5 p-5">
-              <div className="mb-4 text-sm font-semibold text-white">
-                3. Adicionais opcionais
-              </div>
-
-                 <div className="grid gap-4 md:grid-cols-2">
-                <AddonCard
-                  active={includeWhatsapp}
-                  onToggle={() => setIncludeWhatsapp((prev) => !prev)}
-                  icon={<MessageCircle className="h-5 w-5" />}
-                  title="Atendimento / WhatsApp"
-                  description="Módulo opcional para empresas que precisam de operação de atendimento integrada. A API oficial e os custos de consumo são por conta do cliente."
-                  price={formatCurrency(WHATSAPP_ADDON_PRICE)}
-                  note="API e consumo não inclusos"
-                />
-
-                <AddonCard
-                  active={includeCampaigns}
-                  onToggle={() => setIncludeCampaigns((prev) => !prev)}
-                  icon={<Megaphone className="h-5 w-5" />}
-                  title="Campanhas"
-                  description="Módulo opcional para empresas que querem controlar campanhas, origem de leads e performance comercial."
-                  price={formatCurrency(CAMPAIGNS_ADDON_PRICE)}
-                />
-
-                   <div className="md:col-span-2">
-                  <AddonCard
-                    active={includeEstoque}
-                    onToggle={() => setIncludeEstoque((prev) => !prev)}
-                    icon={<Layers3 className="h-5 w-5" />}
-                    title="Estoque"
-                    description="Módulo opcional para empresas que precisam controlar produtos, custo, venda, margem, estoque mínimo, alertas de reposição e movimentações internas."
-                    price={formatCurrency(ESTOQUE_ADDON_PRICE)}
-                    note="Controle de produtos e movimentações"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-purple-500/30 bg-[linear-gradient(180deg,rgba(88,28,135,0.28),rgba(30,41,59,0.98))] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-            <div className="mb-4 inline-flex rounded-xl bg-purple-600 px-3 py-1 text-xs font-semibold text-white">
-              Resumo estimado
-            </div>
-
-            <h4 className="text-2xl font-bold text-white">{activePlan.title}</h4>
-            <p className="mt-1 text-sm text-slate-300">{activePlan.subtitle}</p>
-
-            <div className="mt-6 space-y-3 text-sm text-slate-300">
-              <PriceRow
-                label={`Plano base (${activePlan.title})`}
-                value={formatCurrency(activePlan.price)}
-              />
-              <PriceRow
-                label="Usuários incluídos"
-                value={`${activePlan.usersIncluded}`}
-              />
-              <PriceRow
-                label={`Usuários extras (${extraUsers})`}
-                value={formatCurrency(extraUsersTotal)}
-              />
-              <PriceRow
-                label="Atendimento / WhatsApp"
-                value={
-                  includeWhatsapp
-                    ? formatCurrency(WHATSAPP_ADDON_PRICE)
-                    : "Não adicionado"
-                }
-              />
-              <PriceRow
-                label="Campanhas"
-                value={
-                  includeCampaigns
-                    ? formatCurrency(CAMPAIGNS_ADDON_PRICE)
-                    : "Não adicionado"
-                }
-              />
-
-              <PriceRow
-                label="Estoque"
-                value={
-                  includeEstoque
-                    ? formatCurrency(ESTOQUE_ADDON_PRICE)
-                    : "Não adicionado"
-                }
-              />
-
-
-            </div>
-
-            {includeWhatsapp && (
-              <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
-                O módulo de WhatsApp não inclui custos de API. A conta, a API
-                oficial e o consumo ficam por conta do cliente.
-              </div>
-            )}
-
-            <div className="my-6 h-px bg-white/10" />
-
-            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
-                Valor mensal estimado
-              </div>
-              <div className="mt-2 break-words text-3xl font-black text-white md:text-4xl">
-                {formatCurrency(estimatedTotal)}
-              </div>
-            </div>
-
-            <a
-              href={gerarWhatsapp(
-                activePlan.title,
-                activePlan.price.toFixed(2).replace(".", ",")
-              )}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 block w-full rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 py-3 text-center text-sm font-semibold text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)] transition hover:scale-[1.02] hover:from-fuchsia-500 hover:to-violet-500"
-            >
-              Solicitar este plano
-            </a>
-
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">
-              O valor estimado pode variar conforme a configuração final da sua
-              operação e módulos adicionais contratados.
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400 md:text-base">
+              O primeiro usuário custa {formatCurrency(BASE_PRICE)} por mês e
+              já possui acesso completo ao sistema. Cada usuário adicional custa{" "}
+              {formatCurrency(EXTRA_USER_PRICE)} por mês.
             </p>
           </div>
+
+          <div className="rounded-[26px] border border-white/10 bg-white/5 p-5 md:p-6">
+            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-white">
+                  Quantos usuários vão utilizar o FlowDesk?
+                </div>
+
+                <div className="mt-2 text-sm text-slate-400">
+                  1 usuário incluído no valor base.
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Usuário adicional: {formatCurrency(EXTRA_USER_PRICE)} / mês
+                </div>
+              </div>
+
+              <div className="inline-flex items-center self-start rounded-2xl border border-white/10 bg-[rgba(255,255,255,0.03)] p-2 md:self-auto">
+                <button
+                  type="button"
+                  aria-label="Diminuir quantidade de usuários"
+                  onClick={() =>
+                    setDesiredUsers((prev) => Math.max(1, prev - 1))
+                  }
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+
+                <div className="min-w-[130px] px-4 text-center">
+                  <div className="text-2xl font-black text-white">
+                    {desiredUsers}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                    {desiredUsers === 1 ? "usuário" : "usuários"}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="Aumentar quantidade de usuários"
+                  onClick={() => setDesiredUsers((prev) => prev + 1)}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <PriceInfo
+                label="Assinatura base"
+                value={formatCurrency(BASE_PRICE)}
+                description="1 usuário incluído"
+              />
+
+              <PriceInfo
+                label={`Usuários adicionais (${extraUsers})`}
+                value={formatCurrency(extraUsersTotal)}
+                description={`${formatCurrency(EXTRA_USER_PRICE)} por usuário`}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[26px] border border-emerald-500/20 bg-emerald-500/10 p-5">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                <Check className="h-5 w-5" />
+              </div>
+
+              <div>
+                <div className="font-semibold text-white">
+                  Todos os recursos estão inclusos
+                </div>
+                <p className="mt-1 text-sm leading-relaxed text-emerald-100/70">
+                  Você não precisa comprar módulos separadamente. O valor varia
+                  apenas conforme a quantidade de usuários da sua empresa.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {[
+              "Dashboard financeiro e comercial",
+              "Leads, carteira e pipeline",
+              "Atendimento e clientes",
+              "Estoque",
+              "Orçamentos e vendas",
+              "Comissões",
+              "Campanhas",
+              "Disparos e automações",
+              "Templates e logs",
+              "WhatsApp",
+              "E-mail",
+              "SMS",
+              "Gestão de empresas",
+              "Gestão de equipe",
+              "Configurações",
+              "FlowIA",
+            ].map((feature) => (
+              <div
+                key={feature}
+                className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300"
+              >
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300">
+                  <Check className="h-3.5 w-3.5" />
+                </span>
+                {feature}
+              </div>
+            ))}
+          </div>
         </div>
+
+        <aside className="h-fit rounded-[30px] border border-purple-500/30 bg-[linear-gradient(180deg,rgba(88,28,135,0.28),rgba(30,41,59,0.98))] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)] xl:sticky xl:top-6">
+          <div className="mb-4 inline-flex rounded-xl bg-purple-600 px-3 py-1 text-xs font-semibold text-white">
+            Resumo da assinatura
+          </div>
+
+          <h3 className="text-2xl font-bold text-white">FlowDesk Completo</h3>
+          <p className="mt-1 text-sm text-slate-300">
+            Todos os recursos liberados.
+          </p>
+
+          <div className="mt-6 space-y-3 text-sm">
+            <PriceRow
+              label="Plano base"
+              value={formatCurrency(BASE_PRICE)}
+            />
+
+            <PriceRow
+              label="Usuários incluídos"
+              value={`${USERS_INCLUDED}`}
+            />
+
+            <PriceRow
+              label={`Usuários adicionais (${extraUsers})`}
+              value={formatCurrency(extraUsersTotal)}
+            />
+
+            <PriceRow
+              label="Total de usuários"
+              value={`${desiredUsers}`}
+            />
+          </div>
+
+          <div className="my-6 h-px bg-white/10" />
+
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
+              Valor mensal
+            </div>
+
+            <div className="mt-2 break-words text-3xl font-black text-white md:text-4xl">
+              {formatCurrency(estimatedTotal)}
+            </div>
+
+            <div className="mt-1 text-xs text-emerald-100/60">
+              Cobrança mensal conforme quantidade de usuários.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="mt-6 w-full rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 py-3.5 text-center text-sm font-semibold text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)] transition hover:scale-[1.02] hover:from-fuchsia-500 hover:to-violet-500"
+            onClick={() => {
+              console.log("[FlowDesk Billing] assinatura selecionada", {
+                users: desiredUsers,
+                basePrice: BASE_PRICE,
+                extraUsers,
+                extraUserPrice: EXTRA_USER_PRICE,
+                total: estimatedTotal,
+              });
+            }}
+          >
+            Continuar para pagamento
+          </button>
+
+          <p className="mt-3 text-xs leading-relaxed text-slate-400">
+            O checkout do Mercado Pago será conectado a este botão na próxima
+            etapa. O valor final deverá ser validado e recalculado no servidor.
+          </p>
+
+          <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <StatusRow
+              label="Status"
+              value={
+                companyActive
+                  ? billingStatus || "Ativa"
+                  : "Inativa"
+              }
+            />
+
+            <StatusRow
+              label="Próxima cobrança"
+              value={formatDate(nextBillingDate)}
+            />
+
+            <StatusRow
+              label="Último pagamento"
+              value={formatDate(lastPaymentDate)}
+            />
+
+            {currentPrice !== null && (
+              <StatusRow
+                label="Valor atual cadastrado"
+                value={formatCurrency(currentPrice)}
+              />
+            )}
+          </div>
+        </aside>
       </section>
     </div>
   );
@@ -689,6 +510,7 @@ function MiniStat({
         {icon}
         <span className="text-xs font-medium">{title}</span>
       </div>
+
       <span
         className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${toneClass}`}
       >
@@ -714,223 +536,29 @@ function Feature({
       </div>
 
       <h3 className="mb-2 text-base font-semibold text-white">{title}</h3>
-
       <p className="text-sm leading-relaxed text-slate-400">{desc}</p>
     </div>
   );
 }
 
-function Card({
-  title,
-  subtitle,
-  idealFor,
-  price,
-  usersIncluded,
-  limitLabel,
-  limitValue,
-  features,
-  recommended,
-  current,
-  activeForBuilder,
-  onSelectBuilder,
-  link,
-}: {
-  title: string;
-  subtitle: string;
-  idealFor: string;
-  price: number;
-  usersIncluded: number;
-  limitLabel: string;
-  limitValue: string;
-  features: string[];
-  recommended?: boolean;
-  current?: boolean;
-  activeForBuilder?: boolean;
-  onSelectBuilder?: () => void;
-  link: string;
-}) {
-  return (
-    <div
-      className={[
-        "relative flex min-w-0 flex-col rounded-[28px] border p-6 shadow-[0_16px_40px_rgba(0,0,0,0.22)] transition hover:-translate-y-1",
-        recommended
-          ? "border-purple-500 bg-[linear-gradient(180deg,rgba(88,28,135,0.35),rgba(30,41,59,0.98))]"
-          : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(9,14,28,0.98))]",
-      ].join(" ")}
-    >
-      {recommended && (
-        <div className="mb-4 inline-flex w-fit rounded-xl bg-purple-600 px-3 py-1 text-xs font-semibold text-white shadow-lg">
-          Mais escolhido
-        </div>
-      )}
-
-      <div className="mb-3 min-w-0">
-        <h2 className="truncate text-2xl font-bold text-white">{title}</h2>
-        <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
-      </div>
-
-      <div className="mb-5 min-w-0">
-        <div className="flex flex-wrap items-end gap-x-1 gap-y-1">
-          <span className="break-words text-3xl font-black tracking-tight text-white xl:text-[2rem]">
-            {formatCurrency(price)}
-          </span>
-          <span className="text-sm font-medium text-slate-400">/mês</span>
-        </div>
-      </div>
-
-      <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-300">
-          Para quem é
-        </div>
-        <p className="text-sm leading-relaxed text-slate-300">{idealFor}</p>
-      </div>
-
-      <div className="mb-6 space-y-3 text-sm text-slate-300">
-        <InfoRow
-          text={`${usersIncluded} usuário${usersIncluded > 1 ? "s" : ""} incluído${
-            usersIncluded > 1 ? "s" : ""
-          }`}
-        />
-        <InfoRow text={`${limitLabel}: ${limitValue}`} />
-
-        <div className="my-4 h-px bg-white/10" />
-
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-          O que este plano oferece
-        </div>
-
-        {features.map((feature, index) => (
-          <InfoRow key={index} text={feature} check />
-        ))}
-      </div>
-
-      <div className="mt-auto space-y-3">
-        {onSelectBuilder && (
-          <button
-            type="button"
-            onClick={onSelectBuilder}
-            className={[
-              "w-full rounded-2xl border py-3 text-sm font-semibold transition",
-              activeForBuilder
-                ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                : "border-white/10 bg-white/5 text-white hover:bg-white/10",
-            ].join(" ")}
-          >
-            {activeForBuilder ? "Selecionado no simulador" : "Usar no simulador"}
-          </button>
-        )}
-
-        {current ? (
-          <button
-            type="button"
-            className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 text-sm font-semibold text-white opacity-80"
-          >
-            Plano atual
-          </button>
-        ) : (
-          <a
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className="block w-full rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 py-3 text-center text-sm font-semibold text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)] transition hover:scale-[1.02] hover:from-fuchsia-500 hover:to-violet-500"
-          >
-            Quero este plano
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function InfoRow({
-  text,
-  check,
-}: {
-  text: string;
-  check?: boolean;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <span
-        className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-          check
-            ? "bg-emerald-500/15 text-emerald-300"
-            : "bg-white/5 text-slate-400"
-        }`}
-      >
-        {check ? <Check className="h-3.5 w-3.5" /> : "•"}
-      </span>
-      <span className="leading-relaxed">{text}</span>
-    </div>
-  );
-}
-
-function AddonCard({
-  active,
-  onToggle,
-  icon,
-  title,
+function PriceInfo({
+  label,
+  value,
   description,
-  price,
-  note,
 }: {
-  active: boolean;
-  onToggle: () => void;
-  icon: React.ReactNode;
-  title: string;
+  label: string;
+  value: string;
   description: string;
-  price: string;
-  note?: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={[
-        "w-full rounded-[24px] border p-5 text-left transition",
-        active
-          ? "border-cyan-500/30 bg-cyan-500/10 shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
-          : "border-white/10 bg-[rgba(255,255,255,0.03)] hover:bg-white/10",
-      ].join(" ")}
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
-              {icon}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-lg font-semibold text-white">{title}</div>
-
-              <div
-                className={[
-                  "inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
-                  active
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                    : "border-white/10 bg-white/5 text-slate-300",
-                ].join(" ")}
-              >
-                {active ? "Adicionado" : "Opcional"}
-              </div>
-            </div>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <div className="text-base font-bold text-white">{price}</div>
-            <div className="text-xs text-slate-500">/mês</div>
-          </div>
-        </div>
-
-        <p className="text-sm leading-7 text-slate-400">{description}</p>
-
-        {note && (
-          <div className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-300">
-            {note}
-          </div>
-        )}
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+        {label}
       </div>
-    </button>
+
+      <div className="mt-2 text-2xl font-black text-white">{value}</div>
+      <div className="mt-1 text-xs text-slate-400">{description}</div>
+    </div>
   );
 }
 
@@ -945,6 +573,21 @@ function PriceRow({
     <div className="flex items-start justify-between gap-4">
       <span className="text-slate-400">{label}</span>
       <span className="text-right font-semibold text-white">{value}</span>
+    </div>
+  );
+}
+
+function StatusRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-xs">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right font-medium text-slate-300">{value}</span>
     </div>
   );
 }

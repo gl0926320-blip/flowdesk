@@ -1,0 +1,18 @@
+2026/09/22-23:53:39.230 1058 Reusing MANIFEST C:\Users\Lopes\flowdesk\whatsapp-bridge\.wwebjs_auth\session-flowdesk-77c8a7b0-867c-4f4d-8c54-8c2adea090b5\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/09/22-23:53:39.230 1058 Recovering log #75
+2026/09/22-23:53:39.249 1058 Reusing old log C:\Users\Lopes\flowdesk\whatsapp-bridge\.wwebjs_auth\session-flowdesk-77c8a7b0-867c-4f4d-8c54-8c2adea090b5\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000075.log 
+2026/09/22-23:53:46.292 1058 Level-0 table #83: started
+2026/09/22-23:53:46.311 1058 Level-0 table #83: 1171587 bytes OK
+2026/09/22-23:53:46.313 1058 Delete type=0 #75
+2026/09/22-23:53:54.114 1058 Compacting 1@1 + 4@2 files
+2026/09/22-23:53:54.172 1058 Generated table #84@1: 59985 keys, 2227143 bytes
+2026/09/22-23:53:54.203 1058 Generated table #85@1: 13138 keys, 2173139 bytes
+2026/09/22-23:53:54.249 1058 Generated table #86@1: 79602 keys, 2223777 bytes
+2026/09/22-23:53:54.263 1058 Generated table #87@1: 20161 keys, 567980 bytes
+2026/09/22-23:53:54.263 1058 Compacted 1@1 + 4@2 files => 7192039 bytes
+2026/09/22-23:53:54.264 1058 compacted to: files[ 0 0 4 0 0 0 0 ]
+2026/09/22-23:53:54.265 1058 Delete type=2 #77
+2026/09/22-23:53:54.265 1058 Delete type=2 #78
+2026/09/22-23:53:54.265 1058 Delete type=2 #79
+2026/09/22-23:53:54.265 1058 Delete type=2 #80
+2026/09/22-23:53:54.265 1058 Delete type=2 #83
